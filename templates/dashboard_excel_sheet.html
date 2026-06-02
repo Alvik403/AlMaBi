@@ -1,0 +1,180 @@
+{% extends "dashboard_shell.html" %}
+
+{% block title %}Просмотр Excel — {{ sheet_title }}{% endblock %}
+
+{% block content %}
+<div
+  class="mb-6"
+  data-excel-view-root
+  data-sheet-index="{{ sheet_index }}"
+>
+  <h2 class="text-2xl font-bold text-gray-900">Просмотр Excel</h2>
+  <p class="text-sm text-gray-500 mt-1">
+    Окно: {{ excel_nav.viewport_rows }}×{{ excel_nav.viewport_cols }} ячеек. Лист целиком: {{ source_max_row }} строк × {{ source_max_column }} столбцов.
+    Клик по ячейке — содержимое и значение из кэша Excel (если файл сохранялся с пересчётом). Полный пересчёт формул на сервере не выполняется.
+  </p>
+</div>
+
+<!-- Вкладки листов -->
+<div class="flex flex-wrap gap-2 mb-4 border-b border-gray-200 pb-3">
+  {% for title in sheet_titles %}
+  <a
+    href="{{ url_for('dashboard_excel_sheet', sheet_index=loop.index0) }}?top_row={{ view_top_row }}&left_col={{ view_left_col }}"
+    class="inline-flex items-center rounded-lg px-3 py-1.5 text-sm font-medium border transition-colors
+      {% if loop.index0 == sheet_index %}
+      border-brand-300 bg-brand-50 text-brand-800
+      {% else %}
+      border-gray-200 bg-white text-gray-700 hover:border-gray-300 hover:bg-gray-50
+      {% endif %}"
+  >
+    {{ title }}
+  </a>
+  {% endfor %}
+</div>
+
+<!-- Навигация окна -->
+<div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm mb-4 space-y-4">
+  <div class="flex flex-wrap gap-2 items-center text-sm">
+    <span class="font-semibold text-gray-700">Строки:</span>
+    <a
+      href="{{ excel_nav.top_row_href or '#' }}"
+      class="rounded-lg border px-3 py-1.5 font-medium {% if excel_nav.top_row_href %}border-gray-200 bg-gray-50 hover:bg-brand-50{% else %}cursor-not-allowed opacity-40 pointer-events-none border-gray-100{% endif %}"
+    >В начало</a>
+    <a
+      href="{{ excel_nav.prev_rows_href or '#' }}"
+      class="rounded-lg border px-3 py-1.5 font-medium {% if excel_nav.prev_rows_href %}border-gray-200 bg-gray-50 hover:bg-brand-50{% else %}cursor-not-allowed opacity-40 pointer-events-none border-gray-100{% endif %}"
+    >↑ {{ excel_nav.viewport_rows }}</a>
+    <a
+      href="{{ excel_nav.next_rows_href or '#' }}"
+      class="rounded-lg border px-3 py-1.5 font-medium {% if excel_nav.next_rows_href %}border-gray-200 bg-gray-50 hover:bg-brand-50{% else %}cursor-not-allowed opacity-40 pointer-events-none border-gray-100{% endif %}"
+    >↓ {{ excel_nav.viewport_rows }}</a>
+    <a
+      href="{{ excel_nav.bottom_row_href or '#' }}"
+      class="rounded-lg border px-3 py-1.5 font-medium {% if excel_nav.bottom_row_href %}border-gray-200 bg-gray-50 hover:bg-brand-50{% else %}cursor-not-allowed opacity-40 pointer-events-none border-gray-100{% endif %}"
+    >В конец</a>
+  </div>
+  <div class="flex flex-wrap gap-2 items-center text-sm">
+    <span class="font-semibold text-gray-700">Столбцы:</span>
+    <a
+      href="{{ excel_nav.left_col_href or '#' }}"
+      class="rounded-lg border px-3 py-1.5 font-medium {% if excel_nav.left_col_href %}border-gray-200 bg-gray-50 hover:bg-brand-50{% else %}cursor-not-allowed opacity-40 pointer-events-none border-gray-100{% endif %}"
+    >← |</a>
+    <a
+      href="{{ excel_nav.prev_cols_href or '#' }}"
+      class="rounded-lg border px-3 py-1.5 font-medium {% if excel_nav.prev_cols_href %}border-gray-200 bg-gray-50 hover:bg-brand-50{% else %}cursor-not-allowed opacity-40 pointer-events-none border-gray-100{% endif %}"
+    >← {{ excel_nav.viewport_cols }}</a>
+    <a
+      href="{{ excel_nav.next_cols_href or '#' }}"
+      class="rounded-lg border px-3 py-1.5 font-medium {% if excel_nav.next_cols_href %}border-gray-200 bg-gray-50 hover:bg-brand-50{% else %}cursor-not-allowed opacity-40 pointer-events-none border-gray-100{% endif %}"
+    >{{ excel_nav.viewport_cols }} →</a>
+    <a
+      href="{{ excel_nav.right_col_href or '#' }}"
+      class="rounded-lg border px-3 py-1.5 font-medium {% if excel_nav.right_col_href %}border-gray-200 bg-gray-50 hover:bg-brand-50{% else %}cursor-not-allowed opacity-40 pointer-events-none border-gray-100{% endif %}"
+    >| →</a>
+  </div>
+  <div class="flex flex-wrap items-end gap-3 text-sm">
+    <form
+      method="get"
+      action="{{ url_for('dashboard_excel_sheet', sheet_index=sheet_index) }}"
+      class="flex flex-wrap items-end gap-2"
+    >
+      <label class="flex flex-col gap-1 text-xs text-gray-500">
+        <span class="font-semibold uppercase tracking-wide text-gray-600">Переход к ячейке</span>
+        <input
+          type="text"
+          name="goto"
+          maxlength="18"
+          placeholder="например, AB120"
+          class="rounded-lg border border-gray-200 px-2 py-1.5 font-mono text-sm text-gray-900 w-40"
+          autocomplete="off"
+        />
+      </label>
+      <button type="submit" class="rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700">
+        Показать
+      </button>
+    </form>
+    <p class="text-xs text-gray-500">
+      Сейчас: строки {{ view_top_row }}–{{ view_bottom_row }}, столбцы {{ col_letters[0] if col_letters else '—' }}–{{ col_letters[-1] if col_letters else '—' }}
+      (#{{ view_left_col }}–#{{ view_right_col }})
+    </p>
+  </div>
+</div>
+
+{% if truncated_above or truncated_below or truncated_left or truncated_right %}
+<div class="rounded-lg border border-amber-100 bg-amber-50 px-4 py-2 text-xs text-amber-950 mb-4">
+  Видны не все края листа:
+  {% if truncated_above %}есть строки выше; {% endif %}
+  {% if truncated_below %}есть строки ниже; {% endif %}
+  {% if truncated_left %}есть столбцы левее; {% endif %}
+  {% if truncated_right %}есть столбцы правее; {% endif %}
+  воспользуйтесь навигацией выше.
+</div>
+{% endif %}
+
+<!-- Панель ячейки -->
+<div
+  data-excel-cell-panel
+  class="hidden fixed bottom-6 left-6 right-6 z-[100] max-w-xl mx-auto rounded-2xl border border-gray-200 bg-white shadow-2xl p-5 sm:left-auto sm:right-auto"
+>
+  <div class="flex items-start justify-between gap-4">
+    <div>
+      <p class="text-xs font-semibold uppercase tracking-wide text-gray-400">Выбранная ячейка</p>
+      <p data-excel-panel-address class="mt-1 text-lg font-mono font-bold text-gray-900"></p>
+    </div>
+    <button
+      type="button"
+      data-excel-panel-close
+      class="rounded-lg border border-gray-200 px-3 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-50"
+    >
+      Закрыть
+    </button>
+  </div>
+  <dl class="mt-4 space-y-3 text-sm">
+    <div>
+      <dt class="font-semibold text-gray-700">В книге (константа / текст формулы)</dt>
+      <dd data-excel-panel-contents class="mt-1 font-mono text-gray-900 whitespace-pre-wrap break-words rounded-lg bg-gray-50 px-3 py-2"></dd>
+    </div>
+    <div data-excel-panel-eval-block>
+      <dt class="font-semibold text-gray-700">Последнее значение в файле Excel</dt>
+      <dd data-excel-panel-evaluated class="mt-1 font-mono text-gray-900 whitespace-pre-wrap break-words rounded-lg bg-emerald-50 px-3 py-2"></dd>
+      <p data-excel-panel-cache-note class="mt-1 text-xs text-amber-700 hidden"></p>
+    </div>
+    <div data-excel-panel-merge-note class="hidden rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-600"></div>
+  </dl>
+</div>
+
+<div class="overflow-auto rounded-xl border border-gray-200 bg-white shadow-sm max-h-[70vh]">
+  <table class="excel-preview-table border-collapse text-xs text-left min-w-max">
+    <thead class="bg-gray-100 text-gray-600 sticky top-0 z-10">
+      <tr>
+        <th class="border border-gray-200 px-1 py-1 w-10 text-center font-semibold bg-gray-200"></th>
+        {% for letter in col_letters %}
+        <th class="border border-gray-200 px-2 py-1 font-mono font-semibold text-center whitespace-nowrap">{{ letter }}</th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody class="font-mono text-gray-900">
+      {% for row in grid %}
+      {% set rr = row[0].sheet_row %}
+      <tr>
+        <th class="border border-gray-200 bg-gray-50 px-1 py-0.5 text-center text-gray-500 font-semibold sticky left-0 z-[1]">{{ rr }}</th>
+        {% for cell in row %}
+        {% if not cell.skip %}
+        <td
+          data-excel-cell
+          tabindex="0"
+          data-sheet-row="{{ cell.sheet_row }}"
+          data-sheet-col="{{ cell.sheet_col }}"
+          class="excel-preview-cell cursor-pointer border border-gray-200 px-2 py-0.5 align-top whitespace-pre-wrap break-words max-w-lg hover:bg-brand-50 focus:outline-none focus:ring-2 focus:ring-brand-400 focus:z-[2]"
+          {% if cell.rowspan > 1 %}rowspan="{{ cell.rowspan }}"{% endif %}
+          {% if cell.colspan > 1 %}colspan="{{ cell.colspan }}"{% endif %}
+          {% if cell.col_width %}style="min-width: {{ cell.col_width }}"{% endif %}
+        >{{ cell.text }}</td>
+        {% endif %}
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

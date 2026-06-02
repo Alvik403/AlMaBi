@@ -1,0 +1,63 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Локальный журнал изменений (не коммитить)
+WORK_LOG.local.md
+FUTURE.local.md
+
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/
+.cursor/
+.agent/
+
+# Данные проекта / локальные копии
+data/
+.data/
+uploads/
+runtime/
+logs/
+*.db
+*.sqlite
+*.sqlite3
+dashboard.sqlite3
+
+# Excel с бизнес-данными (загружаются локально / через UI)
+*.xlsx
+*.xls
+*.xlsm
+*.xlsb
+
+# Виртуальные окружения
+.venv/
+venv/
+env/
+
+# Секреты и локальный конфиг
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+credentials.json
+secrets.json
+.npmrc
+
+# Логи
+*.log
+
+# Сборки / метаданные пакета
+*.egg-info/
+/dist/
+/build/
+node_modules/
+
+# Инструменты тестирования и покрытия
+.pytest_cache/
+.coverage
+htmlcov/

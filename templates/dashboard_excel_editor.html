@@ -1,0 +1,48 @@
+{% extends "dashboard_shell.html" %}
+
+{% block title %}Просмотр Excel{% endblock %}
+
+{% block main_class %}flex-1 min-h-0 overflow-hidden{% endblock %}
+{% block content_wrapper_class %}flex h-full min-h-0 flex-col px-3 py-3 sm:px-4{% endblock %}
+{% block breadcrumbs %}{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="/static/dist/excel.css">
+{% endblock %}
+
+{% block content %}
+<section class="flex h-full min-h-0 flex-col gap-3" data-excel-editor-root>
+  <div class="flex shrink-0 flex-wrap items-center justify-between gap-3">
+    <div class="min-w-0">
+      <h1 class="text-xl font-bold text-gray-900">Просмотр Excel</h1>
+      <p class="truncate text-sm text-gray-500">{{ active_file.original_name }}</p>
+    </div>
+    <div class="flex flex-wrap items-center gap-2">
+      <button
+        type="button"
+        data-excel-reload
+        class="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50"
+      >
+        Перезагрузить
+      </button>
+      <button
+        type="button"
+        data-excel-save
+        class="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+      >
+        Сохранить версию
+      </button>
+    </div>
+  </div>
+
+  <p data-excel-status class="hidden shrink-0 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-600"></p>
+
+  <div class="min-h-0 flex-1 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+    <div id="excel-editor-app"></div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script type="module" src="/static/dist/excel.js"></script>
+{% endblock %}

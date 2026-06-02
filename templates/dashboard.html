@@ -1,0 +1,1747 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Дашборд: Калькуляция услуг</title>
+    <style>
+      :root {
+        --ink:#102133;
+        --muted:#557086;
+        --line:#d9e5ef;
+        --line-strong:#bfd2e2;
+        --accent:#1f6f66;
+        --accent-soft:#d9efe9;
+        --blue:#2c73b7;
+        --surface:#ffffff;
+        --surface-soft:#f7fbff;
+      }
+      * { box-sizing:border-box; }
+      body {
+        margin:0;
+        color:var(--ink);
+        font-family:"Trebuchet MS",sans-serif;
+        background:
+          radial-gradient(900px 520px at 100% -5%, #d8efe8 0%, transparent 70%),
+          radial-gradient(700px 360px at -5% 105%, #dbeaf7 0%, transparent 72%),
+          linear-gradient(180deg, #f8fbfd 0%, #edf4f9 100%);
+      }
+      .wrap { width:100%; max-width:none; margin:0; padding:20px 24px; }
+      .card {
+        background:linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+        border:1px solid #dde8f2;
+        border-radius:18px;
+        padding:18px;
+        margin-top:14px;
+        box-shadow:0 12px 24px rgba(16, 33, 51, 0.05);
+      }
+      h1,h2,h3 { margin:0 0 10px; font-family:"Palatino Linotype",serif; letter-spacing:0.2px; }
+      .title-line { display:flex; align-items:center; gap:10px; }
+      .icon-chip {
+        width:28px; height:28px; border-radius:9px; display:inline-flex; align-items:center; justify-content:center;
+        background:var(--accent-soft); color:var(--accent); border:1px solid #b5ded3; flex:0 0 auto;
+      }
+      .icon-chip svg { width:16px; height:16px; stroke:currentColor; fill:none; stroke-width:2; }
+      .muted { color:var(--muted); margin:0; line-height:1.45; }
+      .links { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+      .links a {
+        text-decoration:none; color:#0e477e; border:1px solid #c7dbef; background:#eef6ff; padding:7px 11px;
+        border-radius:10px; font-weight:700; display:inline-flex; align-items:center; gap:6px; transition:all .16s ease;
+      }
+      .links a:hover { background:#e4f1ff; border-color:#afcce9; transform:translateY(-1px); }
+      .links a svg { width:14px; height:14px; stroke:currentColor; fill:none; stroke-width:2; }
+      .metrics { display:grid; gap:10px; grid-template-columns:repeat(6,minmax(140px,1fr)); }
+      .metric {
+        border:1px solid var(--line);
+        border-radius:14px;
+        padding:10px 11px 12px;
+        background:linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
+      }
+      .metric-head { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+      .metric .k { font-size:11px; text-transform:uppercase; color:var(--muted); font-weight:700; letter-spacing:0.4px; }
+      .metric .v { font-size:21px; font-weight:800; margin-top:8px; color:#0f273c; line-height:1.15; }
+      .metric .icon-chip { width:24px; height:24px; border-radius:8px; }
+      .metric .icon-chip svg { width:14px; height:14px; }
+      .layout-grid { display:grid; gap:12px; grid-template-columns:minmax(260px,1fr) minmax(520px,2fr); align-items:start; }
+      .sidebar {
+        border:1px solid var(--line);
+        border-radius:14px;
+        padding:12px;
+        background:linear-gradient(180deg, #fbfdff 0%, #f6faff 100%);
+      }
+      .controls { display:grid; gap:10px; grid-template-columns:1fr; }
+      .control { display:grid; gap:6px; }
+      .control label { font-size:12px; color:var(--muted); display:flex; align-items:center; gap:6px; }
+      .control label svg { width:13px; height:13px; stroke:currentColor; fill:none; stroke-width:2; }
+      input,select,button {
+        border:1px solid #c9d9e8;
+        border-radius:10px;
+        padding:8px 10px;
+        font:inherit;
+        background:var(--surface);
+        color:var(--ink);
+      }
+      input:focus,button:focus { outline:none; border-color:#8eb6db; box-shadow:0 0 0 3px rgba(115, 164, 212, 0.2); }
+      .search-row { display:flex; align-items:center; gap:8px; }
+      .search-row input { flex:1; }
+      .icon-btn {
+        width:38px; min-width:38px; height:38px;
+        display:inline-flex; align-items:center; justify-content:center;
+        padding:0; background:#f1f7fd; color:#305876; border:1px solid #c7daea; cursor:pointer;
+      }
+      .icon-btn:hover { background:#e8f2fb; }
+      .icon-btn:disabled { opacity:.5; cursor:not-allowed; }
+      .icon-btn svg { width:16px; height:16px; stroke:currentColor; fill:none; stroke-width:2; }
+      .class-toggles { display:flex; gap:8px; flex-wrap:wrap; }
+      .class-toggle-btn {
+        border:1px solid #cfdbe9;
+        border-radius:999px;
+        padding:7px 11px;
+        cursor:pointer;
+        background:#f4f8fc;
+        color:#154b78;
+        font-weight:700;
+      }
+      .class-toggle-btn.active { background:#dff0ff; border-color:#98bee2; }
+      .class-toggle-btn.inactive { background:#f7f8fa; border-color:#dee4ec; color:#7b8794; }
+      .search-status { font-size:12px; color:var(--muted); min-height:16px; line-height:1.35; }
+      .search-status.warn { color:#9a5f00; }
+      .search-status.ok { color:#1f6f66; }
+      .mode { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; align-items:center; }
+      .mode b { color:var(--muted); font-size:13px; display:inline-flex; align-items:center; gap:6px; }
+      .mode b svg { width:14px; height:14px; stroke:currentColor; fill:none; stroke-width:2; }
+      .mode-btn {
+        background:#f3f8fc;
+        color:#10436e;
+        font-weight:700;
+        cursor:pointer;
+        display:inline-flex;
+        align-items:center;
+        gap:6px;
+      }
+      .mode-btn svg { width:14px; height:14px; stroke:currentColor; fill:none; stroke-width:2; }
+      .mode-btn.active { background:#dff0ff; border-color:#a6c9eb; }
+      .summary { margin-top:10px; display:grid; gap:10px; grid-template-columns:1fr; }
+      .summary div {
+        border:1px solid var(--line);
+        border-radius:10px;
+        padding:9px 10px;
+        color:var(--muted);
+        background:#ffffff;
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+        gap:8px;
+      }
+      .summary strong { color:var(--ink); }
+      .summary-label { display:inline-flex; align-items:center; gap:7px; }
+      .summary-label svg { width:14px; height:14px; stroke:var(--blue); fill:none; stroke-width:2; }
+      .section-note { color:var(--muted); margin:2px 0 10px; }
+      .level-metrics { grid-template-columns:repeat(4,minmax(140px,1fr)); }
+      .charts { display:grid; gap:10px; grid-template-columns:repeat(2,minmax(220px,1fr)); }
+      .chart {
+        border:1px solid var(--line);
+        border-radius:14px;
+        padding:11px;
+        background:linear-gradient(180deg, #ffffff 0%, #f8fcff 100%);
+      }
+      .chart h3 { display:flex; align-items:center; gap:8px; margin-bottom:10px; }
+      .chart h3 svg { width:15px; height:15px; stroke:#326389; fill:none; stroke-width:2; }
+      .chart.wide { grid-column:1/-1; }
+      .canvas-wrap { min-height:280px; }
+      .top-chart-wrap { min-height:360px; }
+      .table-toolbar { display:grid; gap:10px; margin:8px 0 12px; }
+      .table-filters { display:grid; gap:10px; grid-template-columns:1fr; }
+      .table-control { display:grid; gap:6px; }
+      .table-control input,.table-control select { width:100%; }
+      .table-control label { font-size:12px; color:var(--muted); display:flex; align-items:center; gap:6px; }
+      .table-control label svg { width:13px; height:13px; stroke:currentColor; fill:none; stroke-width:2; }
+      .table-meta {
+        color:var(--muted);
+        font-size:12px;
+        display:flex;
+        align-items:center;
+        gap:6px;
+      }
+      .table-meta strong { color:var(--ink); font-size:14px; }
+      .table-wrap {
+        overflow:auto;
+        max-height:min(68vh, 780px);
+        border:1px solid var(--line);
+        border-radius:12px;
+        background:#fff;
+      }
+      table { width:100%; border-collapse:collapse; min-width:820px; }
+      th,td { border:1px solid var(--line); padding:7px 9px; }
+      th {
+        background:#eef5fb;
+        text-align:left;
+        position:sticky;
+        top:0;
+        z-index:2;
+      }
+      th.sortable-th { cursor:pointer; user-select:none; white-space:nowrap; }
+      th.sortable-th .sort-mark { margin-left:6px; color:#4d6f89; font-size:12px; }
+      th.sortable-th.active { background:#e4f0fb; color:#0f3b5d; }
+      tbody tr:nth-child(even) { background:#fbfdff; }
+      td.num { text-align:right; white-space:nowrap; }
+      .mini-grid { display:grid; gap:10px; grid-template-columns:repeat(2,minmax(240px,1fr)); margin-top:10px; }
+      .type-block { margin-top:10px; }
+      .drill-panel {
+        border:1px solid var(--line);
+        border-radius:14px;
+        padding:12px;
+        background:linear-gradient(180deg, #ffffff 0%, #f3f9ff 100%);
+        margin-bottom:12px;
+      }
+      .drill-head {
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+        gap:10px;
+        flex-wrap:wrap;
+        margin-bottom:8px;
+      }
+      .drill-title { font-weight:800; font-size:17px; color:#0f2c45; }
+      .table-drill-row { cursor:pointer; }
+      .table-drill-row:hover { background:#edf5fd; }
+      .table-drill-row.active { background:#dceeff !important; }
+      .service-link-btn {
+        border:none;
+        background:transparent;
+        color:#0f4f80;
+        font-weight:700;
+        text-align:left;
+        padding:0;
+        cursor:pointer;
+      }
+      .service-link-btn:hover { text-decoration:underline; }
+      .detail-grid { display:grid; gap:10px; grid-template-columns:repeat(3,minmax(220px,1fr)); margin-top:10px; }
+      .detail-table-wrap { max-height:300px; }
+      .error { border:1px solid #f2c6c6; background:#fff1f1; color:#8b2020; border-radius:10px; padding:10px; }
+      @media (max-width:1100px) {
+        .metrics { grid-template-columns:repeat(3,minmax(130px,1fr)); }
+        .layout-grid,.controls,.summary,.charts { grid-template-columns:1fr; }
+        .mini-grid,.level-metrics,.detail-grid { grid-template-columns:1fr; }
+      }
+      @media (max-width:700px) {
+        .wrap { padding:14px 12px; }
+        .metrics { grid-template-columns:repeat(2,minmax(130px,1fr)); }
+        .table-filters { grid-template-columns:1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <svg width="0" height="0" style="position:absolute;left:-9999px;top:-9999px" aria-hidden="true" focusable="false">
+      <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></symbol>
+      <symbol id="i-calc" viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 7h8M8 11h3M13 11h3M8 15h3M13 15h3"/></symbol>
+      <symbol id="i-sheet" viewBox="0 0 24 24"><path d="M7 3h8l4 4v14H7z"/><path d="M15 3v4h4M9 12h8M9 16h8"/></symbol>
+      <symbol id="i-filter" viewBox="0 0 24 24"><path d="M4 5h16l-6 7v6l-4 2v-8z"/></symbol>
+      <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="m20 20-4.2-4.2"/></symbol>
+      <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6 18 18M18 6 6 18"/></symbol>
+      <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 6h6M14 6h6M10 6v6M4 18h10M18 18h2M14 18v-6"/></symbol>
+      <symbol id="i-percent" viewBox="0 0 24 24"><path d="m5 19 14-14"/><circle cx="7.5" cy="7.5" r="2.5"/><circle cx="16.5" cy="16.5" r="2.5"/></symbol>
+      <symbol id="i-reset" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/></symbol>
+      <symbol id="i-pie" viewBox="0 0 24 24"><path d="M12 3v9h9"/><path d="M21 12a9 9 0 1 1-9-9"/></symbol>
+      <symbol id="i-bars" viewBox="0 0 24 24"><path d="M5 20V9M12 20V4M19 20v-7"/></symbol>
+      <symbol id="i-stack" viewBox="0 0 24 24"><path d="m4 8 8-4 8 4-8 4-8-4zM4 12l8 4 8-4M4 16l8 4 8-4"/></symbol>
+      <symbol id="i-table" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="1"/><path d="M3 10h18M9 4v16M15 4v16"/></symbol>
+      <symbol id="i-dot" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/></symbol>
+    </svg>
+    <div class="wrap">
+      <section class="card">
+        <h1 class="title-line"><span class="icon-chip"><svg><use href="#i-bars"></use></svg></span>Дашборд по услугам (лист «Калькуляция»)</h1>
+        <p class="muted">Фильтры и графики пересчитываются в реальном времени. Режим графиков: абсолютные значения или проценты.</p>
+        <div class="links">
+          <a href="/dashboard"><svg><use href="#i-home"></use></svg>Главная панель</a>
+          <a href="/debug/calculation-services"><svg><use href="#i-calc"></use></svg>Тех. расчёты</a>
+          <a href="/debug/excel"><svg><use href="#i-sheet"></use></svg>Все листы Excel</a>
+        </div>
+      </section>
+
+      {% if error %}
+      <section class="card"><div class="error">{{ error }}</div></section>
+      {% endif %}
+
+      {% if dashboard %}
+      <section class="card">
+        <h2 class="title-line"><span class="icon-chip"><svg><use href="#i-pie"></use></svg></span>Ключевые Метрики</h2>
+        <div class="metrics">
+          <div class="metric">
+            <div class="metric-head"><div class="k">Услуг</div><span class="icon-chip"><svg><use href="#i-dot"></use></svg></span></div>
+            <div class="v">{{ dashboard.totals.total_services }}</div>
+          </div>
+          <div class="metric">
+            <div class="metric-head"><div class="k">Классов</div><span class="icon-chip"><svg><use href="#i-filter"></use></svg></span></div>
+            <div class="v">{{ dashboard.totals.total_classes }}</div>
+          </div>
+          <div class="metric">
+            <div class="metric-head"><div class="k">Прямые</div><span class="icon-chip"><svg><use href="#i-bars"></use></svg></span></div>
+            <div class="v">{{ dashboard.totals.direct_total | money }}</div>
+          </div>
+          <div class="metric">
+            <div class="metric-head"><div class="k">Косвенные</div><span class="icon-chip"><svg><use href="#i-stack"></use></svg></span></div>
+            <div class="v">{{ dashboard.totals.indirect_total | money }}</div>
+          </div>
+          <div class="metric">
+            <div class="metric-head"><div class="k">Неэффективность</div><span class="icon-chip"><svg><use href="#i-reset"></use></svg></span></div>
+            <div class="v">{{ dashboard.totals.inefficiency_total | money }}</div>
+          </div>
+          <div class="metric">
+            <div class="metric-head"><div class="k">Итого</div><span class="icon-chip"><svg><use href="#i-pie"></use></svg></span></div>
+            <div class="v">{{ dashboard.totals.grand_total | money }}</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2 class="title-line"><span class="icon-chip"><svg><use href="#i-filter"></use></svg></span>Фильтры И Визуальный Срез</h2>
+        <div class="layout-grid">
+          <aside class="sidebar">
+            <div class="controls">
+              <div class="control">
+                <label><svg><use href="#i-filter"></use></svg>Классы (по умолчанию все включены)</label>
+                <div id="classToggles" class="class-toggles">
+                  {% for class_item in dashboard.classes %}
+                  <button
+                    type="button"
+                    class="class-toggle-btn active"
+                    data-class-name="{{ class_item.name }}"
+                  >
+                    {{ class_item.name }}
+                  </button>
+                  {% endfor %}
+                </div>
+              </div>
+              <div class="control">
+                <label for="searchFilter"><svg><use href="#i-search"></use></svg>Поиск услуги</label>
+                <div class="search-row">
+                  <input id="searchFilter" type="text" list="servicesList" placeholder="Начните вводить и выберите услугу из списка" />
+                  <button id="clearSearch" type="button" class="icon-btn" title="Очистить поиск услуги" aria-label="Очистить поиск услуги">
+                    <svg><use href="#i-close"></use></svg>
+                  </button>
+                </div>
+                <datalist id="servicesList"></datalist>
+                <div id="searchStatus" class="search-status">
+                  Фильтр услуги не выбран.
+                </div>
+              </div>
+            </div>
+            <div class="mode">
+              <b><svg><use href="#i-sliders"></use></svg>Режим графиков:</b>
+              <button id="modeAbs" class="mode-btn active"><svg><use href="#i-bars"></use></svg>Абсолютные</button>
+              <button id="modePct" class="mode-btn"><svg><use href="#i-percent"></use></svg>Проценты</button>
+              <button id="resetFilters" class="mode-btn"><svg><use href="#i-reset"></use></svg>Сброс</button>
+            </div>
+            <div class="summary">
+              <div><span class="summary-label"><svg><use href="#i-dot"></use></svg>Услуг в срезе:</span><strong id="sliceServices">-</strong></div>
+              <div><span class="summary-label"><svg><use href="#i-bars"></use></svg>Общая сумма:</span><strong id="sliceTotal">-</strong></div>
+              <div><span class="summary-label"><svg><use href="#i-stack"></use></svg>Прямые / Косвенные:</span><strong id="sliceDirectIndirect">-</strong></div>
+              <div><span class="summary-label"><svg><use href="#i-filter"></use></svg>Неэффективность:</span><strong id="sliceInefficiency">-</strong></div>
+            </div>
+          </aside>
+          <div class="charts">
+            <article class="chart">
+              <h3><svg><use href="#i-pie"></use></svg>Структура стоимости (pie)</h3>
+              <div class="canvas-wrap"><canvas id="costStructurePie"></canvas></div>
+            </article>
+            <article class="chart">
+              <h3><svg><use href="#i-pie"></use></svg>Доли классов (pie)</h3>
+              <div class="canvas-wrap"><canvas id="classSharePie"></canvas></div>
+            </article>
+            <article class="chart wide">
+              <h3><svg><use href="#i-stack"></use></svg>Состав затрат по классам (stacked)</h3>
+              <div class="canvas-wrap"><canvas id="classStackBar"></canvas></div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2 class="title-line"><span class="icon-chip"><svg><use href="#i-stack"></use></svg></span>Топ услуг по стоимости: Прямые, Косвенные, Неэффективность</h2>
+        <article class="chart">
+          <div id="topServicesWrap" class="canvas-wrap top-chart-wrap"><canvas id="topServicesBar"></canvas></div>
+        </article>
+      </section>
+
+      <section class="card">
+        <h2 class="title-line"><span class="icon-chip"><svg><use href="#i-table"></use></svg></span>Топ Услуг По Стоимости (динамический срез)</h2>
+        <div class="table-toolbar">
+          <div class="table-filters">
+            <div class="table-control">
+              <label for="tableServiceFilter"><svg><use href="#i-search"></use></svg>Фильтр по услуге</label>
+              <input id="tableServiceFilter" type="text" placeholder="Введите часть названия услуги" />
+            </div>
+          </div>
+          <div class="table-meta">Показано строк: <strong id="tableRowsCount">0</strong></div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th class="sortable-th" data-sort-key="class_name">Класс<span class="sort-mark">↕</span></th>
+                <th class="sortable-th" data-sort-key="service_name">Услуга<span class="sort-mark">↕</span></th>
+                <th class="sortable-th" data-sort-key="direct_cost">Прямые<span class="sort-mark">↕</span></th>
+                <th class="sortable-th" data-sort-key="indirect_cost">Косвенные<span class="sort-mark">↕</span></th>
+                <th class="sortable-th" data-sort-key="inefficiency_cost">Неэффективность<span class="sort-mark">↕</span></th>
+                <th class="sortable-th" data-sort-key="indirect_sum">Косвенные сумма<span class="sort-mark">↕</span></th>
+                <th class="sortable-th" data-sort-key="total_cost">Сумма<span class="sort-mark">↕</span></th>
+                <th class="sortable-th" data-sort-key="share">Доля в срезе<span class="sort-mark">↕</span></th>
+              </tr>
+            </thead>
+            <tbody id="topServicesTableBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card" id="level-2">
+        <h2 class="title-line"><span class="icon-chip"><svg><use href="#i-filter"></use></svg></span>Уровень 2: Дашборд По Классам</h2>
+        <p class="section-note">Фокус: вклад каждого класса в итоговый финансовый результат и концентрация рисков.</p>
+        <div class="drill-panel">
+          <div class="drill-head">
+            <div>
+              <div class="drill-title">Провал по классу: <span id="drillClassName">-</span></div>
+              <div id="drillClassHint" class="section-note">Нажмите на класс в графиках верхнего уровня, чтобы увидеть его детализацию.</div>
+            </div>
+            <button id="clearDrillClass" type="button" class="mode-btn"><svg><use href="#i-reset"></use></svg>Сброс класса</button>
+          </div>
+          <div class="metrics level-metrics">
+            <div class="metric">
+              <div class="metric-head"><div class="k">Услуг В Классе</div><span class="icon-chip"><svg><use href="#i-dot"></use></svg></span></div>
+              <div class="v" id="drillClassServicesCount">-</div>
+            </div>
+            <div class="metric">
+              <div class="metric-head"><div class="k">Прямые</div><span class="icon-chip"><svg><use href="#i-bars"></use></svg></span></div>
+              <div class="v" id="drillClassDirect">-</div>
+            </div>
+            <div class="metric">
+              <div class="metric-head"><div class="k">Косвенные</div><span class="icon-chip"><svg><use href="#i-stack"></use></svg></span></div>
+              <div class="v" id="drillClassIndirect">-</div>
+            </div>
+            <div class="metric">
+              <div class="metric-head"><div class="k">Неэффективность</div><span class="icon-chip"><svg><use href="#i-reset"></use></svg></span></div>
+              <div class="v" id="drillClassIneff">-</div>
+            </div>
+          </div>
+          <div class="summary">
+            <div><span class="summary-label"><svg><use href="#i-pie"></use></svg>Итого по классу:</span><strong id="drillClassTotal">-</strong></div>
+            <div><span class="summary-label"><svg><use href="#i-percent"></use></svg>Доля класса в общей сумме:</span><strong id="drillClassShare">-</strong></div>
+          </div>
+          <div class="charts">
+            <article class="chart">
+              <h3><svg><use href="#i-bars"></use></svg>Вес услуг внутри класса</h3>
+              <div class="canvas-wrap"><canvas id="drillClassServicesBar"></canvas></div>
+            </article>
+            <article class="chart">
+              <h3><svg><use href="#i-pie"></use></svg>Структура затрат в классе</h3>
+              <div class="canvas-wrap"><canvas id="drillClassStructurePie"></canvas></div>
+            </article>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Услуга</th>
+                  <th>Прямые</th>
+                  <th>Косвенные</th>
+                  <th>Неэффективность</th>
+                  <th>Сумма</th>
+                  <th>Доля в классе</th>
+                </tr>
+              </thead>
+              <tbody id="drillClassServicesBody">
+                <tr><td colspan="6">Выберите класс на графике уровня 1.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="metrics level-metrics">
+          <div class="metric">
+            <div class="metric-head"><div class="k">Классов</div><span class="icon-chip"><svg><use href="#i-filter"></use></svg></span></div>
+            <div class="v">{{ dashboard.totals.total_classes }}</div>
+          </div>
+          <div class="metric">
+            <div class="metric-head"><div class="k">Топ-2 Доля</div><span class="icon-chip"><svg><use href="#i-pie"></use></svg></span></div>
+            <div class="v">{{ dashboard.level2.top2_share | pct }}</div>
+          </div>
+          <div class="metric">
+            <div class="metric-head"><div class="k">Средний Класс</div><span class="icon-chip"><svg><use href="#i-bars"></use></svg></span></div>
+            <div class="v">{{ dashboard.level2.avg_class_total | money }}</div>
+          </div>
+          <div class="metric">
+            <div class="metric-head"><div class="k">Крупнейший Класс</div><span class="icon-chip"><svg><use href="#i-stack"></use></svg></span></div>
+            <div class="v">{{ dashboard.totals.largest_class_name }}</div>
+          </div>
+        </div>
+        <div class="charts">
+          <article class="chart">
+            <h3><svg><use href="#i-bars"></use></svg>Итого По Классам (bar)</h3>
+            <div class="canvas-wrap"><canvas id="lvl2ClassTotalsBar"></canvas></div>
+          </article>
+          <article class="chart">
+            <h3><svg><use href="#i-percent"></use></svg>Неэффективность По Классам (%)</h3>
+            <div class="canvas-wrap"><canvas id="lvl2IneffShareBar"></canvas></div>
+          </article>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Класс</th>
+                <th>Услуг</th>
+                <th>Прямые</th>
+                <th>Косвенные</th>
+                <th>Неэффективность</th>
+                <th>Сумма</th>
+                <th>Доля</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in dashboard.level2.classes_sorted %}
+              <tr>
+                <td>{{ row.name }}</td>
+                <td class="num">{{ row.services_count }}</td>
+                <td class="num">{{ row.direct_total | money }}</td>
+                <td class="num">{{ row.indirect_total | money }}</td>
+                <td class="num">{{ row.inefficiency_total | money }}</td>
+                <td class="num">{{ row.grand_total | money }}</td>
+                <td class="num">{{ row.share | pct }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card" id="level-3">
+        <h2 class="title-line"><span class="icon-chip"><svg><use href="#i-table"></use></svg></span>Уровень 3: Дашборд По Услугам</h2>
+        <p class="section-note">Фокус: структура портфеля услуг, медианные значения и концентрация неэффективности.</p>
+        <div class="drill-panel">
+          <div class="drill-head">
+            <div>
+              <div class="drill-title">Деталь по услуге: <span id="drillServiceName">-</span></div>
+              <div id="drillServiceHint" class="section-note">Нажмите на услугу в таблице или на гистограмме уровня 2.</div>
+            </div>
+            <button id="clearDrillService" type="button" class="mode-btn"><svg><use href="#i-reset"></use></svg>Сброс услуги</button>
+          </div>
+          <div class="metrics level-metrics">
+            <div class="metric">
+              <div class="metric-head"><div class="k">Класс</div><span class="icon-chip"><svg><use href="#i-filter"></use></svg></span></div>
+              <div class="v" id="drillServiceClass">-</div>
+            </div>
+            <div class="metric">
+              <div class="metric-head"><div class="k">Сумма Услуги</div><span class="icon-chip"><svg><use href="#i-pie"></use></svg></span></div>
+              <div class="v" id="drillServiceTotal">-</div>
+            </div>
+            <div class="metric">
+              <div class="metric-head"><div class="k">Прямые</div><span class="icon-chip"><svg><use href="#i-bars"></use></svg></span></div>
+              <div class="v" id="drillServiceDirect">-</div>
+            </div>
+            <div class="metric">
+              <div class="metric-head"><div class="k">Косвенные</div><span class="icon-chip"><svg><use href="#i-stack"></use></svg></span></div>
+              <div class="v" id="drillServiceIndirect">-</div>
+            </div>
+            <div class="metric">
+              <div class="metric-head"><div class="k">Неэффективность</div><span class="icon-chip"><svg><use href="#i-reset"></use></svg></span></div>
+              <div class="v" id="drillServiceIneff">-</div>
+            </div>
+            <div class="metric">
+              <div class="metric-head"><div class="k">Доля Неэффективности</div><span class="icon-chip"><svg><use href="#i-percent"></use></svg></span></div>
+              <div class="v" id="drillServiceIneffShare">-</div>
+            </div>
+          </div>
+          <div class="charts">
+            <article class="chart">
+              <h3><svg><use href="#i-pie"></use></svg>Структура затрат услуги</h3>
+              <div class="canvas-wrap"><canvas id="drillServiceStructurePie"></canvas></div>
+            </article>
+            <article class="chart">
+              <h3><svg><use href="#i-bars"></use></svg>Статьи затрат услуги</h3>
+              <div class="canvas-wrap"><canvas id="drillServiceComponentsBar"></canvas></div>
+            </article>
+          </div>
+          <div class="detail-grid">
+            <div class="chart">
+              <h3><svg><use href="#i-bars"></use></svg>Прямые (детально)</h3>
+              <div class="table-wrap detail-table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Статья</th>
+                      <th>Сумма</th>
+                    </tr>
+                  </thead>
+                  <tbody id="drillDirectDetailsBody">
+                    <tr><td colspan="2">Нет данных</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div class="chart">
+              <h3><svg><use href="#i-stack"></use></svg>Косвенные (детально)</h3>
+              <div class="table-wrap detail-table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Статья</th>
+                      <th>Сумма</th>
+                    </tr>
+                  </thead>
+                  <tbody id="drillIndirectDetailsBody">
+                    <tr><td colspan="2">Нет данных</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div class="chart">
+              <h3><svg><use href="#i-reset"></use></svg>Неэффективность (детально)</h3>
+              <div class="table-wrap detail-table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Статья</th>
+                      <th>Сумма</th>
+                    </tr>
+                  </thead>
+                  <tbody id="drillIneffDetailsBody">
+                    <tr><td colspan="2">Нет данных</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="metrics level-metrics">
+          <div class="metric">
+            <div class="metric-head"><div class="k">Услуг</div><span class="icon-chip"><svg><use href="#i-dot"></use></svg></span></div>
+            <div class="v">{{ dashboard.level3.service_count }}</div>
+          </div>
+          <div class="metric">
+            <div class="metric-head"><div class="k">Медиана Суммы</div><span class="icon-chip"><svg><use href="#i-bars"></use></svg></span></div>
+            <div class="v">{{ dashboard.level3.service_median_total | money }}</div>
+          </div>
+          <div class="metric">
+            <div class="metric-head"><div class="k">P90 Суммы</div><span class="icon-chip"><svg><use href="#i-percent"></use></svg></span></div>
+            <div class="v">{{ dashboard.level3.service_p90_total | money }}</div>
+          </div>
+          <div class="metric">
+            <div class="metric-head"><div class="k">Топ-Услуга Доля</div><span class="icon-chip"><svg><use href="#i-pie"></use></svg></span></div>
+            <div class="v">{{ dashboard.level3.top_service_share | pct }}</div>
+          </div>
+        </div>
+        <div class="charts">
+          <article class="chart">
+            <h3><svg><use href="#i-bars"></use></svg>Топ Услуг По Сумме</h3>
+            <div class="canvas-wrap"><canvas id="lvl3TopTotalBar"></canvas></div>
+          </article>
+          <article class="chart">
+            <h3><svg><use href="#i-bars"></use></svg>Топ Услуг По Неэффективности</h3>
+            <div class="canvas-wrap"><canvas id="lvl3TopIneffBar"></canvas></div>
+          </article>
+          <article class="chart wide">
+            <h3><svg><use href="#i-table"></use></svg>Распределение Сумм Услуг (гистограмма)</h3>
+            <div class="canvas-wrap"><canvas id="lvl3ServiceHistBar"></canvas></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="card" id="level-4">
+        <h2 class="title-line"><span class="icon-chip"><svg><use href="#i-stack"></use></svg></span>Уровень 4: Дашборд По Затратам</h2>
+        <p class="section-note">Фокус: детализация по статьям затрат и управленческий приоритет затратных статей.</p>
+        <div class="metrics level-metrics">
+          <div class="metric">
+            <div class="metric-head"><div class="k">Статей Затрат</div><span class="icon-chip"><svg><use href="#i-table"></use></svg></span></div>
+            <div class="v">{{ dashboard.level4.components_count }}</div>
+          </div>
+          <div class="metric">
+            <div class="metric-head"><div class="k">Топ Статья</div><span class="icon-chip"><svg><use href="#i-filter"></use></svg></span></div>
+            <div class="v">{{ dashboard.level4.top_component_name }}</div>
+          </div>
+          <div class="metric">
+            <div class="metric-head"><div class="k">Топ Статья Сумма</div><span class="icon-chip"><svg><use href="#i-bars"></use></svg></span></div>
+            <div class="v">{{ dashboard.level4.top_component_value | money }}</div>
+          </div>
+          <div class="metric">
+            <div class="metric-head"><div class="k">Уровень Риска</div><span class="icon-chip"><svg><use href="#i-reset"></use></svg></span></div>
+            <div class="v">{{ dashboard.totals.risk_level }}</div>
+          </div>
+        </div>
+        <div class="charts">
+          <article class="chart">
+            <h3><svg><use href="#i-bars"></use></svg>Топ Статей Затрат</h3>
+            <div class="canvas-wrap"><canvas id="lvl4ComponentBar"></canvas></div>
+          </article>
+          <article class="chart">
+            <h3><svg><use href="#i-pie"></use></svg>Распределение По Типам Затрат</h3>
+            <div class="canvas-wrap"><canvas id="lvl4TypePie"></canvas></div>
+          </article>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Тип</th>
+                <th>Статья</th>
+                <th>Сумма</th>
+                <th>Доля В Общей Сумме</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in dashboard.level4.component_rows %}
+              <tr>
+                <td>{{ row.type }}</td>
+                <td>{{ row.component }}</td>
+                <td class="num">{{ row.total | money }}</td>
+                <td class="num">{{ row.share_of_total | pct }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card" id="level-5">
+        <h2 class="title-line"><span class="icon-chip"><svg><use href="#i-stack"></use></svg></span>Уровень 5: По Каждому Виду Затрат</h2>
+        <p class="section-note">Фокус: отдельный контур для Прямых, Косвенных и Неэффективности.</p>
+        {% for cost_key, cost_data in dashboard.level5.items() %}
+        <article class="chart wide type-block">
+          <h3><svg><use href="#i-table"></use></svg>{{ cost_data.title }}: Компоненты, Классы, Топ Услуг</h3>
+          <div class="mini-grid">
+            <div class="chart">
+              <h3><svg><use href="#i-bars"></use></svg>Компоненты {{ cost_data.title }}</h3>
+              <div class="canvas-wrap"><canvas id="lvl5-{{ cost_key }}-components"></canvas></div>
+            </div>
+            <div class="chart">
+              <h3><svg><use href="#i-bars"></use></svg>Классы {{ cost_data.title }}</h3>
+              <div class="canvas-wrap"><canvas id="lvl5-{{ cost_key }}-classes"></canvas></div>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Класс</th>
+                  <th>Услуга</th>
+                  <th>Значение</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for service in cost_data.top_services %}
+                <tr>
+                  <td>{{ service.class_name }}</td>
+                  <td>{{ service.service_name }}</td>
+                  <td class="num">{{ service.value | money }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </article>
+        {% endfor %}
+      </section>
+      {% endif %}
+    </div>
+
+    {% if dashboard %}
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+    <script>
+      const allServices = {{ dashboard.all_services | tojson }};
+      const level2 = {{ dashboard.level2 | tojson }};
+      const level3 = {{ dashboard.level3 | tojson }};
+      const level4 = {{ dashboard.level4 | tojson }};
+      const level5 = {{ dashboard.level5 | tojson }};
+      const fmtMoney = new Intl.NumberFormat("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      const fmtPct = new Intl.NumberFormat("ru-RU", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+      const palette = ["#1f6f66","#d47d2f","#3e7cb1","#a64b5a","#5e8c31","#6c63a8","#2f9d8f","#7a4f80"];
+      const state = {
+        mode: "absolute",
+        selectedService: null,
+        activeClasses: new Set(),
+        tableQuery: "",
+        tableSortKey: "total_cost",
+        tableSortDir: "desc",
+        drillClass: null,
+        drillServiceName: null,
+      };
+      const charts = {};
+      const drillCharts = {};
+      const staticCharts = {};
+
+      const el = {
+        classTogglesWrap: document.getElementById("classToggles"),
+        classToggleButtons: Array.from(document.querySelectorAll(".class-toggle-btn")),
+        searchFilter: document.getElementById("searchFilter"),
+        clearSearch: document.getElementById("clearSearch"),
+        servicesList: document.getElementById("servicesList"),
+        searchStatus: document.getElementById("searchStatus"),
+        modeAbs: document.getElementById("modeAbs"),
+        modePct: document.getElementById("modePct"),
+        reset: document.getElementById("resetFilters"),
+        services: document.getElementById("sliceServices"),
+        total: document.getElementById("sliceTotal"),
+        di: document.getElementById("sliceDirectIndirect"),
+        ineff: document.getElementById("sliceInefficiency"),
+        tableHeaders: Array.from(document.querySelectorAll("th.sortable-th")),
+        tableBody: document.getElementById("topServicesTableBody"),
+        tableServiceFilter: document.getElementById("tableServiceFilter"),
+        tableRowsCount: document.getElementById("tableRowsCount"),
+        topChartWrap: document.getElementById("topServicesWrap"),
+        level2Section: document.getElementById("level-2"),
+        level3Section: document.getElementById("level-3"),
+        drillClassName: document.getElementById("drillClassName"),
+        drillClassHint: document.getElementById("drillClassHint"),
+        clearDrillClass: document.getElementById("clearDrillClass"),
+        drillClassServicesCount: document.getElementById("drillClassServicesCount"),
+        drillClassDirect: document.getElementById("drillClassDirect"),
+        drillClassIndirect: document.getElementById("drillClassIndirect"),
+        drillClassIneff: document.getElementById("drillClassIneff"),
+        drillClassTotal: document.getElementById("drillClassTotal"),
+        drillClassShare: document.getElementById("drillClassShare"),
+        drillClassServicesBody: document.getElementById("drillClassServicesBody"),
+        clearDrillService: document.getElementById("clearDrillService"),
+        drillServiceName: document.getElementById("drillServiceName"),
+        drillServiceHint: document.getElementById("drillServiceHint"),
+        drillServiceClass: document.getElementById("drillServiceClass"),
+        drillServiceTotal: document.getElementById("drillServiceTotal"),
+        drillServiceDirect: document.getElementById("drillServiceDirect"),
+        drillServiceIndirect: document.getElementById("drillServiceIndirect"),
+        drillServiceIneff: document.getElementById("drillServiceIneff"),
+        drillServiceIneffShare: document.getElementById("drillServiceIneffShare"),
+        drillDirectDetailsBody: document.getElementById("drillDirectDetailsBody"),
+        drillIndirectDetailsBody: document.getElementById("drillIndirectDetailsBody"),
+        drillIneffDetailsBody: document.getElementById("drillIneffDetailsBody"),
+      };
+
+      const money = (v) => fmtMoney.format(v || 0);
+      const pct = (v) => `${fmtPct.format(v || 0)}%`;
+      const serviceNames = [...new Set(allServices.map((x) => x.service_name))].sort((a, b) => a.localeCompare(b, "ru"));
+      const globalTotalCost = allServices.reduce((acc, service) => acc + (service.total_cost || 0), 0);
+
+      for (const btn of el.classToggleButtons) {
+        const className = btn.dataset.className;
+        state.activeClasses.add(className);
+      }
+
+      function fillServiceDatalist() {
+        el.servicesList.innerHTML = "";
+        for (const name of serviceNames) {
+          const option = document.createElement("option");
+          option.value = name;
+          el.servicesList.appendChild(option);
+        }
+      }
+
+      function updateClassToggleVisuals() {
+        for (const btn of el.classToggleButtons) {
+          const className = btn.dataset.className;
+          const active = state.activeClasses.has(className);
+          btn.classList.toggle("active", active);
+          btn.classList.toggle("inactive", !active);
+        }
+      }
+
+      function updateSearchStatus(kind, message) {
+        el.searchStatus.classList.remove("ok", "warn");
+        if (kind) {
+          el.searchStatus.classList.add(kind);
+        }
+        el.searchStatus.textContent = message;
+      }
+
+      function updateClearSearchState() {
+        el.clearSearch.disabled = !el.searchFilter.value.trim();
+      }
+
+      function syncServiceSelectionFromInput() {
+        const raw = el.searchFilter.value.trim();
+        if (!raw) {
+          state.selectedService = null;
+          updateSearchStatus("", "Фильтр услуги не выбран.");
+          updateClearSearchState();
+          return;
+        }
+
+        if (serviceNames.includes(raw)) {
+          state.selectedService = raw;
+          updateSearchStatus("ok", `Выбрана услуга: ${raw}`);
+          updateClearSearchState();
+          return;
+        }
+
+        updateSearchStatus(
+          "warn",
+          state.selectedService
+            ? `Текст не из списка. Оставлен предыдущий выбор: ${state.selectedService}`
+            : "Текст не из списка. Фильтр услуги не применен."
+        );
+        updateClearSearchState();
+      }
+
+      function filteredServices() {
+        return allServices.filter((s) => {
+          if (!state.activeClasses.has(s.class_name)) return false;
+          if (state.selectedService && s.service_name !== state.selectedService) return false;
+          return true;
+        });
+      }
+
+      function totals(services) {
+        return services.reduce((a, s) => {
+          a.direct += s.direct_cost; a.indirect += s.indirect_cost; a.ineff += s.inefficiency_cost; a.total += s.total_cost;
+          return a;
+        }, { direct: 0, indirect: 0, ineff: 0, total: 0 });
+      }
+
+      function byClass(services) {
+        const m = new Map();
+        for (const s of services) {
+          if (!m.has(s.class_name)) m.set(s.class_name, { class_name: s.class_name, direct: 0, indirect: 0, ineff: 0, total: 0 });
+          const x = m.get(s.class_name);
+          x.direct += s.direct_cost; x.indirect += s.indirect_cost; x.ineff += s.inefficiency_cost; x.total += s.total_cost;
+        }
+        return [...m.values()].sort((a, b) => b.total - a.total);
+      }
+
+      function escapeHtml(text) {
+        return String(text ?? "")
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#039;");
+      }
+
+      function getServicesForClass(className) {
+        return allServices
+          .filter((service) => service.class_name === className)
+          .sort((a, b) => b.total_cost - a.total_cost);
+      }
+
+      function getDrillService() {
+        if (!state.drillClass || !state.drillServiceName) return null;
+        return allServices.find(
+          (service) =>
+            service.class_name === state.drillClass &&
+            service.service_name === state.drillServiceName
+        ) || null;
+      }
+
+      function jumpToLevel(sectionElement) {
+        if (!sectionElement) return;
+        sectionElement.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+
+      function setSummary(services, t) {
+        el.services.textContent = services.length;
+        el.total.textContent = money(t.total);
+        el.di.textContent = `${money(t.direct)} / ${money(t.indirect)}`;
+        el.ineff.textContent = `${money(t.ineff)} (${pct(t.total ? (t.ineff / t.total) * 100 : 0)})`;
+      }
+
+      function updateTableHeaderSortVisuals() {
+        for (const th of el.tableHeaders) {
+          const key = th.dataset.sortKey;
+          const mark = th.querySelector(".sort-mark");
+          const active = state.tableSortKey === key;
+          th.classList.toggle("active", active);
+          th.setAttribute("aria-sort", active ? (state.tableSortDir === "asc" ? "ascending" : "descending") : "none");
+          if (mark) {
+            mark.textContent = active ? (state.tableSortDir === "asc" ? "↑" : "↓") : "↕";
+          }
+        }
+      }
+
+      function compareText(a, b) {
+        return String(a || "").localeCompare(String(b || ""), "ru");
+      }
+
+      function compareNumber(a, b) {
+        return (Number(a) || 0) - (Number(b) || 0);
+      }
+
+      function applyTableFiltersAndSort(services, t) {
+        let rows = [...services];
+        const query = state.tableQuery.trim().toLowerCase();
+
+        if (query) {
+          rows = rows.filter((s) =>
+            s.service_name.toLowerCase().includes(query) ||
+            s.class_name.toLowerCase().includes(query)
+          );
+        }
+
+        const dir = state.tableSortDir === "asc" ? 1 : -1;
+        rows.sort((a, b) => {
+          let cmp = 0;
+          switch (state.tableSortKey) {
+            case "class_name":
+              cmp = compareText(a.class_name, b.class_name);
+              break;
+            case "service_name":
+              cmp = compareText(a.service_name, b.service_name);
+              break;
+            case "direct_cost":
+            case "indirect_cost":
+            case "inefficiency_cost":
+            case "indirect_sum":
+            case "total_cost":
+              cmp = compareNumber(a[state.tableSortKey], b[state.tableSortKey]);
+              break;
+            case "share": {
+              const aShare = t.total ? a.total_cost / t.total : 0;
+              const bShare = t.total ? b.total_cost / t.total : 0;
+              cmp = compareNumber(aShare, bShare);
+              break;
+            }
+            default:
+              cmp = compareNumber(a.total_cost, b.total_cost);
+          }
+          if (cmp === 0) {
+            return compareText(a.service_name, b.service_name);
+          }
+          return cmp * dir;
+        });
+
+        return rows;
+      }
+
+      function renderTable(services, t) {
+        const rows = applyTableFiltersAndSort(services, t);
+        el.tableRowsCount.textContent = rows.length;
+        updateTableHeaderSortVisuals();
+
+        if (!rows.length) {
+          el.tableBody.innerHTML = '<tr><td colspan="8">Нет данных под текущий фильтр.</td></tr>';
+          return;
+        }
+
+        el.tableBody.innerHTML = rows.map((s) => `
+          <tr class="table-drill-row" data-class-name="${encodeURIComponent(s.class_name)}" data-service-name="${encodeURIComponent(s.service_name)}">
+            <td>${escapeHtml(s.class_name)}</td>
+            <td>${escapeHtml(s.service_name)}</td>
+            <td class="num">${money(s.direct_cost)}</td>
+            <td class="num">${money(s.indirect_cost)}</td>
+            <td class="num">${money(s.inefficiency_cost)}</td>
+            <td class="num">${money(s.indirect_sum)}</td>
+            <td class="num">${money(s.total_cost)}</td>
+            <td class="num">${pct(t.total ? (s.total_cost / t.total) * 100 : 0)}</td>
+          </tr>`).join("");
+      }
+
+      function destroyCharts() {
+        Object.values(charts).forEach((c) => c && c.destroy && c.destroy());
+      }
+
+      function destroyDrillCharts() {
+        Object.values(drillCharts).forEach((c) => c && c.destroy && c.destroy());
+        Object.keys(drillCharts).forEach((key) => delete drillCharts[key]);
+      }
+
+      function pie(id, labels, values) {
+        return new Chart(document.getElementById(id), {
+          type: "pie",
+          data: { labels, datasets: [{ data: values, backgroundColor: labels.map((_, i) => palette[i % palette.length]), borderColor: "#fff", borderWidth: 2 }] },
+          options: {
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { position: "bottom" },
+              tooltip: { callbacks: { label: (ctx) => state.mode === "percent" ? `${ctx.label}: ${pct(ctx.parsed)}` : `${ctx.label}: ${money(ctx.parsed)}` } }
+            }
+          }
+        });
+      }
+
+      function bar(id, labels, values, horizontal = false, color = "#3e7cb1", label = "Значение") {
+        return new Chart(document.getElementById(id), {
+          type: "bar",
+          data: { labels, datasets: [{ label, data: values, backgroundColor: color, borderRadius: 8 }] },
+          options: {
+            maintainAspectRatio: false,
+            indexAxis: horizontal ? "y" : "x",
+            scales: horizontal ? { x: { ticks: { callback: (v) => state.mode === "percent" ? pct(v) : money(v) } } } : { y: { ticks: { callback: (v) => state.mode === "percent" ? pct(v) : money(v) } } },
+            plugins: { legend: { display: false } }
+          }
+        });
+      }
+
+      function stacked(id, labels, d, i, f) {
+        return new Chart(document.getElementById(id), {
+          type: "bar",
+          data: {
+            labels,
+            datasets: [
+              { label: "Прямые", data: d, backgroundColor: "#1f6f66" },
+              { label: "Косвенные", data: i, backgroundColor: "#3e7cb1" },
+              { label: "Неэффективность", data: f, backgroundColor: "#d47d2f" },
+            ],
+          },
+          options: {
+            maintainAspectRatio: false,
+            scales: { x: { stacked: true }, y: { stacked: true, suggestedMax: state.mode === "percent" ? 100 : undefined, ticks: { callback: (v) => state.mode === "percent" ? pct(v) : money(v) } } },
+            plugins: { legend: { position: "bottom" } },
+          },
+        });
+      }
+
+      function stackedHorizontal(id, labels, d, i, f, dAbs, iAbs, fAbs, totalsAbs) {
+        return new Chart(document.getElementById(id), {
+          type: "bar",
+          data: {
+            labels,
+            datasets: [
+              { label: "Прямые", data: d, absData: dAbs, backgroundColor: "#1f6f66" },
+              { label: "Косвенные", data: i, absData: iAbs, backgroundColor: "#3e7cb1" },
+              { label: "Неэффективность", data: f, absData: fAbs, backgroundColor: "#d47d2f" },
+            ],
+          },
+          options: {
+            maintainAspectRatio: false,
+            indexAxis: "y",
+            scales: {
+              x: {
+                stacked: true,
+                suggestedMax: state.mode === "percent" ? 100 : undefined,
+                ticks: { callback: (v) => state.mode === "percent" ? pct(v) : money(v) },
+              },
+              y: { stacked: true },
+            },
+            plugins: {
+              legend: { position: "bottom" },
+              tooltip: {
+                callbacks: {
+                  beforeBody: (items) => {
+                    if (!items.length) return "";
+                    const idx = items[0].dataIndex;
+                    return `Суммарные затраты: ${money(totalsAbs[idx] || 0)}`;
+                  },
+                  label: (ctx) => {
+                    const absValue = ctx.dataset.absData?.[ctx.dataIndex] || 0;
+                    if (state.mode === "percent") {
+                      return `Выбранный пункт затрат (${ctx.dataset.label}): ${pct(ctx.raw)} (${money(absValue)})`;
+                    }
+                    return `Выбранный пункт затрат (${ctx.dataset.label}): ${money(absValue)}`;
+                  },
+                },
+              },
+            },
+          },
+        });
+      }
+
+      function setDrillClass(className, options = {}) {
+        const { scroll = false } = options;
+        if (!className) {
+          state.drillClass = null;
+          state.drillServiceName = null;
+          renderDrilldown();
+          return;
+        }
+        state.drillClass = className;
+        if (state.drillServiceName) {
+          const exists = allServices.some(
+            (service) =>
+              service.class_name === className &&
+              service.service_name === state.drillServiceName
+          );
+          if (!exists) state.drillServiceName = null;
+        }
+        renderDrilldown();
+        if (scroll) jumpToLevel(el.level2Section);
+      }
+
+      function setDrillService(className, serviceName, options = {}) {
+        const { scroll = false } = options;
+        if (!className || !serviceName) return;
+        const service = allServices.find(
+          (row) => row.class_name === className && row.service_name === serviceName
+        );
+        if (!service) return;
+        state.drillClass = className;
+        state.drillServiceName = serviceName;
+        renderDrilldown();
+        if (scroll) jumpToLevel(el.level3Section);
+      }
+
+      function renderDetailTable(bodyElement, details) {
+        const rows = Object.entries(details || {})
+          .filter(([, value]) => Number(value) !== 0)
+          .sort((a, b) => Number(b[1]) - Number(a[1]));
+        if (!rows.length) {
+          bodyElement.innerHTML = '<tr><td colspan="2">Нет данных</td></tr>';
+          return;
+        }
+        bodyElement.innerHTML = rows
+          .map(
+            ([name, value]) => `
+            <tr>
+              <td>${escapeHtml(name)}</td>
+              <td class="num">${money(value)}</td>
+            </tr>`
+          )
+          .join("");
+      }
+
+      function renderClassDrill() {
+        if (!state.drillClass) {
+          el.drillClassName.textContent = "-";
+          el.drillClassHint.textContent = "Нажмите на класс в графиках верхнего уровня, чтобы увидеть его детализацию.";
+          el.drillClassServicesCount.textContent = "-";
+          el.drillClassDirect.textContent = "-";
+          el.drillClassIndirect.textContent = "-";
+          el.drillClassIneff.textContent = "-";
+          el.drillClassTotal.textContent = "-";
+          el.drillClassShare.textContent = "-";
+          el.clearDrillClass.disabled = true;
+          el.drillClassServicesBody.innerHTML = '<tr><td colspan="6">Выберите класс на графике уровня 1.</td></tr>';
+          return;
+        }
+
+        const classServices = getServicesForClass(state.drillClass);
+        if (!classServices.length) {
+          state.drillClass = null;
+          state.drillServiceName = null;
+          renderClassDrill();
+          return;
+        }
+
+        const classTotals = totals(classServices);
+        const classShareOfTotal = globalTotalCost ? (classTotals.total / globalTotalCost) * 100 : 0;
+
+        el.clearDrillClass.disabled = false;
+        el.drillClassName.textContent = state.drillClass;
+        el.drillClassHint.textContent = "Клик по услуге в графике или таблице откроет детальный уровень услуги.";
+        el.drillClassServicesCount.textContent = String(classServices.length);
+        el.drillClassDirect.textContent = money(classTotals.direct);
+        el.drillClassIndirect.textContent = money(classTotals.indirect);
+        el.drillClassIneff.textContent = money(classTotals.ineff);
+        el.drillClassTotal.textContent = money(classTotals.total);
+        el.drillClassShare.textContent = pct(classShareOfTotal);
+
+        const classServiceLabels = classServices.map((service) => service.service_name);
+        const classServiceValuesAbs = classServices.map((service) => service.total_cost);
+        const classServiceValuesPct = classServices.map((service) =>
+          classTotals.total ? (service.total_cost / classTotals.total) * 100 : 0
+        );
+        const classServiceValues = state.mode === "percent" ? classServiceValuesPct : classServiceValuesAbs;
+
+        const classServicesCanvas = document.getElementById("drillClassServicesBar");
+        classServicesCanvas.parentElement.style.height = `${Math.max(280, classServices.length * 28 + 110)}px`;
+        drillCharts.classServices = new Chart(classServicesCanvas, {
+          type: "bar",
+          data: {
+            labels: classServiceLabels,
+            datasets: [
+              {
+                label: state.mode === "percent" ? "Доля услуги в классе" : "Сумма услуги",
+                data: classServiceValues,
+                absData: classServiceValuesAbs,
+                backgroundColor: "#2f7f73",
+                borderRadius: 8,
+              },
+            ],
+          },
+          options: {
+            maintainAspectRatio: false,
+            indexAxis: "y",
+            onClick: (_event, elements) => {
+              if (!elements.length) return;
+              const idx = elements[0].index;
+              const service = classServices[idx];
+              setDrillService(state.drillClass, service.service_name, { scroll: true });
+            },
+            scales: {
+              x: {
+                suggestedMax: state.mode === "percent" ? 100 : undefined,
+                ticks: { callback: (value) => (state.mode === "percent" ? pct(value) : money(value)) },
+              },
+            },
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                callbacks: {
+                  label: (ctx) => {
+                    const abs = ctx.dataset.absData?.[ctx.dataIndex] || 0;
+                    if (state.mode === "percent") {
+                      return `${ctx.label}: ${pct(ctx.raw)} (${money(abs)})`;
+                    }
+                    return `${ctx.label}: ${money(abs)}`;
+                  },
+                },
+              },
+            },
+          },
+        });
+
+        const classStructureAbs = [classTotals.direct, classTotals.indirect, classTotals.ineff];
+        const classStructurePct = classStructureAbs.map((value) =>
+          classTotals.total ? (value / classTotals.total) * 100 : 0
+        );
+        const classStructureValues = state.mode === "percent" ? classStructurePct : classStructureAbs;
+        drillCharts.classStructure = new Chart(document.getElementById("drillClassStructurePie"), {
+          type: "pie",
+          data: {
+            labels: ["Прямые", "Косвенные", "Неэффективность"],
+            datasets: [
+              {
+                data: classStructureValues,
+                absData: classStructureAbs,
+                backgroundColor: ["#1f6f66", "#3e7cb1", "#d47d2f"],
+                borderColor: "#fff",
+                borderWidth: 2,
+              },
+            ],
+          },
+          options: {
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { position: "bottom" },
+              tooltip: {
+                callbacks: {
+                  label: (ctx) => {
+                    const abs = ctx.dataset.absData?.[ctx.dataIndex] || 0;
+                    if (state.mode === "percent") {
+                      return `${ctx.label}: ${pct(ctx.parsed)} (${money(abs)})`;
+                    }
+                    return `${ctx.label}: ${money(abs)}`;
+                  },
+                },
+              },
+            },
+          },
+        });
+
+        el.drillClassServicesBody.innerHTML = classServices
+          .map((service) => {
+            const shareInClass = classTotals.total ? (service.total_cost / classTotals.total) * 100 : 0;
+            const isActive = state.drillServiceName === service.service_name;
+            return `
+              <tr class="table-drill-row ${isActive ? "active" : ""}" data-drill-service-name="${encodeURIComponent(service.service_name)}">
+                <td><button type="button" class="service-link-btn">${escapeHtml(service.service_name)}</button></td>
+                <td class="num">${money(service.direct_cost)}</td>
+                <td class="num">${money(service.indirect_cost)}</td>
+                <td class="num">${money(service.inefficiency_cost)}</td>
+                <td class="num">${money(service.total_cost)}</td>
+                <td class="num">${pct(shareInClass)}</td>
+              </tr>
+            `;
+          })
+          .join("");
+      }
+
+      function renderServiceDrill() {
+        const service = getDrillService();
+        if (!service) {
+          el.drillServiceName.textContent = "-";
+          el.drillServiceHint.textContent = "Нажмите на услугу в таблице или на гистограмме уровня 2.";
+          el.drillServiceClass.textContent = "-";
+          el.drillServiceTotal.textContent = "-";
+          el.drillServiceDirect.textContent = "-";
+          el.drillServiceIndirect.textContent = "-";
+          el.drillServiceIneff.textContent = "-";
+          el.drillServiceIneffShare.textContent = "-";
+          el.clearDrillService.disabled = true;
+          el.drillDirectDetailsBody.innerHTML = '<tr><td colspan="2">Нет данных</td></tr>';
+          el.drillIndirectDetailsBody.innerHTML = '<tr><td colspan="2">Нет данных</td></tr>';
+          el.drillIneffDetailsBody.innerHTML = '<tr><td colspan="2">Нет данных</td></tr>';
+          return;
+        }
+
+        const serviceTotal = service.total_cost || 0;
+        const ineffShare = serviceTotal ? (service.inefficiency_cost / serviceTotal) * 100 : 0;
+
+        el.clearDrillService.disabled = false;
+        el.drillServiceName.textContent = service.service_name;
+        el.drillServiceHint.textContent = "Показаны детальные статьи затрат выбранной услуги.";
+        el.drillServiceClass.textContent = service.class_name;
+        el.drillServiceTotal.textContent = money(service.total_cost);
+        el.drillServiceDirect.textContent = money(service.direct_cost);
+        el.drillServiceIndirect.textContent = money(service.indirect_cost);
+        el.drillServiceIneff.textContent = money(service.inefficiency_cost);
+        el.drillServiceIneffShare.textContent = pct(ineffShare);
+
+        const serviceStructureAbs = [service.direct_cost, service.indirect_cost, service.inefficiency_cost];
+        const serviceStructurePct = serviceStructureAbs.map((value) =>
+          serviceTotal ? (value / serviceTotal) * 100 : 0
+        );
+        const serviceStructureValues = state.mode === "percent" ? serviceStructurePct : serviceStructureAbs;
+        drillCharts.serviceStructure = new Chart(document.getElementById("drillServiceStructurePie"), {
+          type: "pie",
+          data: {
+            labels: ["Прямые", "Косвенные", "Неэффективность"],
+            datasets: [
+              {
+                data: serviceStructureValues,
+                absData: serviceStructureAbs,
+                backgroundColor: ["#1f6f66", "#3e7cb1", "#d47d2f"],
+                borderColor: "#fff",
+                borderWidth: 2,
+              },
+            ],
+          },
+          options: {
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { position: "bottom" },
+              tooltip: {
+                callbacks: {
+                  label: (ctx) => {
+                    const abs = ctx.dataset.absData?.[ctx.dataIndex] || 0;
+                    if (state.mode === "percent") {
+                      return `${ctx.label}: ${pct(ctx.parsed)} (${money(abs)})`;
+                    }
+                    return `${ctx.label}: ${money(abs)}`;
+                  },
+                },
+              },
+            },
+          },
+        });
+
+        const componentRows = [
+          ...Object.entries(service.direct_details || {}).map(([name, value]) => ({ label: `Прямые: ${name}`, value, color: "#1f6f66" })),
+          ...Object.entries(service.indirect_details || {}).map(([name, value]) => ({ label: `Косвенные: ${name}`, value, color: "#3e7cb1" })),
+          ...Object.entries(service.inefficiency_details || {}).map(([name, value]) => ({ label: `Неэффективность: ${name}`, value, color: "#d47d2f" })),
+        ]
+          .filter((row) => Number(row.value) !== 0)
+          .sort((a, b) => Number(b.value) - Number(a.value))
+          .slice(0, 20);
+
+        const componentCanvas = document.getElementById("drillServiceComponentsBar");
+        componentCanvas.parentElement.style.height = `${Math.max(280, componentRows.length * 24 + 110)}px`;
+        drillCharts.serviceComponents = new Chart(componentCanvas, {
+          type: "bar",
+          data: {
+            labels: componentRows.map((row) => row.label),
+            datasets: [
+              {
+                label: "Сумма статьи",
+                data: componentRows.map((row) => row.value),
+                backgroundColor: componentRows.map((row) => row.color),
+                borderRadius: 8,
+              },
+            ],
+          },
+          options: {
+            maintainAspectRatio: false,
+            indexAxis: "y",
+            scales: { x: { ticks: { callback: (value) => money(value) } } },
+            plugins: {
+              legend: { display: false },
+              tooltip: { callbacks: { label: (ctx) => `${ctx.label}: ${money(ctx.raw)}` } },
+            },
+          },
+        });
+
+        renderDetailTable(el.drillDirectDetailsBody, service.direct_details);
+        renderDetailTable(el.drillIndirectDetailsBody, service.indirect_details);
+        renderDetailTable(el.drillIneffDetailsBody, service.inefficiency_details);
+      }
+
+      function renderDrilldown() {
+        destroyDrillCharts();
+        renderClassDrill();
+        renderServiceDrill();
+      }
+
+      function attachClassDrillHandlers(classRows) {
+        const classLabels = classRows.map((row) => row.class_name);
+        const pieCanvas = document.getElementById("classSharePie");
+        const stackCanvas = document.getElementById("classStackBar");
+        pieCanvas.style.cursor = classLabels.length ? "pointer" : "default";
+        stackCanvas.style.cursor = classLabels.length ? "pointer" : "default";
+
+        pieCanvas.onclick = (event) => {
+          if (!charts.classPie) return;
+          const points = charts.classPie.getElementsAtEventForMode(event, "nearest", { intersect: true }, true);
+          if (!points.length) return;
+          const className = classLabels[points[0].index];
+          setDrillClass(className, { scroll: true });
+        };
+
+        stackCanvas.onclick = (event) => {
+          if (!charts.stack) return;
+          const points = charts.stack.getElementsAtEventForMode(event, "nearest", { intersect: true }, true);
+          if (!points.length) return;
+          const className = classLabels[points[0].index];
+          setDrillClass(className, { scroll: true });
+        };
+      }
+
+      function destroyStaticCharts() {
+        Object.values(staticCharts).forEach((chart) => chart && chart.destroy && chart.destroy());
+      }
+
+      function formatByType(value, type) {
+        if (type === "percent") return pct(value);
+        if (type === "count") return `${Math.round(value || 0)}`;
+        return money(value);
+      }
+
+      function barStatic(id, labels, values, config = {}) {
+        const {
+          horizontal = false,
+          color = "#3e7cb1",
+          label = "Значение",
+          valueType = "money",
+        } = config;
+        const elCanvas = document.getElementById(id);
+        if (!elCanvas) return null;
+
+        return new Chart(elCanvas, {
+          type: "bar",
+          data: {
+            labels,
+            datasets: [{ label, data: values, backgroundColor: color, borderRadius: 8 }],
+          },
+          options: {
+            maintainAspectRatio: false,
+            indexAxis: horizontal ? "y" : "x",
+            scales: horizontal
+              ? { x: { ticks: { callback: (v) => formatByType(v, valueType) } } }
+              : { y: { ticks: { callback: (v) => formatByType(v, valueType) } } },
+            plugins: {
+              legend: { display: false },
+              tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${formatByType(ctx.parsed[horizontal ? "x" : "y"], valueType)}` } },
+            },
+          },
+        });
+      }
+
+      function pieStatic(id, labels, values, valueType = "money") {
+        const elCanvas = document.getElementById(id);
+        if (!elCanvas) return null;
+        return new Chart(elCanvas, {
+          type: "pie",
+          data: {
+            labels,
+            datasets: [{ data: values, backgroundColor: labels.map((_, i) => palette[i % palette.length]), borderColor: "#fff", borderWidth: 2 }],
+          },
+          options: {
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { position: "bottom" },
+              tooltip: { callbacks: { label: (ctx) => `${ctx.label}: ${formatByType(ctx.parsed, valueType)}` } },
+            },
+          },
+        });
+      }
+
+      function drawStaticLevelCharts() {
+        destroyStaticCharts();
+
+        staticCharts.lvl2Totals = barStatic(
+          "lvl2ClassTotalsBar",
+          level2.class_labels,
+          level2.class_totals,
+          { horizontal: true, color: "#2f7f73", label: "Итого по классу", valueType: "money" }
+        );
+        staticCharts.lvl2Ineff = barStatic(
+          "lvl2IneffShareBar",
+          level2.class_labels,
+          level2.class_ineff_shares,
+          { horizontal: true, color: "#d47d2f", label: "Неэффективность, %", valueType: "percent" }
+        );
+
+        staticCharts.lvl3TopTotal = barStatic(
+          "lvl3TopTotalBar",
+          level3.top_total_labels,
+          level3.top_total_values,
+          { horizontal: true, color: "#1f6f66", label: "Сумма услуги", valueType: "money" }
+        );
+        staticCharts.lvl3TopIneff = barStatic(
+          "lvl3TopIneffBar",
+          level3.top_ineff_labels,
+          level3.top_ineff_values,
+          { horizontal: true, color: "#d47d2f", label: "Неэффективность", valueType: "money" }
+        );
+        staticCharts.lvl3Hist = barStatic(
+          "lvl3ServiceHistBar",
+          level3.hist_labels,
+          level3.hist_values,
+          { horizontal: false, color: "#3e7cb1", label: "Количество услуг", valueType: "count" }
+        );
+
+        staticCharts.lvl4Components = barStatic(
+          "lvl4ComponentBar",
+          level4.component_labels,
+          level4.component_values,
+          { horizontal: true, color: "#3e7cb1", label: "Сумма статьи", valueType: "money" }
+        );
+        staticCharts.lvl4TypePie = pieStatic(
+          "lvl4TypePie",
+          level4.type_labels,
+          level4.type_values,
+          "money"
+        );
+
+        for (const [costKey, costData] of Object.entries(level5)) {
+          staticCharts[`lvl5Comp_${costKey}`] = barStatic(
+            `lvl5-${costKey}-components`,
+            costData.component_labels,
+            costData.component_values,
+            { horizontal: true, color: "#2f7f73", label: `${costData.title}: статья`, valueType: "money" }
+          );
+          staticCharts[`lvl5Class_${costKey}`] = barStatic(
+            `lvl5-${costKey}-classes`,
+            costData.class_labels,
+            costData.class_values,
+            { horizontal: true, color: "#3e7cb1", label: `${costData.title}: класс`, valueType: "money" }
+          );
+        }
+      }
+
+      function setTopChartHeight(serviceCount) {
+        const height = Math.max(360, serviceCount * 28 + 120);
+        el.topChartWrap.style.height = `${height}px`;
+      }
+
+      function drawCharts(services, t) {
+        destroyCharts();
+        const cls = byClass(services);
+        const clsLabels = cls.map((x) => x.class_name);
+        const clsTotals = cls.map((x) => x.total);
+        const clsShares = clsTotals.map((v) => t.total ? (v / t.total) * 100 : 0);
+
+        const costAbs = [t.direct, t.indirect, t.ineff];
+        const costPct = costAbs.map((v) => t.total ? (v / t.total) * 100 : 0);
+        charts.cost = pie("costStructurePie", ["Прямые","Косвенные","Неэффективность"], state.mode === "percent" ? costPct : costAbs);
+        charts.classPie = pie("classSharePie", clsLabels, state.mode === "percent" ? clsShares : clsTotals);
+
+        const d = state.mode === "percent" ? cls.map((x) => x.total ? (x.direct / x.total) * 100 : 0) : cls.map((x) => x.direct);
+        const i = state.mode === "percent" ? cls.map((x) => x.total ? (x.indirect / x.total) * 100 : 0) : cls.map((x) => x.indirect);
+        const f = state.mode === "percent" ? cls.map((x) => x.total ? (x.ineff / x.total) * 100 : 0) : cls.map((x) => x.ineff);
+        charts.stack = stacked("classStackBar", clsLabels, d, i, f);
+        attachClassDrillHandlers(cls);
+
+        const top = [...services].sort((a, b) => b.total_cost - a.total_cost);
+        const topLabels = top.map((x) => x.service_name);
+        const topDirectAbs = top.map((x) => x.direct_cost);
+        const topIndirectAbs = top.map((x) => x.indirect_cost);
+        const topIneffAbs = top.map((x) => x.inefficiency_cost);
+        const topTotalsAbs = top.map((x) => x.total_cost);
+
+        const topDirect = state.mode === "percent" ? top.map((x) => x.total_cost ? (x.direct_cost / x.total_cost) * 100 : 0) : topDirectAbs;
+        const topIndirect = state.mode === "percent" ? top.map((x) => x.total_cost ? (x.indirect_cost / x.total_cost) * 100 : 0) : topIndirectAbs;
+        const topIneff = state.mode === "percent" ? top.map((x) => x.total_cost ? (x.inefficiency_cost / x.total_cost) * 100 : 0) : topIneffAbs;
+        setTopChartHeight(top.length);
+        charts.top = stackedHorizontal("topServicesBar", topLabels, topDirect, topIndirect, topIneff, topDirectAbs, topIndirectAbs, topIneffAbs, topTotalsAbs);
+      }
+
+      function setMode(mode) {
+        state.mode = mode;
+        el.modeAbs.classList.toggle("active", mode === "absolute");
+        el.modePct.classList.toggle("active", mode === "percent");
+        render();
+      }
+
+      function render() {
+        const services = filteredServices();
+        const t = totals(services);
+        setSummary(services, t);
+        renderTable(services, t);
+        drawCharts(services, t);
+        renderDrilldown();
+      }
+
+      function renderTableOnly() {
+        const services = filteredServices();
+        const t = totals(services);
+        renderTable(services, t);
+      }
+
+      el.classTogglesWrap.addEventListener("click", (event) => {
+        const button = event.target.closest(".class-toggle-btn");
+        if (!button) return;
+        const className = button.dataset.className;
+        if (state.activeClasses.has(className)) {
+          state.activeClasses.delete(className);
+        } else {
+          state.activeClasses.add(className);
+        }
+        updateClassToggleVisuals();
+        render();
+      });
+
+      el.searchFilter.addEventListener("input", () => {
+        syncServiceSelectionFromInput();
+        render();
+      });
+      el.searchFilter.addEventListener("change", () => {
+        syncServiceSelectionFromInput();
+        render();
+      });
+      el.searchFilter.addEventListener("blur", () => {
+        syncServiceSelectionFromInput();
+      });
+      el.clearSearch.addEventListener("click", () => {
+        el.searchFilter.value = "";
+        state.selectedService = null;
+        updateSearchStatus("", "Фильтр услуги не выбран.");
+        updateClearSearchState();
+        render();
+        el.searchFilter.focus();
+      });
+      el.tableServiceFilter.addEventListener("input", () => {
+        state.tableQuery = el.tableServiceFilter.value;
+        renderTableOnly();
+      });
+      el.tableBody.addEventListener("click", (event) => {
+        const row = event.target.closest("tr[data-class-name][data-service-name]");
+        if (!row) return;
+        const className = decodeURIComponent(row.dataset.className || "");
+        const serviceName = decodeURIComponent(row.dataset.serviceName || "");
+        setDrillService(className, serviceName, { scroll: true });
+      });
+      el.drillClassServicesBody.addEventListener("click", (event) => {
+        const row = event.target.closest("tr[data-drill-service-name]");
+        if (!row || !state.drillClass) return;
+        const serviceName = decodeURIComponent(row.dataset.drillServiceName || "");
+        setDrillService(state.drillClass, serviceName, { scroll: true });
+      });
+      el.clearDrillClass.addEventListener("click", () => {
+        setDrillClass(null);
+      });
+      el.clearDrillService.addEventListener("click", () => {
+        state.drillServiceName = null;
+        renderDrilldown();
+      });
+      for (const th of el.tableHeaders) {
+        th.addEventListener("click", () => {
+          const key = th.dataset.sortKey;
+          if (!key) return;
+          if (state.tableSortKey === key) {
+            state.tableSortDir = state.tableSortDir === "asc" ? "desc" : "asc";
+          } else {
+            state.tableSortKey = key;
+            state.tableSortDir = "desc";
+          }
+          renderTableOnly();
+        });
+      }
+      el.modeAbs.addEventListener("click", () => setMode("absolute"));
+      el.modePct.addEventListener("click", () => setMode("percent"));
+      el.reset.addEventListener("click", () => {
+        state.activeClasses = new Set(el.classToggleButtons.map((btn) => btn.dataset.className));
+        el.searchFilter.value = "";
+        state.selectedService = null;
+        state.tableQuery = "";
+        state.tableSortKey = "total_cost";
+        state.tableSortDir = "desc";
+        state.drillClass = null;
+        state.drillServiceName = null;
+        el.tableServiceFilter.value = "";
+        updateClassToggleVisuals();
+        updateSearchStatus("", "Фильтр услуги не выбран.");
+        updateClearSearchState();
+        setMode("absolute");
+      });
+
+      fillServiceDatalist();
+      updateClassToggleVisuals();
+      syncServiceSelectionFromInput();
+      render();
+      drawStaticLevelCharts();
+    </script>
+    {% endif %}
+  </body>
+</html>

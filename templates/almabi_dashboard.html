@@ -1,0 +1,782 @@
+{% extends "dashboard_shell.html" %}
+
+{% block title %}AlMaBi BI{% endblock %}
+
+{% block main_class %}flex min-h-0 flex-1 flex-col overflow-hidden bg-[#eef6ff]{% endblock %}
+{% block content_wrapper_class %}flex min-h-0 flex-1 flex-col p-0{% endblock %}
+
+{% block breadcrumbs %}{% endblock %}
+
+{% block top_actions %}
+<button
+  type="button"
+  data-file-menu-open
+  class="inline-flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 shadow-sm hover:border-brand-300 hover:text-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
+  title="Загрузка данных"
+  aria-label="Загрузка данных"
+>
+  <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.607 2.296.07 2.572-1.065z" />
+    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+  </svg>
+</button>
+{% endblock %}
+
+{% block content %}
+<div class="flex min-h-0 flex-1 flex-col text-slate-800" data-almabi-dashboard>
+  <div class="sticky top-0 z-20 shrink-0 border-b border-sky-100/80 bg-[#eef6ff]/95 px-5 py-4 backdrop-blur">
+    <div class="flex flex-wrap items-center justify-between gap-4">
+      <div class="flex flex-wrap gap-2" role="tablist" aria-label="Разделы AlMaBi BI">
+        <button type="button" class="almabi-tab rounded-lg bg-white px-5 py-2.5 text-sm font-semibold text-slate-800 shadow-sm" data-tab-button="summary">Сводная информация</button>
+        <button type="button" class="almabi-tab rounded-lg px-5 py-2.5 text-sm font-semibold text-slate-600 hover:bg-white/70" data-tab-button="revenue">Детализация выручки</button>
+        <button type="button" class="almabi-tab rounded-lg px-5 py-2.5 text-sm font-semibold text-slate-600 hover:bg-white/70" data-tab-button="contractors">Детализация по контрагентам</button>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-3 text-sm font-semibold">
+        <span class="text-slate-500 text-xs font-medium">ед.</span>
+        <div class="flex rounded-lg bg-white p-1 shadow-sm ring-1 ring-slate-200/80" data-unit-group>
+          {% for unit in dashboard.units %}
+          <button type="button" class="rounded-md px-3.5 py-1.5 text-sm {% if loop.index == 2 %}bg-sky-100 text-sky-900{% else %}text-slate-500 hover:text-slate-700{% endif %}" data-unit="{{ unit.key }}" data-divisor="{{ unit.divisor }}">{{ unit.label }}</button>
+          {% endfor %}
+        </div>
+        <div class="flex rounded-lg bg-white p-1 shadow-sm ring-1 ring-slate-200/80" data-scenario-group>
+          {% for scenario in dashboard.scenarios %}
+          <button type="button" class="rounded-md px-3.5 py-1.5 text-sm {% if loop.first %}bg-sky-100 text-sky-900{% else %}text-slate-500 hover:text-slate-700{% endif %}" data-scenario="{{ scenario }}">{{ scenario }}</button>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <div class="mt-4 flex flex-wrap items-end gap-3" data-filter-toolbar>
+      <div class="grid flex-1 grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-7" data-filter-bar>
+        {% set filter_labels = {
+          "taxType": "Вид налогообложения",
+          "project": "Проект",
+          "direction": "Направление",
+          "projectGroup": "Группа проектов",
+          "contract": "Договор",
+          "contractor": "Контрагент",
+          "month": "Месяц"
+        } %}
+        {% for key, options in dashboard.filters.items() %}
+        <div
+          class="almabi-select"
+          data-filter-select="{{ key }}"
+          data-filter-label="{{ filter_labels[key] }}"
+          data-filter-default="{{ options[0] }}"
+        >
+          <button type="button" class="almabi-select__trigger" aria-haspopup="listbox" aria-expanded="false">
+            <span class="almabi-select__label">{{ filter_labels[key] }}</span>
+            <span class="almabi-select__value">{{ options[0] }}</span>
+            <svg class="almabi-select__chevron" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          <div class="almabi-select__menu hidden" role="listbox">
+            {% for option in options %}
+            <button
+              type="button"
+              class="almabi-select__option{% if loop.first %} is-selected{% endif %}"
+              role="option"
+              data-value="{{ option }}"
+              aria-selected="{% if loop.first %}true{% else %}false{% endif %}"
+            >{{ option }}</button>
+            {% endfor %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      <button
+        type="button"
+        data-filter-reset
+        class="shrink-0 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-600 shadow-sm hover:border-sky-200 hover:text-sky-800"
+        title="Сбросить фильтры"
+      >
+        Сбросить
+      </button>
+    </div>
+    <p data-filter-hint class="mt-2 hidden text-xs text-sky-800"></p>
+  </div>
+
+  <section class="flex min-h-0 flex-1 flex-col overflow-hidden p-5" data-tab-panel="summary">
+    <div class="almabi-summary-card flex min-h-0 flex-1 flex-col overflow-hidden rounded-sm bg-white shadow-sm">
+      <div class="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
+        <h1 class="text-lg font-bold text-slate-900">Сводная информация</h1>
+        <div class="flex flex-wrap items-center gap-2">
+          <button type="button" data-summary-expand-all class="rounded-sm bg-white px-3 py-2 text-xs font-semibold text-slate-600 ring-1 ring-slate-200 hover:ring-sky-200">
+            Раскрыть всё
+          </button>
+          <button type="button" data-summary-collapse-all class="rounded-sm bg-white px-3 py-2 text-xs font-semibold text-slate-600 ring-1 ring-slate-200 hover:ring-sky-200">
+            Свернуть всё
+          </button>
+          <button type="button" class="rounded-sm bg-white px-4 py-2 text-sm font-semibold text-slate-600 ring-1 ring-slate-200 hover:ring-sky-200">
+            Экспорт
+          </button>
+          <div class="almabi-table-nav hidden items-center gap-1 rounded-sm bg-slate-50 p-0.5 ring-1 ring-slate-200" data-table-nav aria-label="Прокрутка таблицы по месяцам">
+            <button type="button" data-table-scroll-left class="almabi-table-nav__btn" title="Прокрутить влево" aria-label="Прокрутить влево">
+              <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+            </button>
+            <button type="button" data-table-scroll-right class="almabi-table-nav__btn" title="Прокрутить вправо" aria-label="Прокрутить вправо">
+              <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+      <div class="almabi-table-panel">
+        <div
+          class="almabi-table-viewport"
+          data-summary-table-viewport
+          data-scrolled-x="0"
+          data-scrolled-y="0"
+          data-scrolled-end="1"
+        >
+          <div
+            class="almabi-table-wrap"
+            data-summary-table-scroll
+            tabindex="0"
+            role="region"
+            aria-label="Сводная таблица. Прокрутка: колёсико, полоса внизу или стрелки на панели."
+          >
+            <table class="almabi-table">
+              <thead>
+                <tr id="almabiSummaryHead"></tr>
+              </thead>
+              <tbody id="almabiSummaryBody"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="almabi-table-hscroll hidden" data-summary-table-hscroll aria-hidden="true">
+          <div class="almabi-table-hscroll__inner" data-summary-table-hscroll-inner></div>
+        </div>
+      </div>
+    </div>
+
+  </section>
+
+  <section class="hidden min-h-0 flex-1 flex-col space-y-5 overflow-y-auto p-5" data-tab-panel="contractors">
+    <div class="grid gap-5 xl:grid-cols-2">
+      {% for card in dashboard.contractor_cards %}
+      <div class="rounded-sm bg-white p-5 shadow-sm">
+        <div class="mb-4 flex items-center justify-between">
+          <h2 class="text-base font-bold text-slate-900">{{ card.title }}</h2>
+          <span class="text-xs font-semibold text-slate-400">↕</span>
+        </div>
+        <div class="mb-2 grid grid-cols-[1fr_auto] gap-4 text-xs font-semibold text-slate-500">
+          <span>Наименование компании / подразделение</span>
+          <span>Выручка, ₽</span>
+        </div>
+        <div class="space-y-3" data-contractor-card>
+          {% for row in card.rows %}
+          <div class="almabi-contractor-row grid grid-cols-[1fr_auto] items-center gap-4">
+            <div class="relative h-7 overflow-hidden rounded-sm bg-slate-50">
+              <div class="absolute inset-y-0 left-0 rounded-sm {% if card.accent == 'rose' %}bg-rose-100{% else %}bg-sky-100{% endif %}" style="width: {{ (row.value / card.rows[0].value * 100)|round(1) }}%"></div>
+              <span class="relative z-10 flex h-full items-center truncate px-2 text-sm font-semibold text-slate-700">{{ row.name }}</span>
+            </div>
+            <span class="whitespace-nowrap text-sm font-semibold text-slate-700" data-money="{{ row.value }}"></span>
+          </div>
+          {% endfor %}
+        </div>
+        <div class="mt-5 flex items-center justify-between border-t border-slate-100 pt-4 text-sm font-bold">
+          <span>Итог</span>
+          <span data-money="{{ card.total }}"></span>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="hidden min-h-0 flex-1 flex-col space-y-5 overflow-y-auto p-5" data-tab-panel="revenue">
+    <div class="grid gap-5 xl:grid-cols-2">
+      <div class="rounded-sm bg-white p-5 shadow-sm">
+        <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-base font-bold text-slate-900">Динамика выручки</h2>
+          <div class="flex rounded-sm bg-slate-50 p-1 text-sm font-semibold">
+            <button type="button" class="rounded-sm bg-white px-4 py-2 text-slate-800 shadow-sm">Выручка</button>
+            <button type="button" class="rounded-sm px-4 py-2 text-slate-500">Детализация</button>
+          </div>
+        </div>
+        <div class="h-72">
+          <canvas id="almabiRevenueChart"></canvas>
+        </div>
+      </div>
+
+      <div class="rounded-sm bg-white p-5 shadow-sm">
+        <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-base font-bold text-slate-900">Динамика себестоимости</h2>
+          <div class="flex rounded-sm bg-slate-50 p-1 text-sm font-semibold">
+            <button type="button" class="rounded-sm bg-white px-4 py-2 text-slate-800 shadow-sm">Себестоимость</button>
+            <button type="button" class="rounded-sm px-4 py-2 text-slate-500">Детализация</button>
+          </div>
+        </div>
+        <div class="h-72">
+          <canvas id="almabiCostChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<script>
+  const almabiData = {{ dashboard | tojson }};
+
+  const FILTER_KEYS = ["taxType", "direction", "projectGroup", "project", "contract", "contractor", "month"];
+
+  const MONTH_HEADER_SHORT = {
+    "Январь": "Янв",
+    "Февраль": "Фев",
+    "Март": "Мар",
+    "Апрель": "Апр",
+    "Май": "Май",
+    "Июнь": "Июн",
+    "Июль": "Июл",
+    "Август": "Авг",
+    "Сентябрь": "Сен",
+    "Октябрь": "Окт",
+    "Ноябрь": "Ноя",
+    "Декабрь": "Дек",
+  };
+
+  const state = {
+    scenario: "Факт БУХ",
+    unit: "thousands",
+    divisor: 1000,
+    expandedIds: new Set(),
+    filters: Object.fromEntries(
+      FILTER_KEYS.map((key) => [key, almabiData.filters[key][0]]),
+    ),
+  };
+
+  const numberFormatter = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 });
+  const percentFormatter = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 1 });
+
+  function scaled(value) {
+    return Math.round(Number(value || 0) / state.divisor);
+  }
+
+  function formatMoney(value) {
+    return numberFormatter.format(scaled(value));
+  }
+
+  function isDefaultFilter(key) {
+    return state.filters[key] === almabiData.filters[key][0];
+  }
+
+  function hasActiveFilters() {
+    return FILTER_KEYS.some((key) => !isDefaultFilter(key));
+  }
+
+  function subtreeContainsName(node, target) {
+    if (node.name === target) return true;
+    return (node.children || []).some((child) => subtreeContainsName(child, target));
+  }
+
+  function pathIncludesFilter(pathNames, filterValue) {
+    return pathNames.includes(filterValue);
+  }
+
+  function nodeMatchesFilters(node, pathNames) {
+    const dimFilters = FILTER_KEYS.filter((key) => key !== "month" && !isDefaultFilter(key));
+    if (!dimFilters.length) return true;
+
+    return dimFilters.every((key) => {
+      const value = state.filters[key];
+      if (pathIncludesFilter(pathNames, value) || node.name === value) return true;
+      return subtreeContainsName(node, value);
+    });
+  }
+
+  function pruneTree(nodes, pathNames = []) {
+    return nodes
+      .map((node) => {
+        const currentPath = [...pathNames, node.name];
+        const prunedChildren = pruneTree(node.children || [], currentPath);
+        const keep =
+          node.level === 1 ||
+          nodeMatchesFilters(node, currentPath) ||
+          prunedChildren.length > 0;
+
+        if (!keep) return null;
+        return { ...node, children: prunedChildren };
+      })
+      .filter(Boolean);
+  }
+
+  function getFilteredSummaryRows() {
+    if (!hasActiveFilters()) return almabiData.summary_rows;
+    return pruneTree(almabiData.summary_rows);
+  }
+
+  function getVisibleMonths() {
+    const month = state.filters.month;
+    const all = almabiData.months;
+    if (isDefaultFilter("month")) return all;
+    return all.filter((item) => item === month);
+  }
+
+  function collectExpandableIds(rows, bucket = []) {
+    rows.forEach((row) => {
+      if (row.expandable) bucket.push(row.id);
+      if (row.children?.length) collectExpandableIds(row.children, bucket);
+    });
+    return bucket;
+  }
+
+  function flattenVisibleRows(rows) {
+    const visible = [];
+    const walk = (items, depth = 0) => {
+      items.forEach((row, index) => {
+        visible.push({ row, depth, index });
+        if (row.children?.length && state.expandedIds.has(row.id)) {
+          walk(row.children, depth + 1);
+        }
+      });
+    };
+    walk(rows);
+    return visible;
+  }
+
+  function varianceClass(ratioPercent) {
+    if (ratioPercent >= 95 && ratioPercent <= 105) return "text-emerald-600";
+    return ratioPercent > 105 ? "text-emerald-700" : "text-rose-500";
+  }
+
+  function renderPlanFactCell(planValue, factValue) {
+    const plan = Number(planValue || 0);
+    const fact = Number(factValue || 0);
+    const ratio = plan ? (fact / plan) * 100 : 0;
+    const tone = varianceClass(ratio);
+    const factClass = fact < 0 ? "text-rose-600" : "";
+    return `
+      <div class="cell-plan-fact">
+        <span class="values">
+          <span>${formatMoney(plan)}</span> / <strong class="${factClass}">${formatMoney(fact)}</strong>
+        </span>
+        <span class="pct ${tone}">${percentFormatter.format(ratio)}%</span>
+      </div>
+    `;
+  }
+
+  function renderMoneyAttributes() {
+    document.querySelectorAll("[data-money]").forEach((node) => {
+      node.textContent = formatMoney(node.dataset.money);
+    });
+  }
+
+  function renderSummaryHead() {
+    const head = document.getElementById("almabiSummaryHead");
+    const months = getVisibleMonths();
+    head.innerHTML = `
+      <th class="text-left col-indicator">Показатели</th>
+      <th class="text-right col-total">Итого</th>
+      ${months
+        .map((month) => {
+          const short = MONTH_HEADER_SHORT[month] || month;
+          return `<th class="text-right col-month" title="${month} — план / факт">${short}</th>`;
+        })
+        .join("")}
+    `;
+  }
+
+  function bindSummaryRowEvents() {
+    document.querySelectorAll("[data-summary-row]").forEach((rowEl) => {
+      rowEl.addEventListener("click", () => {
+        if (rowEl.dataset.expandable !== "true") return;
+        const rowId = rowEl.dataset.summaryRow;
+        if (state.expandedIds.has(rowId)) state.expandedIds.delete(rowId);
+        else state.expandedIds.add(rowId);
+        renderSummary();
+      });
+    });
+  }
+
+  function updateFilterHint() {
+    const hint = document.querySelector("[data-filter-hint]");
+    if (!hint) return;
+    if (!hasActiveFilters()) {
+      hint.classList.add("hidden");
+      hint.textContent = "";
+      return;
+    }
+    const labels = {
+      taxType: "Налогообложение",
+      direction: "Направление",
+      projectGroup: "Группа",
+      project: "Проект",
+      contract: "Договор",
+      contractor: "Контрагент",
+      month: "Месяц",
+    };
+    const parts = FILTER_KEYS.filter((key) => !isDefaultFilter(key)).map(
+      (key) => `${labels[key]}: ${state.filters[key]}`,
+    );
+    hint.textContent = `Активные фильтры: ${parts.join(", ")}`;
+    hint.classList.remove("hidden");
+  }
+
+  function renderSummary() {
+    const tbody = document.getElementById("almabiSummaryBody");
+    const tree = getFilteredSummaryRows();
+    const visibleRows = flattenVisibleRows(tree);
+    const months = getVisibleMonths();
+    let rowIndex = 0;
+
+    renderSummaryHead();
+
+    tbody.innerHTML = visibleRows
+      .map(({ row, depth }) => {
+        const factValues = row.values[state.scenario] || row.values["Факт БУХ"];
+        const planValues = row.values["План"];
+        const indent = 16 + depth * 22;
+        const isExpanded = state.expandedIds.has(row.id);
+        const chevronIcon = isExpanded
+          ? '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 9l6 6 6-6"/>'
+          : '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 6l6 6-6 6"/>';
+        const chevron = row.expandable
+          ? `<span class="row-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor">${chevronIcon}</svg></span>`
+          : `<span class="row-chevron is-placeholder" aria-hidden="true"></span>`;
+        const monthCells = months
+          .map((month) => `<td class="text-right col-month">${renderPlanFactCell(planValues[month], factValues[month])}</td>`)
+          .join("");
+
+        const totalPlan = almabiData.months.reduce((sum, month) => sum + Number(planValues[month] || 0), 0);
+        const totalFact = almabiData.months.reduce((sum, month) => sum + Number(factValues[month] || 0), 0);
+        const depthClass = `is-depth-${Math.min(depth, 6)}`;
+        const levelClass = row.level === 1 ? "is-level-1" : "is-child";
+        const zebra = row.level > 1 && rowIndex % 2 === 0 ? "is-even" : "";
+        rowIndex += 1;
+
+        return `
+          <tr
+            class="${levelClass} ${depthClass} ${zebra} ${row.expandable ? "cursor-pointer is-expandable" : ""}"
+            data-summary-row="${row.id}"
+            data-expandable="${row.expandable ? "true" : "false"}"
+          >
+            <td class="col-indicator" style="--row-indent:${indent}px">
+              <div class="row-label">
+                ${chevron}
+                <span class="row-name">${row.name}</span>
+              </div>
+            </td>
+            <td class="text-right col-total">${renderPlanFactCell(totalPlan, totalFact)}</td>
+            ${monthCells}
+          </tr>
+        `;
+      })
+      .join("");
+
+    bindSummaryRowEvents();
+    updateFilterHint();
+    refreshSummaryTableScroll?.();
+  }
+
+  let summaryTableScrollApi = null;
+
+  function initSummaryTableScroll() {
+    const viewport = document.querySelector("[data-summary-table-viewport]");
+    const wrap = document.querySelector("[data-summary-table-scroll]");
+    const hscroll = document.querySelector("[data-summary-table-hscroll]");
+    const inner = document.querySelector("[data-summary-table-hscroll-inner]");
+    const nav = document.querySelector("[data-table-nav]");
+    if (!viewport || !wrap || !hscroll || !inner) return;
+
+    let syncing = false;
+
+    const canScrollX = () => wrap.scrollWidth > wrap.clientWidth + 2;
+
+    const updateState = () => {
+      const maxLeft = Math.max(0, wrap.scrollWidth - wrap.clientWidth - 1);
+      const scrolledX = wrap.scrollLeft > 2;
+      const scrolledY = wrap.scrollTop > 2;
+      const scrolledEnd = wrap.scrollLeft >= maxLeft - 2;
+
+      viewport.dataset.scrolledX = scrolledX ? "1" : "0";
+      viewport.dataset.scrolledY = scrolledY ? "1" : "0";
+      viewport.dataset.scrolledEnd = scrolledEnd ? "1" : "0";
+
+      const btnLeft = document.querySelector("[data-table-scroll-left]");
+      const btnRight = document.querySelector("[data-table-scroll-right]");
+      if (btnLeft) btnLeft.disabled = wrap.scrollLeft <= 2;
+      if (btnRight) btnRight.disabled = scrolledEnd;
+
+      if (nav) {
+        nav.classList.toggle("hidden", !canScrollX());
+        nav.classList.toggle("flex", canScrollX());
+      }
+      hscroll.classList.toggle("hidden", !canScrollX());
+      hscroll.setAttribute("aria-hidden", canScrollX() ? "false" : "true");
+    };
+
+    const syncInnerWidth = () => {
+      inner.style.width = `${wrap.scrollWidth}px`;
+      updateState();
+    };
+
+    const onWrapScroll = () => {
+      if (syncing) return;
+      syncing = true;
+      hscroll.scrollLeft = wrap.scrollLeft;
+      updateState();
+      syncing = false;
+    };
+
+    const onHScroll = () => {
+      if (syncing) return;
+      syncing = true;
+      wrap.scrollLeft = hscroll.scrollLeft;
+      updateState();
+      syncing = false;
+    };
+
+    wrap.addEventListener("scroll", onWrapScroll, { passive: true });
+    hscroll.addEventListener("scroll", onHScroll, { passive: true });
+
+    wrap.addEventListener(
+      "wheel",
+      (event) => {
+        let { deltaX, deltaY } = event;
+        if (event.shiftKey && Math.abs(deltaY) > Math.abs(deltaX)) {
+          deltaX = deltaY;
+          deltaY = 0;
+        }
+
+        const maxTop = wrap.scrollHeight - wrap.clientHeight;
+        const maxLeft = wrap.scrollWidth - wrap.clientWidth;
+        let handled = false;
+
+        if (deltaY !== 0 && maxTop > 0) {
+          const prevTop = wrap.scrollTop;
+          wrap.scrollTop = Math.max(0, Math.min(maxTop, prevTop + deltaY));
+          if (wrap.scrollTop !== prevTop) handled = true;
+        }
+
+        if (deltaX !== 0 && maxLeft > 0) {
+          const prevLeft = wrap.scrollLeft;
+          wrap.scrollLeft = Math.max(0, Math.min(maxLeft, prevLeft + deltaX));
+          if (wrap.scrollLeft !== prevLeft) {
+            handled = true;
+            if (!syncing) {
+              syncing = true;
+              hscroll.scrollLeft = wrap.scrollLeft;
+              syncing = false;
+            }
+          }
+        }
+
+        if (handled) {
+          event.preventDefault();
+          updateState();
+        }
+      },
+      { passive: false },
+    );
+
+    wrap.addEventListener(
+      "keydown",
+      (event) => {
+        if (!canScrollX()) return;
+        const step = 120;
+        if (event.key === "ArrowLeft") {
+          event.preventDefault();
+          wrap.scrollBy({ left: -step, behavior: "smooth" });
+        }
+        if (event.key === "ArrowRight") {
+          event.preventDefault();
+          wrap.scrollBy({ left: step, behavior: "smooth" });
+        }
+      },
+      { passive: false },
+    );
+
+    document.querySelector("[data-table-scroll-left]")?.addEventListener("click", () => {
+      wrap.scrollBy({ left: -Math.max(240, wrap.clientWidth * 0.45), behavior: "smooth" });
+      wrap.focus({ preventScroll: true });
+    });
+
+    document.querySelector("[data-table-scroll-right]")?.addEventListener("click", () => {
+      wrap.scrollBy({ left: Math.max(240, wrap.clientWidth * 0.45), behavior: "smooth" });
+      wrap.focus({ preventScroll: true });
+    });
+
+    const resizeObserver = new ResizeObserver(syncInnerWidth);
+    resizeObserver.observe(wrap);
+    resizeObserver.observe(wrap.querySelector(".almabi-table") || wrap);
+
+    summaryTableScrollApi = { syncInnerWidth, updateState };
+    syncInnerWidth();
+  }
+
+  function refreshSummaryTableScroll() {
+    summaryTableScrollApi?.syncInnerWidth();
+    summaryTableScrollApi?.updateState();
+  }
+
+  function closeAllFilterMenus(except = null) {
+    document.querySelectorAll("[data-filter-select]").forEach((root) => {
+      if (root === except) return;
+      root.classList.remove("is-open");
+      root.querySelector(".almabi-select__trigger")?.setAttribute("aria-expanded", "false");
+      root.querySelector(".almabi-select__menu")?.classList.add("hidden");
+    });
+  }
+
+  function setFilterValue(key, value) {
+    state.filters[key] = value;
+    const root = document.querySelector(`[data-filter-select="${key}"]`);
+    if (!root) return;
+    const isActive = !isDefaultFilter(key);
+    root.classList.toggle("is-active", isActive);
+    root.querySelector(".almabi-select__value").textContent = value;
+    root.querySelectorAll(".almabi-select__option").forEach((option) => {
+      const selected = option.dataset.value === value;
+      option.classList.toggle("is-selected", selected);
+      option.setAttribute("aria-selected", selected ? "true" : "false");
+    });
+  }
+
+  function resetFilters() {
+    FILTER_KEYS.forEach((key) => setFilterValue(key, almabiData.filters[key][0]));
+    state.expandedIds = new Set();
+    renderSummary();
+  }
+
+  function initFilterSelects() {
+    document.querySelectorAll("[data-filter-select]").forEach((root) => {
+      const key = root.dataset.filterSelect;
+      const trigger = root.querySelector(".almabi-select__trigger");
+      const menu = root.querySelector(".almabi-select__menu");
+
+      trigger?.addEventListener("click", (event) => {
+        event.stopPropagation();
+        const willOpen = !root.classList.contains("is-open");
+        closeAllFilterMenus();
+        if (willOpen) {
+          root.classList.add("is-open");
+          menu?.classList.remove("hidden");
+          trigger.setAttribute("aria-expanded", "true");
+        }
+      });
+
+      root.querySelectorAll(".almabi-select__option").forEach((option) => {
+        option.addEventListener("click", (event) => {
+          event.stopPropagation();
+          setFilterValue(key, option.dataset.value);
+          closeAllFilterMenus();
+          state.expandedIds = new Set();
+          renderSummary();
+        });
+      });
+    });
+
+    document.addEventListener("click", () => closeAllFilterMenus());
+    document.querySelector("[data-filter-reset]")?.addEventListener("click", resetFilters);
+  }
+
+  function makeBarChart(canvasId, rows, color) {
+    const context = document.getElementById(canvasId);
+    return new Chart(context, {
+      type: "bar",
+      data: {
+        labels: rows.map((row) => row.month),
+        datasets: [{
+          data: rows.map((row) => scaled(row.value)),
+          backgroundColor: color,
+          borderRadius: 2,
+          maxBarThickness: 28,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { grid: { display: false }, ticks: { color: "#334155", font: { weight: "600" } } },
+          y: { grid: { color: "#f1f5f9" }, ticks: { callback: (value) => numberFormatter.format(value) } },
+        },
+      },
+    });
+  }
+
+  let revenueChart;
+  let costChart;
+
+  function renderCharts() {
+    if (revenueChart) revenueChart.destroy();
+    if (costChart) costChart.destroy();
+    revenueChart = makeBarChart("almabiRevenueChart", almabiData.revenue_by_month, "#58ad70");
+    costChart = makeBarChart("almabiCostChart", almabiData.cost_by_month, "#f08a72");
+  }
+
+  function renderAll() {
+    renderSummary();
+    renderMoneyAttributes();
+    if (document.getElementById("almabiRevenueChart")) {
+      renderCharts();
+    }
+  }
+
+  const filterToolbar = document.querySelector("[data-filter-toolbar]");
+
+  function setFilterToolbarVisible(visible) {
+    filterToolbar?.classList.toggle("hidden", !visible);
+  }
+
+  document.querySelectorAll("[data-tab-button]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const tab = button.dataset.tabButton;
+      document.querySelectorAll("[data-tab-button]").forEach((item) => {
+        item.classList.toggle("bg-white", item === button);
+        item.classList.toggle("shadow-sm", item === button);
+        item.classList.toggle("text-slate-800", item === button);
+        item.classList.toggle("text-slate-600", item !== button);
+      });
+      document.querySelectorAll("[data-tab-panel]").forEach((panel) => {
+        panel.classList.toggle("hidden", panel.dataset.tabPanel !== tab);
+      });
+      setFilterToolbarVisible(tab === "summary");
+      setTimeout(renderAll, 0);
+    });
+  });
+
+  document.querySelectorAll("[data-unit]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.unit = button.dataset.unit;
+      state.divisor = Number(button.dataset.divisor || 1);
+      document.querySelectorAll("[data-unit]").forEach((item) => {
+        item.classList.toggle("bg-sky-100", item === button);
+        item.classList.toggle("text-sky-900", item === button);
+        item.classList.toggle("text-slate-500", item !== button);
+      });
+      renderAll();
+    });
+  });
+
+  document.querySelectorAll("[data-scenario]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.scenario = button.dataset.scenario;
+      document.querySelectorAll("[data-scenario]").forEach((item) => {
+        item.classList.toggle("bg-sky-100", item === button);
+        item.classList.toggle("text-sky-900", item === button);
+        item.classList.toggle("text-slate-500", item !== button);
+      });
+      renderSummary();
+    });
+  });
+
+  document.querySelector("[data-summary-expand-all]")?.addEventListener("click", () => {
+    state.expandedIds = new Set(collectExpandableIds(almabiData.summary_rows));
+    renderSummary();
+  });
+
+  document.querySelector("[data-summary-collapse-all]")?.addEventListener("click", () => {
+    state.expandedIds = new Set();
+    renderSummary();
+  });
+
+  initFilterSelects();
+  initSummaryTableScroll();
+  renderAll();
+</script>
+{% endblock %}

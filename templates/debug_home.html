@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Debug - ОПиОП BI</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body class="bg-gray-50 text-gray-900 min-h-screen">
+    <main class="max-w-4xl mx-auto px-6 py-10">
+      <div class="mb-8">
+        <a href="{{ url_for('dashboard_home') }}" class="text-sm text-blue-600 hover:text-blue-800">← Вернуться к дашборду</a>
+        <h1 class="mt-4 text-3xl font-bold">Debug-инструменты</h1>
+        <p class="mt-2 text-gray-600">Раздел доступен только при включённом DEBUG.</p>
+      </div>
+
+      <div class="grid gap-4 md:grid-cols-2">
+        <a href="{{ url_for('excel_debug') }}" class="block rounded-xl border border-gray-200 bg-white p-6 shadow-sm hover:border-blue-300 hover:shadow-md transition">
+          <h2 class="text-lg font-semibold">Excel Debug</h2>
+          <p class="mt-2 text-sm text-gray-500">Просмотр листов и сырых строк из текущего Excel-файла.</p>
+        </a>
+        <a href="{{ url_for('calculation_services_debug') }}" class="block rounded-xl border border-gray-200 bg-white p-6 shadow-sm hover:border-blue-300 hover:shadow-md transition">
+          <h2 class="text-lg font-semibold">Калькуляция</h2>
+          <p class="mt-2 text-sm text-gray-500">Проверка распарсенных услуг, классов и стоимостных колонок.</p>
+        </a>
+      </div>
+    </main>
+  </body>
+</html>
