@@ -2,7 +2,7 @@
 
 {% block title %}AlMaBi BI{% endblock %}
 
-{% block main_class %}flex min-h-0 flex-1 flex-col overflow-hidden bg-[#eef6ff]{% endblock %}
+{% block main_class %}flex min-h-0 flex-1 flex-col overflow-hidden bg-slate-100{% endblock %}
 {% block content_wrapper_class %}flex min-h-0 flex-1 flex-col p-0{% endblock %}
 
 {% block breadcrumbs %}{% endblock %}
@@ -24,31 +24,34 @@
 
 {% block content %}
 <div class="flex min-h-0 flex-1 flex-col text-slate-800" data-almabi-dashboard>
-  <div class="sticky top-0 z-20 shrink-0 border-b border-sky-100/80 bg-[#eef6ff]/95 px-5 py-4 backdrop-blur">
+  <div class="sticky top-0 z-20 shrink-0 border-b border-slate-200 bg-white/95 px-5 py-4 shadow-sm backdrop-blur">
     <div class="flex flex-wrap items-center justify-between gap-4">
-      <div class="flex flex-wrap gap-2" role="tablist" aria-label="Разделы AlMaBi BI">
-        <button type="button" class="almabi-tab rounded-lg bg-white px-5 py-2.5 text-sm font-semibold text-slate-800 shadow-sm" data-tab-button="summary">Сводная информация</button>
-        <button type="button" class="almabi-tab rounded-lg px-5 py-2.5 text-sm font-semibold text-slate-600 hover:bg-white/70" data-tab-button="revenue">Детализация выручки</button>
-        <button type="button" class="almabi-tab rounded-lg px-5 py-2.5 text-sm font-semibold text-slate-600 hover:bg-white/70" data-tab-button="contractors">Детализация по контрагентам</button>
+      <div class="flex flex-wrap gap-2 rounded-xl border border-slate-200 bg-slate-50/80 p-1.5" role="tablist" aria-label="Разделы AlMaBi BI">
+        <button type="button" class="almabi-tab is-active rounded-lg px-5 py-2.5 text-sm font-semibold" data-tab-button="summary">Сводная информация</button>
+        <button type="button" class="almabi-tab rounded-lg px-5 py-2.5 text-sm font-semibold" data-tab-button="revenue">Детализация выручки</button>
+        <button type="button" class="almabi-tab rounded-lg px-5 py-2.5 text-sm font-semibold" data-tab-button="contractors">Детализация по контрагентам</button>
       </div>
 
       <div class="flex flex-wrap items-center gap-3 text-sm font-semibold">
-        <span class="text-slate-500 text-xs font-medium">ед.</span>
-        <div class="flex rounded-lg bg-white p-1 shadow-sm ring-1 ring-slate-200/80" data-unit-group>
+        <div class="flex rounded-lg border border-slate-200 bg-white p-1 shadow-sm" data-unit-group>
           {% for unit in dashboard.units %}
-          <button type="button" class="rounded-md px-3.5 py-1.5 text-sm {% if loop.index == 2 %}bg-sky-100 text-sky-900{% else %}text-slate-500 hover:text-slate-700{% endif %}" data-unit="{{ unit.key }}" data-divisor="{{ unit.divisor }}">{{ unit.label }}</button>
+          <button type="button" class="rounded-md px-3 py-1.5 text-sm {% if loop.index == 2 %}bg-sky-100 text-sky-900 ring-1 ring-sky-200{% else %}text-slate-500 hover:text-slate-700{% endif %}" data-unit="{{ unit.key }}" data-divisor="{{ unit.divisor }}">{{ unit.label }}</button>
           {% endfor %}
         </div>
-        <div class="flex rounded-lg bg-white p-1 shadow-sm ring-1 ring-slate-200/80" data-scenario-group>
+        <div class="flex rounded-lg border border-slate-200 bg-white p-1 shadow-sm" data-scenario-group>
           {% for scenario in dashboard.scenarios %}
-          <button type="button" class="rounded-md px-3.5 py-1.5 text-sm {% if loop.first %}bg-sky-100 text-sky-900{% else %}text-slate-500 hover:text-slate-700{% endif %}" data-scenario="{{ scenario }}">{{ scenario }}</button>
+          <button type="button" class="rounded-md px-3.5 py-1.5 text-sm {% if loop.first %}bg-sky-100 text-sky-900 ring-1 ring-sky-200{% else %}text-slate-500 hover:text-slate-700{% endif %}" data-scenario="{{ scenario }}">{{ scenario }}</button>
           {% endfor %}
         </div>
+        <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 shadow-sm hover:border-sky-200">
+          <input type="checkbox" class="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500" data-plan-toggle checked />
+          План / прогноз
+        </label>
       </div>
     </div>
 
     <div class="mt-4 flex flex-wrap items-end gap-3" data-filter-toolbar>
-      <div class="grid flex-1 grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-7" data-filter-bar>
+      <div class="grid flex-1 grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-8" data-filter-bar>
         {% set filter_labels = {
           "taxType": "Вид налогообложения",
           "project": "Проект",
@@ -56,6 +59,7 @@
           "projectGroup": "Группа проектов",
           "contract": "Договор",
           "contractor": "Контрагент",
+          "quarter": "Квартал",
           "month": "Месяц"
         } %}
         {% for key, options in dashboard.filters.items() %}
@@ -99,7 +103,7 @@
   </div>
 
   <section class="flex min-h-0 flex-1 flex-col overflow-hidden p-5" data-tab-panel="summary">
-    <div class="almabi-summary-card flex min-h-0 flex-1 flex-col overflow-hidden rounded-sm bg-white shadow-sm">
+    <div class="almabi-summary-card flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-md">
       <div class="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
         <h1 class="text-lg font-bold text-slate-900">Сводная информация</h1>
         <div class="flex flex-wrap items-center gap-2">
@@ -146,7 +150,9 @@
           </div>
         </div>
         <div class="almabi-table-hscroll hidden" data-summary-table-hscroll aria-hidden="true">
-          <div class="almabi-table-hscroll__inner" data-summary-table-hscroll-inner></div>
+          <div class="almabi-table-hscroll__track" data-summary-table-hscroll-track>
+            <div class="almabi-table-hscroll__thumb" data-summary-table-hscroll-thumb></div>
+          </div>
         </div>
       </div>
     </div>
@@ -156,8 +162,8 @@
   <section class="hidden min-h-0 flex-1 flex-col space-y-5 overflow-y-auto p-5" data-tab-panel="contractors">
     <div class="grid gap-5 xl:grid-cols-2">
       {% for card in dashboard.contractor_cards %}
-      <div class="rounded-sm bg-white p-5 shadow-sm">
-        <div class="mb-4 flex items-center justify-between">
+      <div class="rounded-lg border border-slate-200 bg-white p-5 shadow-md">
+        <div class="mb-4 flex items-center justify-between border-b border-slate-100 pb-3">
           <h2 class="text-base font-bold text-slate-900">{{ card.title }}</h2>
           <span class="text-xs font-semibold text-slate-400">↕</span>
         </div>
@@ -176,8 +182,8 @@
           </div>
           {% endfor %}
         </div>
-        <div class="mt-5 flex items-center justify-between border-t border-slate-100 pt-4 text-sm font-bold">
-          <span>Итог</span>
+        <div class="mt-5 flex items-center justify-between border-t-2 border-slate-200 pt-4 text-sm font-bold text-slate-900">
+          <span>Всего</span>
           <span data-money="{{ card.total }}"></span>
         </div>
       </div>
@@ -186,8 +192,17 @@
   </section>
 
   <section class="hidden min-h-0 flex-1 flex-col space-y-5 overflow-y-auto p-5" data-tab-panel="revenue">
-    <div class="grid gap-5 xl:grid-cols-2">
-      <div class="rounded-sm bg-white p-5 shadow-sm">
+    <div class="grid gap-5 xl:grid-cols-3">
+      <div class="rounded-lg border border-slate-200 bg-white p-5 shadow-md xl:col-span-1">
+        <h2 class="mb-1 text-base font-bold text-slate-900">Структура себестоимости</h2>
+        <p class="mb-4 text-xs text-slate-500">Общая сумма за период (детализация в разработке)</p>
+        <div class="rounded-lg border border-orange-100 bg-orange-50/60 px-4 py-5">
+          <p class="text-xs font-semibold uppercase tracking-wide text-orange-700/80">Себестоимость</p>
+          <p class="mt-2 text-2xl font-bold tabular-nums text-slate-900" data-cost-structure-total data-money="{{ dashboard.cost_structure_total }}"></p>
+        </div>
+      </div>
+
+      <div class="rounded-lg border border-slate-200 bg-white p-5 shadow-md xl:col-span-1">
         <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
           <h2 class="text-base font-bold text-slate-900">Динамика выручки</h2>
           <div class="flex rounded-sm bg-slate-50 p-1 text-sm font-semibold">
@@ -200,7 +215,7 @@
         </div>
       </div>
 
-      <div class="rounded-sm bg-white p-5 shadow-sm">
+      <div class="rounded-lg border border-slate-200 bg-white p-5 shadow-md xl:col-span-1">
         <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
           <h2 class="text-base font-bold text-slate-900">Динамика себестоимости</h2>
           <div class="flex rounded-sm bg-slate-50 p-1 text-sm font-semibold">
@@ -222,7 +237,14 @@
 <script>
   const almabiData = {{ dashboard | tojson }};
 
-  const FILTER_KEYS = ["taxType", "direction", "projectGroup", "project", "contract", "contractor", "month"];
+  const FILTER_KEYS = ["taxType", "direction", "projectGroup", "project", "contract", "contractor", "quarter", "month"];
+
+  const QUARTER_MONTHS = {
+    Q1: ["Январь", "Февраль", "Март"],
+    Q2: ["Апрель", "Май", "Июнь"],
+    Q3: ["Июль", "Август", "Сентябрь"],
+    Q4: ["Октябрь", "Ноябрь", "Декабрь"],
+  };
 
   const MONTH_HEADER_SHORT = {
     "Январь": "Янв",
@@ -243,6 +265,7 @@
     scenario: "Факт БУХ",
     unit: "thousands",
     divisor: 1000,
+    showPlan: true,
     expandedIds: new Set(),
     filters: Object.fromEntries(
       FILTER_KEYS.map((key) => [key, almabiData.filters[key][0]]),
@@ -311,9 +334,16 @@
 
   function getVisibleMonths() {
     const month = state.filters.month;
+    const quarter = state.filters.quarter;
     const all = almabiData.months;
-    if (isDefaultFilter("month")) return all;
-    return all.filter((item) => item === month);
+
+    if (!isDefaultFilter("month")) {
+      return all.filter((item) => item === month);
+    }
+    if (!isDefaultFilter("quarter") && QUARTER_MONTHS[quarter]) {
+      return QUARTER_MONTHS[quarter];
+    }
+    return all;
   }
 
   function collectExpandableIds(rows, bucket = []) {
@@ -328,6 +358,7 @@
     const visible = [];
     const walk = (items, depth = 0) => {
       items.forEach((row, index) => {
+        if (row.name === "Итог") return;
         visible.push({ row, depth, index });
         if (row.children?.length && state.expandedIds.has(row.id)) {
           walk(row.children, depth + 1);
@@ -349,10 +380,19 @@
     const ratio = plan ? (fact / plan) * 100 : 0;
     const tone = varianceClass(ratio);
     const factClass = fact < 0 ? "text-rose-600" : "";
+
+    if (!state.showPlan) {
+      return `
+        <div class="cell-plan-fact cell-plan-fact--fact-only">
+          <strong class="values ${factClass}">${formatMoney(fact)}</strong>
+        </div>
+      `;
+    }
+
     return `
       <div class="cell-plan-fact">
         <span class="values">
-          <span>${formatMoney(plan)}</span> / <strong class="${factClass}">${formatMoney(fact)}</strong>
+          <span class="plan-value">${formatMoney(plan)}</span> / <strong class="${factClass}">${formatMoney(fact)}</strong>
         </span>
         <span class="pct ${tone}">${percentFormatter.format(ratio)}%</span>
       </div>
@@ -370,11 +410,12 @@
     const months = getVisibleMonths();
     head.innerHTML = `
       <th class="text-left col-indicator">Показатели</th>
-      <th class="text-right col-total">Итого</th>
+      <th class="text-right col-total">${state.showPlan ? "Итого (план / факт)" : "Итого"}</th>
       ${months
         .map((month) => {
           const short = MONTH_HEADER_SHORT[month] || month;
-          return `<th class="text-right col-month" title="${month} — план / факт">${short}</th>`;
+          const title = state.showPlan ? `${month} — план / факт` : `${month} — факт`;
+          return `<th class="text-right col-month" title="${title}">${short}</th>`;
         })
         .join("")}
     `;
@@ -407,6 +448,7 @@
       project: "Проект",
       contract: "Договор",
       contractor: "Контрагент",
+      quarter: "Квартал",
       month: "Месяц",
     };
     const parts = FILTER_KEYS.filter((key) => !isDefaultFilter(key)).map(
@@ -478,16 +520,31 @@
     const viewport = document.querySelector("[data-summary-table-viewport]");
     const wrap = document.querySelector("[data-summary-table-scroll]");
     const hscroll = document.querySelector("[data-summary-table-hscroll]");
-    const inner = document.querySelector("[data-summary-table-hscroll-inner]");
+    const track = document.querySelector("[data-summary-table-hscroll-track]");
+    const thumb = document.querySelector("[data-summary-table-hscroll-thumb]");
     const nav = document.querySelector("[data-table-nav]");
-    if (!viewport || !wrap || !hscroll || !inner) return;
-
-    let syncing = false;
+    if (!viewport || !wrap || !hscroll || !track || !thumb) return;
 
     const canScrollX = () => wrap.scrollWidth > wrap.clientWidth + 2;
+    const maxScrollLeft = () => Math.max(0, wrap.scrollWidth - wrap.clientWidth);
+    const horizontalStep = () => Math.max(560, wrap.clientWidth * 0.78);
+
+    const syncThumb = () => {
+      const maxLeft = maxScrollLeft();
+      if (maxLeft <= 0) {
+        thumb.style.width = "100%";
+        thumb.style.left = "0";
+        return;
+      }
+      const trackWidth = track.clientWidth;
+      const thumbWidth = Math.max(56, (wrap.clientWidth / wrap.scrollWidth) * trackWidth);
+      const travel = Math.max(0, trackWidth - thumbWidth);
+      thumb.style.width = `${thumbWidth}px`;
+      thumb.style.left = `${(wrap.scrollLeft / maxLeft) * travel}px`;
+    };
 
     const updateState = () => {
-      const maxLeft = Math.max(0, wrap.scrollWidth - wrap.clientWidth - 1);
+      const maxLeft = maxScrollLeft();
       const scrolledX = wrap.scrollLeft > 2;
       const scrolledY = wrap.scrollTop > 2;
       const scrolledEnd = wrap.scrollLeft >= maxLeft - 2;
@@ -507,31 +564,19 @@
       }
       hscroll.classList.toggle("hidden", !canScrollX());
       hscroll.setAttribute("aria-hidden", canScrollX() ? "false" : "true");
+      syncThumb();
     };
 
-    const syncInnerWidth = () => {
-      inner.style.width = `${wrap.scrollWidth}px`;
-      updateState();
+    const scrollByStep = (direction) => {
+      const maxLeft = maxScrollLeft();
+      wrap.scrollTo({
+        left: Math.max(0, Math.min(maxLeft, wrap.scrollLeft + direction * horizontalStep())),
+        behavior: "smooth",
+      });
+      wrap.focus({ preventScroll: true });
     };
 
-    const onWrapScroll = () => {
-      if (syncing) return;
-      syncing = true;
-      hscroll.scrollLeft = wrap.scrollLeft;
-      updateState();
-      syncing = false;
-    };
-
-    const onHScroll = () => {
-      if (syncing) return;
-      syncing = true;
-      wrap.scrollLeft = hscroll.scrollLeft;
-      updateState();
-      syncing = false;
-    };
-
-    wrap.addEventListener("scroll", onWrapScroll, { passive: true });
-    hscroll.addEventListener("scroll", onHScroll, { passive: true });
+    wrap.addEventListener("scroll", updateState, { passive: true });
 
     wrap.addEventListener(
       "wheel",
@@ -543,7 +588,7 @@
         }
 
         const maxTop = wrap.scrollHeight - wrap.clientHeight;
-        const maxLeft = wrap.scrollWidth - wrap.clientWidth;
+        const maxLeft = maxScrollLeft();
         let handled = false;
 
         if (deltaY !== 0 && maxTop > 0) {
@@ -555,14 +600,7 @@
         if (deltaX !== 0 && maxLeft > 0) {
           const prevLeft = wrap.scrollLeft;
           wrap.scrollLeft = Math.max(0, Math.min(maxLeft, prevLeft + deltaX));
-          if (wrap.scrollLeft !== prevLeft) {
-            handled = true;
-            if (!syncing) {
-              syncing = true;
-              hscroll.scrollLeft = wrap.scrollLeft;
-              syncing = false;
-            }
-          }
+          if (wrap.scrollLeft !== prevLeft) handled = true;
         }
 
         if (handled) {
@@ -577,39 +615,74 @@
       "keydown",
       (event) => {
         if (!canScrollX()) return;
-        const step = 120;
         if (event.key === "ArrowLeft") {
           event.preventDefault();
-          wrap.scrollBy({ left: -step, behavior: "smooth" });
+          scrollByStep(-1);
         }
         if (event.key === "ArrowRight") {
           event.preventDefault();
-          wrap.scrollBy({ left: step, behavior: "smooth" });
+          scrollByStep(1);
         }
       },
       { passive: false },
     );
 
-    document.querySelector("[data-table-scroll-left]")?.addEventListener("click", () => {
-      wrap.scrollBy({ left: -Math.max(240, wrap.clientWidth * 0.45), behavior: "smooth" });
-      wrap.focus({ preventScroll: true });
+    track.addEventListener("click", (event) => {
+      if (event.target === thumb) return;
+      const maxLeft = maxScrollLeft();
+      if (maxLeft <= 0) return;
+      const rect = track.getBoundingClientRect();
+      const thumbWidth = thumb.offsetWidth;
+      const travel = Math.max(1, rect.width - thumbWidth);
+      const clickX = event.clientX - rect.left - thumbWidth / 2;
+      wrap.scrollTo({ left: (clickX / travel) * maxLeft, behavior: "smooth" });
     });
 
-    document.querySelector("[data-table-scroll-right]")?.addEventListener("click", () => {
-      wrap.scrollBy({ left: Math.max(240, wrap.clientWidth * 0.45), behavior: "smooth" });
-      wrap.focus({ preventScroll: true });
+    let dragging = false;
+    let dragStartX = 0;
+    let dragStartLeft = 0;
+
+    thumb.addEventListener("pointerdown", (event) => {
+      dragging = true;
+      dragStartX = event.clientX;
+      dragStartLeft = wrap.scrollLeft;
+      thumb.setPointerCapture(event.pointerId);
+      thumb.classList.add("is-dragging");
+      event.preventDefault();
     });
 
-    const resizeObserver = new ResizeObserver(syncInnerWidth);
+    thumb.addEventListener("pointermove", (event) => {
+      if (!dragging) return;
+      const maxLeft = maxScrollLeft();
+      const travel = Math.max(1, track.clientWidth - thumb.offsetWidth);
+      const delta = event.clientX - dragStartX;
+      wrap.scrollLeft = Math.max(0, Math.min(maxLeft, dragStartLeft + (delta / travel) * maxLeft));
+    });
+
+    const endDrag = (event) => {
+      if (!dragging) return;
+      dragging = false;
+      thumb.classList.remove("is-dragging");
+      thumb.releasePointerCapture(event.pointerId);
+      updateState();
+    };
+
+    thumb.addEventListener("pointerup", endDrag);
+    thumb.addEventListener("pointercancel", endDrag);
+
+    document.querySelector("[data-table-scroll-left]")?.addEventListener("click", () => scrollByStep(-1));
+    document.querySelector("[data-table-scroll-right]")?.addEventListener("click", () => scrollByStep(1));
+
+    const resizeObserver = new ResizeObserver(updateState);
     resizeObserver.observe(wrap);
     resizeObserver.observe(wrap.querySelector(".almabi-table") || wrap);
+    resizeObserver.observe(track);
 
-    summaryTableScrollApi = { syncInnerWidth, updateState };
-    syncInnerWidth();
+    summaryTableScrollApi = { syncInnerWidth: updateState, updateState };
+    updateState();
   }
 
   function refreshSummaryTableScroll() {
-    summaryTableScrollApi?.syncInnerWidth();
     summaryTableScrollApi?.updateState();
   }
 
@@ -638,7 +711,6 @@
 
   function resetFilters() {
     FILTER_KEYS.forEach((key) => setFilterValue(key, almabiData.filters[key][0]));
-    state.expandedIds = new Set();
     renderSummary();
   }
 
@@ -664,7 +736,12 @@
           event.stopPropagation();
           setFilterValue(key, option.dataset.value);
           closeAllFilterMenus();
-          state.expandedIds = new Set();
+          if (key === "quarter" && !isDefaultFilter("quarter")) {
+            setFilterValue("month", almabiData.filters.month[0]);
+          }
+          if (key === "month" && !isDefaultFilter("month")) {
+            setFilterValue("quarter", almabiData.filters.quarter[0]);
+          }
           renderSummary();
         });
       });
@@ -727,10 +804,7 @@
     button.addEventListener("click", () => {
       const tab = button.dataset.tabButton;
       document.querySelectorAll("[data-tab-button]").forEach((item) => {
-        item.classList.toggle("bg-white", item === button);
-        item.classList.toggle("shadow-sm", item === button);
-        item.classList.toggle("text-slate-800", item === button);
-        item.classList.toggle("text-slate-600", item !== button);
+        item.classList.toggle("is-active", item === button);
       });
       document.querySelectorAll("[data-tab-panel]").forEach((panel) => {
         panel.classList.toggle("hidden", panel.dataset.tabPanel !== tab);
@@ -745,9 +819,12 @@
       state.unit = button.dataset.unit;
       state.divisor = Number(button.dataset.divisor || 1);
       document.querySelectorAll("[data-unit]").forEach((item) => {
-        item.classList.toggle("bg-sky-100", item === button);
-        item.classList.toggle("text-sky-900", item === button);
-        item.classList.toggle("text-slate-500", item !== button);
+        const active = item === button;
+        item.classList.toggle("bg-sky-100", active);
+        item.classList.toggle("text-sky-900", active);
+        item.classList.toggle("ring-1", active);
+        item.classList.toggle("ring-sky-200", active);
+        item.classList.toggle("text-slate-500", !active);
       });
       renderAll();
     });
@@ -757,12 +834,20 @@
     button.addEventListener("click", () => {
       state.scenario = button.dataset.scenario;
       document.querySelectorAll("[data-scenario]").forEach((item) => {
-        item.classList.toggle("bg-sky-100", item === button);
-        item.classList.toggle("text-sky-900", item === button);
-        item.classList.toggle("text-slate-500", item !== button);
+        const active = item === button;
+        item.classList.toggle("bg-sky-100", active);
+        item.classList.toggle("text-sky-900", active);
+        item.classList.toggle("ring-1", active);
+        item.classList.toggle("ring-sky-200", active);
+        item.classList.toggle("text-slate-500", !active);
       });
       renderSummary();
     });
+  });
+
+  document.querySelector("[data-plan-toggle]")?.addEventListener("change", (event) => {
+    state.showPlan = event.target.checked;
+    renderSummary();
   });
 
   document.querySelector("[data-summary-expand-all]")?.addEventListener("click", () => {

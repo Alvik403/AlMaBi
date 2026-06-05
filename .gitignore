@@ -6,6 +6,7 @@ __pycache__/
 # Локальный журнал изменений (не коммитить)
 WORK_LOG.local.md
 FUTURE.local.md
+_xlsx_temp/
 
 .DS_Store
 Thumbs.db
