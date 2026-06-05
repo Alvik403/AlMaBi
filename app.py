@@ -14,7 +14,12 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
-from almabi_mock_data import get_almabi_dashboard_data
+from almabi_data_source import (
+    almabi_data_context,
+    resolve_almabi_dashboard_data,
+    set_almabi_data_source,
+    store_almabi_upload,
+)
 from dashboard_cache import DashboardPayloadCache
 from dashboard_builder import (
     COST_TYPE_META,
@@ -135,6 +140,7 @@ def templated(request: Request, template_name: str, context: dict[str, Any], sta
         "request": request,
         "url_for": template_url_for(request),
         "file_context": files_payload(request),
+        "almabi_data_context": almabi_data_context(request, settings),
         "current_nav_tab": "dashboard",
         **context,
     }
@@ -525,6 +531,32 @@ def dashboard_home(request: Request):
         return render_dashboard_error(request, f"Ошибка построения дашборда: {exc}")
 
 
+@app.get("/api/almabi/data-source")
+def api_almabi_data_source(request: Request) -> dict:
+    return almabi_data_context(request, settings)
+
+
+@app.post("/api/almabi/data-source/{source}")
+def api_set_almabi_data_source(request: Request, source: str) -> dict:
+    set_almabi_data_source(request, source)
+    return almabi_data_context(request, settings)
+
+
+@app.post("/api/almabi/files/upload")
+def api_almabi_upload_file(request: Request, file: UploadFile = File(...)) -> JSONResponse:
+    try:
+        payload = store_almabi_upload(request, settings, file)
+        return JSONResponse(
+            {
+                **payload,
+                "context": almabi_data_context(request, settings),
+            },
+            status_code=201,
+        )
+    finally:
+        file.file.close()
+
+
 @app.get("/dashboard/almabi", response_class=HTMLResponse, name="almabi_dashboard")
 def almabi_dashboard(request: Request):
     url_fn = template_url_for(request)
@@ -532,7 +564,7 @@ def almabi_dashboard(request: Request):
         request,
         "almabi_dashboard.html",
         {
-            "dashboard": get_almabi_dashboard_data(),
+            "dashboard": resolve_almabi_dashboard_data(request, settings),
             "current_nav_tab": "almabi",
             "current_level": 1,
             "current_class_name": None,
@@ -1007,5 +1039,6 @@ if __name__ == "__main__":
         host=settings.app_host,
         port=settings.app_port,
         reload=settings.debug,
+        reload_excludes=["logs/*", "runtime/*", "uploads/*", "data/*", "*.sqlite3"],
         factory=False,
     )

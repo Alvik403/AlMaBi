@@ -50,6 +50,21 @@
       </div>
     </div>
 
+    {% if dashboard.meta %}
+    <div class="mt-3 rounded-lg border border-sky-100 bg-sky-50 px-3 py-2 text-xs text-sky-900">
+      <span class="font-semibold">{{ dashboard.meta.title or almabi_data_context.title }}</span>
+      {% if dashboard.meta.description %}
+      <span class="text-sky-800"> — {{ dashboard.meta.description }}</span>
+      {% endif %}
+      {% if dashboard.meta.upload_file_name %}
+      <span class="text-sky-700"> · {{ dashboard.meta.upload_file_name }}</span>
+      {% endif %}
+      {% if dashboard.meta.message %}
+      <span class="block mt-1 text-sky-700">{{ dashboard.meta.message }}</span>
+      {% endif %}
+    </div>
+    {% endif %}
+
     <div class="mt-4 flex flex-wrap items-end gap-3" data-filter-toolbar>
       <div class="grid flex-1 grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-8" data-filter-bar>
         {% set filter_labels = {

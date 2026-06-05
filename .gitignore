@@ -29,6 +29,7 @@ dashboard.sqlite3
 
 # Excel с бизнес-данными (загружаются локально / через UI)
 *.xlsx
+!fixtures/*.xlsx
 *.xls
 *.xlsm
 *.xlsb

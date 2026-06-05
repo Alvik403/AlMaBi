@@ -237,6 +237,143 @@ function initSidebar() {
   });
 }
 
+function initAlmabiDataSourceMenu() {
+  const root = document.querySelector("[data-almabi-data-menu]");
+  if (!root) return;
+
+  const uploadForm = root.querySelector("[data-almabi-upload-form]");
+  const uploadStatus = root.querySelector("[data-almabi-upload-status]");
+  const uploadButton = root.querySelector("[data-almabi-upload-button]");
+  const dropZone = root.querySelector("[data-almabi-drop-zone]");
+  const dropMessage = root.querySelector("[data-almabi-drop-message]");
+  const fileInput = uploadForm?.querySelector('input[type="file"]');
+  const selectedName = root.querySelector("[data-almabi-selected-name]");
+  let selectedFile = null;
+
+  const showStatus = (message, variant = "neutral") => {
+    if (!uploadStatus) return;
+    uploadStatus.textContent = message || "";
+    const colorByVariant = {
+      neutral: "text-gray-500",
+      error: "text-red-600",
+      success: "text-green-700",
+      progress: "text-brand-700",
+    };
+    uploadStatus.className = `mt-2 text-xs ${colorByVariant[variant] || colorByVariant.neutral}`;
+  };
+
+  const setUploading = (isUploading) => {
+    if (!uploadButton) return;
+    uploadButton.disabled = isUploading;
+    uploadButton.textContent = isUploading ? "Проверяем и загружаем..." : "Проверить и загрузить";
+  };
+
+  const setSelectedFile = (file, source = "selected") => {
+    if (!file) return false;
+    if (!file.name.toLowerCase().endsWith(".xlsx")) {
+      showStatus("Нужен файл .xlsx", "error");
+      return false;
+    }
+    selectedFile = file;
+    if (selectedName) {
+      selectedName.textContent = `Выбран файл: ${file.name}`;
+      selectedName.classList.remove("hidden");
+    }
+    if (dropMessage) {
+      const sourceLabels = {
+        dropped: "Файл добавлен перетаскиванием",
+        pasted: "Файл добавлен из буфера",
+        selected: "Файл выбран",
+      };
+      dropMessage.textContent = `${sourceLabels[source] || "Файл выбран"}: ${file.name}`;
+      dropMessage.classList.remove("border-gray-300", "bg-gray-50", "text-gray-500");
+      dropMessage.classList.add("border-brand-200", "bg-brand-50", "text-brand-700");
+    }
+    showStatus("Готов к загрузке. Нажмите «Проверить и загрузить».", "neutral");
+    return true;
+  };
+
+  root.querySelectorAll("[data-almabi-source]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const source = button.dataset.almabiSource;
+      if (!source || button.classList.contains("is-loading")) return;
+      button.classList.add("is-loading");
+      button.disabled = true;
+      try {
+        const response = await fetch(`/api/almabi/data-source/${source}`, { method: "POST" });
+        if (!response.ok) {
+          const payload = await response.json().catch(() => ({}));
+          throw new Error(payload.detail || "Не удалось переключить источник данных");
+        }
+        window.location.reload();
+      } catch (error) {
+        showStatus(error.message, "error");
+        button.classList.remove("is-loading");
+        button.disabled = false;
+      }
+    });
+  });
+
+  fileInput?.addEventListener("change", () => {
+    setSelectedFile(fileInput.files?.[0], "selected");
+  });
+
+  dropZone?.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    dropZone.classList.add("border-brand-400", "bg-brand-50");
+  });
+
+  dropZone?.addEventListener("dragleave", () => {
+    dropZone.classList.remove("border-brand-400", "bg-brand-50");
+  });
+
+  dropZone?.addEventListener("drop", (event) => {
+    event.preventDefault();
+    dropZone.classList.remove("border-brand-400", "bg-brand-50");
+    setSelectedFile(event.dataTransfer?.files?.[0], "dropped");
+  });
+
+  document.addEventListener("paste", (event) => {
+    const panel = document.querySelector("[data-file-menu-panel]");
+    if (!panel || panel.classList.contains("hidden")) return;
+    const pastedFile = Array.from(event.clipboardData?.files || []).find((file) =>
+      file.name.toLowerCase().endsWith(".xlsx"),
+    );
+    if (!pastedFile) return;
+    event.preventDefault();
+    setSelectedFile(pastedFile, "pasted");
+  });
+
+  uploadForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const file = selectedFile || fileInput?.files?.[0];
+    if (!file) {
+      showStatus("Выберите, перетащите или вставьте .xlsx файл", "error");
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("file", file);
+    setUploading(true);
+    showStatus("Файл отправлен. Проверяем структуру на сервере...", "progress");
+    try {
+      const response = await fetch("/api/almabi/files/upload", {
+        method: "POST",
+        body: formData,
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.detail || "Файл не прошёл проверку");
+      }
+      showStatus("Файл загружен. Обновляем дашборд...", "success");
+      window.setTimeout(() => window.location.reload(), 700);
+    } catch (error) {
+      showStatus(error.message, "error");
+      setUploading(false);
+    }
+  });
+}
+
 function initFileMenuOpeners() {
   const panel = document.querySelector("[data-file-menu-panel]");
   if (!panel) return;
@@ -267,6 +404,7 @@ function initFileMenuOpeners() {
 document.addEventListener("DOMContentLoaded", () => {
   initSortableTables();
   initFileMenu();
+  initAlmabiDataSourceMenu();
   initFileMenuOpeners();
   initSidebar();
 });

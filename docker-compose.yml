@@ -21,4 +21,5 @@ services:
       - ./runtime:/app/runtime
       - ./logs:/app/logs
     working_dir: /app
-    command: python app.py
+    # Без --reload: иначе watchfiles перезапускает сервер при каждой записи в ./logs
+    command: ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
