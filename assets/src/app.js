@@ -237,6 +237,15 @@ function initSidebar() {
   });
 }
 
+const ALMABI_EXPORT_ORDER = ["buh", "realization", "cost", "amortization"];
+const ALMABI_REQUIRED_EXPORTS = ["buh", "realization", "cost"];
+const ALMABI_EXPORT_LABELS = {
+  buh: "Бух.регистр",
+  realization: "Реализация",
+  cost: "Себестоимость",
+  amortization: "Амортизация",
+};
+
 function initAlmabiDataSourceMenu() {
   const root = document.querySelector("[data-almabi-data-menu]");
   if (!root) return;
@@ -246,9 +255,9 @@ function initAlmabiDataSourceMenu() {
   const uploadButton = root.querySelector("[data-almabi-upload-button]");
   const dropZone = root.querySelector("[data-almabi-drop-zone]");
   const dropMessage = root.querySelector("[data-almabi-drop-message]");
-  const fileInput = uploadForm?.querySelector('input[type="file"]');
+  const exportInputs = Array.from(root.querySelectorAll("[data-almabi-export-input]"));
   const selectedName = root.querySelector("[data-almabi-selected-name]");
-  let selectedFile = null;
+  const selectedFiles = Object.fromEntries(ALMABI_EXPORT_ORDER.map((key) => [key, null]));
 
   const showStatus = (message, variant = "neutral") => {
     if (!uploadStatus) return;
@@ -265,31 +274,70 @@ function initAlmabiDataSourceMenu() {
   const setUploading = (isUploading) => {
     if (!uploadButton) return;
     uploadButton.disabled = isUploading;
-    uploadButton.textContent = isUploading ? "Проверяем и загружаем..." : "Проверить и загрузить";
+    uploadButton.textContent = isUploading ? "Проверяем и загружаем..." : "Загрузить и собрать дашборд";
   };
 
-  const setSelectedFile = (file, source = "selected") => {
+  const renderSelectedFiles = () => {
+    const lines = ALMABI_EXPORT_ORDER.filter((key) => selectedFiles[key]).map(
+      (key) => `${ALMABI_EXPORT_LABELS[key]}: ${selectedFiles[key].name}`,
+    );
+    if (selectedName) {
+      if (!lines.length) {
+        selectedName.classList.add("hidden");
+        selectedName.textContent = "";
+      } else {
+        selectedName.textContent = lines.join(" · ");
+        selectedName.classList.remove("hidden");
+      }
+    }
+    if (dropMessage) {
+      if (!lines.length) {
+        dropMessage.textContent =
+          "Загрузите 4 файла: бухрегистр, реализация, себестоимость и амортизация. Можно выбрать все сразу через Ctrl+клик.";
+        dropMessage.classList.remove("border-brand-200", "bg-brand-50", "text-brand-700");
+        dropMessage.classList.add("border-gray-300", "bg-gray-50", "text-gray-500");
+      } else {
+        dropMessage.textContent = `Выбрано файлов: ${lines.length}`;
+        dropMessage.classList.remove("border-gray-300", "bg-gray-50", "text-gray-500");
+        dropMessage.classList.add("border-brand-200", "bg-brand-50", "text-brand-700");
+      }
+    }
+  };
+
+  const setSelectedFile = (exportType, file) => {
     if (!file) return false;
     if (!file.name.toLowerCase().endsWith(".xlsx")) {
       showStatus("Нужен файл .xlsx", "error");
       return false;
     }
-    selectedFile = file;
-    if (selectedName) {
-      selectedName.textContent = `Выбран файл: ${file.name}`;
-      selectedName.classList.remove("hidden");
+    selectedFiles[exportType] = file;
+    const input = exportInputs.find((item) => item.dataset.almabiExportInput === exportType);
+    if (input) {
+      const transfer = new DataTransfer();
+      transfer.items.add(file);
+      input.files = transfer.files;
     }
-    if (dropMessage) {
-      const sourceLabels = {
-        dropped: "Файл добавлен перетаскиванием",
-        pasted: "Файл добавлен из буфера",
-        selected: "Файл выбран",
-      };
-      dropMessage.textContent = `${sourceLabels[source] || "Файл выбран"}: ${file.name}`;
-      dropMessage.classList.remove("border-gray-300", "bg-gray-50", "text-gray-500");
-      dropMessage.classList.add("border-brand-200", "bg-brand-50", "text-brand-700");
+    renderSelectedFiles();
+    showStatus("Готов к загрузке. Нажмите «Загрузить и собрать дашборд».", "neutral");
+    return true;
+  };
+
+  const assignFiles = (files, source = "selected") => {
+    const xlsxFiles = Array.from(files || []).filter((file) => file.name.toLowerCase().endsWith(".xlsx"));
+    if (!xlsxFiles.length) {
+      showStatus("Нужен хотя бы один файл .xlsx", "error");
+      return false;
     }
-    showStatus("Готов к загрузке. Нажмите «Проверить и загрузить».", "neutral");
+    if (xlsxFiles.length === 1) {
+      const nextType = ALMABI_EXPORT_ORDER.find((key) => !selectedFiles[key]) || ALMABI_EXPORT_ORDER[0];
+      setSelectedFile(nextType, xlsxFiles[0]);
+      showStatus(`${ALMABI_EXPORT_LABELS[nextType]}: ${xlsxFiles[0].name}`, source === "dropped" ? "success" : "neutral");
+      return true;
+    }
+    xlsxFiles.slice(0, ALMABI_EXPORT_ORDER.length).forEach((file, index) => {
+      setSelectedFile(ALMABI_EXPORT_ORDER[index], file);
+    });
+    showStatus(`Добавлено файлов: ${Math.min(xlsxFiles.length, ALMABI_EXPORT_ORDER.length)}`, "success");
     return true;
   };
 
@@ -314,8 +362,12 @@ function initAlmabiDataSourceMenu() {
     });
   });
 
-  fileInput?.addEventListener("change", () => {
-    setSelectedFile(fileInput.files?.[0], "selected");
+  exportInputs.forEach((input) => {
+    input.addEventListener("change", () => {
+      const exportType = input.dataset.almabiExportInput;
+      if (!exportType) return;
+      setSelectedFile(exportType, input.files?.[0]);
+    });
   });
 
   dropZone?.addEventListener("dragover", (event) => {
@@ -330,42 +382,57 @@ function initAlmabiDataSourceMenu() {
   dropZone?.addEventListener("drop", (event) => {
     event.preventDefault();
     dropZone.classList.remove("border-brand-400", "bg-brand-50");
-    setSelectedFile(event.dataTransfer?.files?.[0], "dropped");
+    assignFiles(event.dataTransfer?.files, "dropped");
   });
 
   document.addEventListener("paste", (event) => {
     const panel = document.querySelector("[data-file-menu-panel]");
     if (!panel || panel.classList.contains("hidden")) return;
-    const pastedFile = Array.from(event.clipboardData?.files || []).find((file) =>
+    const pastedFiles = Array.from(event.clipboardData?.files || []).filter((file) =>
       file.name.toLowerCase().endsWith(".xlsx"),
     );
-    if (!pastedFile) return;
+    if (!pastedFiles.length) return;
     event.preventDefault();
-    setSelectedFile(pastedFile, "pasted");
+    assignFiles(pastedFiles, "pasted");
   });
 
   uploadForm?.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const file = selectedFile || fileInput?.files?.[0];
-    if (!file) {
-      showStatus("Выберите, перетащите или вставьте .xlsx файл", "error");
+    const missingRequired = ALMABI_REQUIRED_EXPORTS.filter((key) => !selectedFiles[key]);
+    if (missingRequired.length) {
+      showStatus(
+        `Загрузите обязательные файлы: ${missingRequired.map((key) => ALMABI_EXPORT_LABELS[key]).join(", ")}`,
+        "error",
+      );
       return;
     }
 
     const formData = new FormData();
-    formData.append("file", file);
+    ALMABI_EXPORT_ORDER.forEach((key) => {
+      if (selectedFiles[key]) {
+        formData.append(`${key}_file`, selectedFiles[key]);
+      }
+    });
     setUploading(true);
-    showStatus("Файл отправлен. Проверяем структуру на сервере...", "progress");
+    showStatus("Файлы отправлены. Проверяем структуру и собираем дашборд...", "progress");
     try {
-      const response = await fetch("/api/almabi/files/upload", {
+      const response = await fetch("/api/almabi/files/upload-set", {
         method: "POST",
         body: formData,
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(payload.detail || "Файл не прошёл проверку");
+        throw new Error(payload.detail || "Файлы не прошли проверку");
       }
-      showStatus("Файл загружен. Обновляем дашборд...", "success");
+      const warningText = Array.isArray(payload.warnings) && payload.warnings.length
+        ? payload.warnings.join(" ")
+        : "";
+      showStatus(
+        warningText
+          ? `Выгрузки загружены. ${warningText} Обновляем дашборд...`
+          : "Выгрузки загружены. Обновляем дашборд...",
+        "success",
+      );
       window.setTimeout(() => window.location.reload(), 700);
     } catch (error) {
       showStatus(error.message, "error");

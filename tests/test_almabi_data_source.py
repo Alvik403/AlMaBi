@@ -73,8 +73,8 @@ def test_almabi_upload_accepts_bdr_file(app_client, tmp_path: Path):
     assert response.status_code == 201
     payload = response.json()
     assert payload["source"] == "upload"
-    assert payload["upload_file_name"] == "my_bdr.xlsx"
-    assert payload["validation"]["format"] == "bdr_export"
+    assert payload["saved_exports"]["buh"]["original"] == "my_bdr.xlsx"
+    assert payload["saved_exports"]["buh"]["validation"]["export_type"] == "buh"
 
     dashboard = app_client.get("/dashboard/almabi")
     assert dashboard.status_code == 200

@@ -3,6 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
+from almabi_contractor_builder import contractor_details_from_cards
 from almabi_mock_data import (
     MONTHS,
     SCENARIOS,
@@ -87,6 +88,7 @@ def get_almabi_template_dashboard_data() -> dict[str, Any]:
         "filters": deepcopy(_TEMPLATE_FILTERS),
         "summary_rows": deepcopy(summary_rows),
         "contractor_cards": deepcopy(_TEMPLATE_CONTRACTORS),
+        "contractor_details": contractor_details_from_cards(_TEMPLATE_CONTRACTORS),
         "revenue_by_month": deepcopy(revenue_chart),
         "cost_by_month": deepcopy(cost_chart),
         "cost_structure_total": sum(item["value"] for item in cost_chart),

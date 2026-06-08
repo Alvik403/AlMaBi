@@ -3,6 +3,8 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
+from almabi_contractor_builder import contractor_details_from_cards
+
 
 MONTHS = [
     "Январь",
@@ -529,6 +531,7 @@ def get_almabi_dashboard_data() -> dict:
         "units": UNITS,
         "filters": deepcopy(FILTERS),
         "summary_rows": deepcopy(summary_rows),
+        "contractor_details": contractor_details_from_cards(CONTRACTOR_CARDS),
         "contractor_cards": deepcopy(CONTRACTOR_CARDS),
         "revenue_by_month": deepcopy(REVENUE_BY_MONTH),
         "cost_by_month": deepcopy(COST_BY_MONTH),

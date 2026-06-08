@@ -7,6 +7,9 @@ __pycache__/
 WORK_LOG.local.md
 FUTURE.local.md
 _xlsx_temp/
+_tmp_almabi.html
+bdr_excel_com_utf8.txt
+*_excel_com_utf8.txt
 
 .DS_Store
 Thumbs.db

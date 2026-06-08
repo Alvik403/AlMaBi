@@ -19,6 +19,7 @@ from almabi_data_source import (
     resolve_almabi_dashboard_data,
     set_almabi_data_source,
     store_almabi_upload,
+    store_almabi_upload_bundle,
 )
 from dashboard_cache import DashboardPayloadCache
 from dashboard_builder import (
@@ -555,6 +556,35 @@ def api_almabi_upload_file(request: Request, file: UploadFile = File(...)) -> JS
         )
     finally:
         file.file.close()
+
+
+@app.post("/api/almabi/files/upload-set")
+def api_almabi_upload_bundle(
+    request: Request,
+    buh_file: UploadFile | None = File(None),
+    realization_file: UploadFile | None = File(None),
+    cost_file: UploadFile | None = File(None),
+    amortization_file: UploadFile | None = File(None),
+) -> JSONResponse:
+    files = {
+        "buh": buh_file,
+        "realization": realization_file,
+        "cost": cost_file,
+        "amortization": amortization_file,
+    }
+    try:
+        payload = store_almabi_upload_bundle(request, settings, files)
+        return JSONResponse(
+            {
+                **payload,
+                "context": almabi_data_context(request, settings),
+            },
+            status_code=201,
+        )
+    finally:
+        for file in files.values():
+            if file is not None:
+                file.file.close()
 
 
 @app.get("/dashboard/almabi", response_class=HTMLResponse, name="almabi_dashboard")
