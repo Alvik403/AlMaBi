@@ -1,0 +1,171 @@
+<section class="flex h-full min-h-0 flex-col gap-4" data-test-excel-root data-upload-url="{{ upload_url }}">
+  <div class="shrink-0 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+    <h2 class="mb-3 text-sm font-bold text-gray-900">{{ panel_title }}</h2>
+    <form data-test-excel-upload class="flex flex-col gap-3">
+      <div class="grid grid-cols-1 gap-3 {% if show_buh_join_uploads %}lg:grid-cols-3{% elif show_projects_upload %}lg:grid-cols-2{% endif %}">
+        <div class="min-w-0">
+          <label class="mb-1 block text-sm font-semibold text-gray-700">{{ file_label }}</label>
+          <input
+            type="file"
+            name="{{ upload_file_name | default('file') }}"
+            accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            class="block w-full text-sm text-gray-600 file:mr-3 file:rounded-lg file:border-0 file:bg-brand-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-brand-700 hover:file:bg-brand-100"
+            required
+          />
+        </div>
+        {% if show_buh_join_uploads %}
+        <div class="min-w-0">
+          <label class="mb-1 block text-sm font-semibold text-gray-700">Себестоимость (.xlsx, опционально)</label>
+          <input
+            type="file"
+            name="cost_file"
+            accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            class="block w-full text-sm text-gray-600 file:mr-3 file:rounded-lg file:border-0 file:bg-brand-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-brand-700 hover:file:bg-brand-100"
+          />
+        </div>
+        <div class="min-w-0">
+          <label class="mb-1 block text-sm font-semibold text-gray-700">Выручка — реализация (.xlsx, опционально)</label>
+          <input
+            type="file"
+            name="revenue_file"
+            accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            class="block w-full text-sm text-gray-600 file:mr-3 file:rounded-lg file:border-0 file:bg-brand-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-brand-700 hover:file:bg-brand-100"
+          />
+        </div>
+        {% elif show_projects_upload %}
+        <div class="min-w-0">
+          <label class="mb-1 block text-sm font-semibold text-gray-700">Проекты — реализация (.xlsx, опционально)</label>
+          <input
+            type="file"
+            name="projects_file"
+            accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            class="block w-full text-sm text-gray-600 file:mr-3 file:rounded-lg file:border-0 file:bg-brand-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-brand-700 hover:file:bg-brand-100"
+          />
+        </div>
+        {% endif %}
+      </div>
+      <div>
+        <button
+          type="submit"
+          class="rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+        >
+          Загрузить и построить
+        </button>
+      </div>
+    </form>
+    <p data-test-excel-status class="mt-2 text-xs text-gray-500">
+      {% if payload.loaded %}
+      Загружено: <span class="font-medium text-gray-800">{{ payload.file_name }}</span>
+      {% if payload.projects_file_name %}
+      · Проекты: <span class="font-medium text-gray-800">{{ payload.projects_file_name }}</span>
+      {% endif %}
+      {% if payload.cost_file_name %}
+      · Себестоимость: <span class="font-medium text-gray-800">{{ payload.cost_file_name }}</span>
+      {% endif %}
+      {% if payload.revenue_file_name %}
+      · Выручка: <span class="font-medium text-gray-800">{{ payload.revenue_file_name }}</span>
+      {% endif %}
+      {% else %}
+      {{ empty_hint }}
+      {% endif %}
+    </p>
+  </div>
+
+  <div class="grid shrink-0 grid-cols-1 gap-3 sm:grid-cols-3">
+    <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+      <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Строк</p>
+      <p data-test-excel-row-count class="mt-1 text-2xl font-bold text-gray-900">{{ payload.summary.row_count }}</p>
+    </div>
+    <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+      <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Сумма всего</p>
+      <p data-test-excel-total class="mt-1 text-2xl font-bold text-brand-700">{{ payload.summary.total_amount | money }}</p>
+    </div>
+    <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+      <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Сумма выделенного</p>
+      <p data-test-excel-selected-total class="mt-1 text-2xl font-bold text-emerald-700">0,00</p>
+      <p data-test-excel-selected-count class="mt-1 text-xs text-gray-500">Выделено: 0</p>
+    </div>
+  </div>
+
+  <div class="shrink-0 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+    <div class="grid grid-cols-1 gap-3 lg:grid-cols-4">
+      <div class="lg:col-span-2">
+        <label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">Поиск</label>
+        <input
+          type="search"
+          placeholder="Документ, номенклатура, проект…"
+          data-test-excel-search
+          class="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-200"
+        />
+      </div>
+      {% for column, values in payload.filter_options.items() %}
+      <div>
+        <label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">{{ column }}</label>
+        <select data-test-excel-filter="{{ column }}" class="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm">
+          <option value="">Все</option>
+          {% for value in values %}
+          <option value="{{ value }}">{{ value }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="mt-3 flex flex-wrap gap-2">
+      <button type="button" data-test-excel-clear-filters class="rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+        Сбросить фильтры
+      </button>
+      <button type="button" data-test-excel-select-visible class="rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+        Выделить видимые
+      </button>
+      <button type="button" data-test-excel-clear-selection class="rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+        Снять выделение
+      </button>
+    </div>
+  </div>
+
+  <div class="min-h-0 flex-1 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+    <div class="h-full overflow-auto">
+      <table class="min-w-full text-sm">
+        <thead class="sticky top-0 z-10 bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
+          <tr>
+            <th class="w-10 px-3 py-3">
+              <input type="checkbox" data-test-excel-select-all aria-label="Выделить все видимые" />
+            </th>
+            {% for column in payload.summary.columns %}
+            <th class="px-3 py-3 whitespace-nowrap">{{ column }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody data-test-excel-body>
+          {% if payload.rows %}
+            {% for row in payload.rows %}
+            <tr class="border-t border-gray-100 hover:bg-brand-50/40" data-test-excel-row data-row-index="{{ loop.index0 }}">
+              <td class="px-3 py-2">
+                <input type="checkbox" data-test-excel-row-check aria-label="Выделить строку" />
+              </td>
+              {% for column in payload.summary.columns %}
+              <td class="px-3 py-2 whitespace-nowrap {% if column in ['Сумма', 'Сумма БУ', 'Сумма НУ', 'Себестоимость.Сумма'] %}text-right font-medium tabular-nums{% endif %}">
+                {% if column in ['Сумма', 'Сумма БУ', 'Сумма НУ', 'Себестоимость.Сумма'] %}
+                  {{ row[column] | money }}
+                {% else %}
+                  {{ row[column] }}
+                {% endif %}
+              </td>
+              {% endfor %}
+            </tr>
+            {% endfor %}
+          {% else %}
+            <tr>
+              <td colspan="{{ payload.summary.columns | length + 1 }}" class="px-4 py-10 text-center text-gray-500">
+                Нет данных. Загрузите файл.
+              </td>
+            </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script type="application/json" data-test-excel-rows>{{ payload.rows | tojson }}</script>
+  <script type="application/json" data-test-excel-columns>{{ payload.summary.columns | tojson }}</script>
+</section>

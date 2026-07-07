@@ -8,6 +8,10 @@ from almabi_pipeline import _merge_doc_tax
 def test_tax_bucket_recognizes_privileged_variants():
     assert tax_bucket("Доходы по льготируемым видам деятельности") == "Льготные проекты"
     assert tax_bucket("Общие условия налогообложения") == "Нельготные проекты"
+    assert (
+        tax_bucket("Резидент (участник) особой (свободной) экономической зоны")
+        == "Льготные проекты"
+    )
 
 
 def test_merge_doc_tax_prefers_revenue_line_over_cost_line():

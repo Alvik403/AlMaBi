@@ -25,6 +25,10 @@ class AlmabiValidationResult:
     sheet_name: str
     header_row: int
 
+    @property
+    def format(self) -> str:
+        return self.export_type
+
     def to_dict(self) -> dict:
         return {
             "export_type": self.export_type,

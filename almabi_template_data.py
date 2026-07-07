@@ -65,7 +65,7 @@ def _build_template_summary_rows() -> list[dict[str, Any]]:
 
     return [
         _kpi_node("Выручка", revenue),
-        _kpi_node("Себестоимость", cost, sign=-1, revenue_values=revenue),
+        _kpi_node("Себестоимость", cost, sign=-1),
         _kpi_node("Коммерческие расходы", commercial, sign=-1),
         _kpi_node("Управленческие расходы", admin, sign=-1),
         _kpi_node("Операционная прибыль", operating),
@@ -92,6 +92,7 @@ def get_almabi_template_dashboard_data() -> dict[str, Any]:
         "revenue_by_month": deepcopy(revenue_chart),
         "cost_by_month": deepcopy(cost_chart),
         "cost_structure_total": sum(item["value"] for item in cost_chart),
+        "article_breakdown": [],
         "meta": {
             "source": "template",
             "title": "Шаблон БДР (тестовое заполнение)",

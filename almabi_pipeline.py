@@ -7,11 +7,14 @@ from pathlib import Path
 from almabi_excel_utils import MONTH_NAMES, analytics_value, document_match_keys, tax_bucket
 from almabi_export_parsers import (
     BuhRow,
+    CostRow,
     ParsedExports,
+    RealizationRow,
     classify_buh_section,
     parse_exports,
 )
-from almabi_project_index import build_project_index, lookup_project
+from almabi_project_index import ProjectMeta, build_project_index, lookup_project
+from almabi_realization_lookup import build_realization_index, resolve_realization_match
 
 
 @dataclass(frozen=True)
@@ -36,10 +39,6 @@ class PipelineResult:
     facts: list[Fact] = field(default_factory=list)
     months: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
-
-
-def _amount_nu(amount_dt: float, amount_kt: float) -> float:
-    return abs(amount_dt) + abs(amount_kt)
 
 
 def _lookup_contract(document: str, doc_contract: dict[str, str]) -> str:
@@ -81,6 +80,86 @@ def _lookup_contractor(document: str, doc_contractor: dict[str, str]) -> str:
     return ""
 
 
+def _amount_nu_for_section(section: str, amount_nu_dt: float, amount_nu_kt: float) -> float:
+    """Сумма НУ по правилам Power Query «Свод_нов» (со знаком)."""
+    if section == "Себестоимость":
+        return -amount_nu_kt if amount_nu_kt else 0.0
+    if section in {"Прочие расходы", "Коммерческие расходы", "Управленческие расходы"}:
+        return -amount_nu_dt if amount_nu_dt else 0.0
+    if section == "Прочие доходы":
+        return amount_nu_kt
+    return amount_nu_kt
+
+
+def _amount_buh_for_section(section: str, row: BuhRow, cost_match: CostRow | None) -> float:
+    """Сумма БУ по правилам Power Query «Свод_нов» (со знаком)."""
+    if section == "Себестоимость":
+        if cost_match is not None:
+            return -cost_match.amount if cost_match.amount else 0.0
+        # Как в PQ «Бух.регистр»: без join к файлу себестоимости — «Сумма» без инверсии.
+        return row.amount_buh if row.amount_buh else 0.0
+    if section in {"Прочие расходы", "Коммерческие расходы", "Управленческие расходы"}:
+        return -row.amount_buh if row.amount_buh else 0.0
+    return row.amount_buh if row.amount_buh else 0.0
+
+
+def _build_cost_lookup(cost_rows: list[CostRow]) -> dict[tuple[str, str], CostRow]:
+    lookup: dict[tuple[str, str], CostRow] = {}
+    for row in cost_rows:
+        nomenclature = row.nomenclature.casefold()
+        if not nomenclature:
+            continue
+        for key in document_match_keys(row.document):
+            lookup.setdefault((key, nomenclature), row)
+    return lookup
+
+
+def _lookup_cost_row(
+    document: str,
+    nomenclature_kt: str,
+    lookup: dict[tuple[str, str], CostRow],
+) -> CostRow | None:
+    nomenclature = nomenclature_kt.casefold()
+    if not nomenclature:
+        return None
+    for key in document_match_keys(document):
+        match = lookup.get((key, nomenclature))
+        if match is not None:
+            return match
+    return None
+
+
+def _is_meaningful_analytic(value: str) -> bool:
+    return value.casefold() not in {"", "без направления", "без группы", "без проекта"}
+
+
+def _coalesce_analytics(
+    *,
+    cost_match: CostRow | None,
+    rev_match: RealizationRow | None,
+    fallback: ProjectMeta,
+) -> ProjectMeta:
+    def pick(cost_value: str, rev_value: str, default: str) -> str:
+        if _is_meaningful_analytic(cost_value):
+            return cost_value
+        if _is_meaningful_analytic(rev_value):
+            return rev_value
+        return default
+
+    cost_direction = cost_match.direction if cost_match else ""
+    rev_direction = rev_match.direction if rev_match else ""
+    cost_group = cost_match.project_group if cost_match else ""
+    rev_group = rev_match.project_group if rev_match else ""
+    cost_project = cost_match.project if cost_match else ""
+    rev_project = rev_match.project if rev_match else ""
+
+    return ProjectMeta(
+        direction=pick(cost_direction, rev_direction, fallback.direction),
+        project_group=pick(cost_group, rev_group, fallback.project_group),
+        project=pick(cost_project, rev_project, fallback.project),
+    )
+
+
 def _append_fact(
     facts: list[Fact],
     *,
@@ -98,7 +177,10 @@ def _append_fact(
     tax_type: str = "",
     contractor: str = "",
 ) -> None:
-    if not month or not amount_buh:
+    if not month:
+        return
+    effective_nu = amount_nu if amount_nu is not None else amount_buh
+    if amount_buh == 0 and effective_nu == 0:
         return
     facts.append(
         Fact(
@@ -119,6 +201,68 @@ def _append_fact(
     )
 
 
+def _append_file_fallback_facts(
+    facts: list[Fact],
+    exports: ParsedExports,
+    *,
+    doc_tax: dict[str, str],
+    doc_contract: dict[str, str],
+    doc_contractor: dict[str, str],
+    project_by_document: dict[str, ProjectMeta],
+    project_key_index: dict[str, str],
+    project_meta_by_key: dict[str, ProjectMeta],
+    include_revenue: bool,
+    include_cost: bool,
+) -> None:
+    if include_revenue and exports.realization:
+        for row in exports.realization:
+            project = lookup_project(
+                row.document,
+                project_by_document,
+                project_key_index,
+                meta_by_key=project_meta_by_key,
+            )
+            _append_fact(
+                facts,
+                kpi_l1="Выручка",
+                month=row.month,
+                amount_buh=row.revenue,
+                amount_nu=row.revenue,
+                direction=project.direction,
+                project_group=project.project_group,
+                project=project.project,
+                contract=_lookup_contract(row.document, doc_contract),
+                nomenclature=row.nomenclature,
+                tax_type=doc_tax.get(row.document, "Общие условия налогообложения"),
+                contractor=_lookup_contractor(row.document, doc_contractor),
+            )
+
+    if include_cost and exports.cost:
+        for row in exports.cost:
+            project = lookup_project(
+                row.document,
+                project_by_document,
+                project_key_index,
+                meta_by_key=project_meta_by_key,
+            )
+            _append_fact(
+                facts,
+                kpi_l1="Себестоимость",
+                month=row.month,
+                amount_buh=-abs(row.amount),
+                amount_nu=-abs(row.amount),
+                direction=project.direction,
+                project_group=project.project_group,
+                project=project.project,
+                contract=_lookup_contract(row.document, doc_contract),
+                nomenclature=row.nomenclature,
+                cost_section=row.cost_section,
+                expense_article=row.calc_article,
+                tax_type=doc_tax.get(row.document, "Общие условия налогообложения"),
+                contractor=_lookup_contractor(row.document, doc_contractor),
+            )
+
+
 def build_facts(exports: ParsedExports) -> PipelineResult:
     facts: list[Fact] = []
     warnings: list[str] = []
@@ -133,7 +277,9 @@ def build_facts(exports: ParsedExports) -> PipelineResult:
         if row.contractor and row.document not in doc_contractor:
             doc_contractor[row.document] = row.contractor
 
-    project_by_document, project_key_index = build_project_index(exports)
+    project_by_document, project_key_index, project_meta_by_key = build_project_index(exports)
+    cost_lookup = _build_cost_lookup(exports.cost)
+    realization_index = build_realization_index(exports.realization, doc_contract)
 
     if exports.realization:
         missing_analytics = sum(
@@ -151,79 +297,63 @@ def build_facts(exports: ParsedExports) -> PipelineResult:
                 "Больше половины строк реализации без направления/группы — "
                 "возможно, не совпадает ключ «Документ» между выгрузками."
             )
-
-    if exports.realization:
-        for row in exports.realization:
-            project = lookup_project(row.document, project_by_document, project_key_index)
-            tax_type = doc_tax.get(row.document, "Общие условия налогообложения")
-            contract = _lookup_contract(row.document, doc_contract)
-            _append_fact(
-                facts,
-                kpi_l1="Выручка",
-                month=row.month,
-                amount_buh=row.revenue,
-                amount_nu=row.revenue,
-                direction=project.direction,
-                project_group=project.project_group,
-                project=project.project,
-                contract=contract,
-                nomenclature=row.nomenclature,
-                tax_type=tax_type,
-                contractor=_lookup_contractor(row.document, doc_contractor),
-            )
     else:
-        warnings.append("Файл реализации не загружен — выручка будет взята из бухрегистра.")
+        warnings.append(
+            "Файл реализации не загружен — аналитика проектов для выручки будет взята только из бухрегистра."
+        )
 
-    if exports.cost:
-        for row in exports.cost:
-            project = lookup_project(row.document, project_by_document, project_key_index)
-            tax_type = doc_tax.get(row.document, "Общие условия налогообложения")
-            _append_fact(
-                facts,
-                kpi_l1="Себестоимость",
-                month=row.month,
-                amount_buh=abs(row.amount),
-                amount_nu=abs(row.amount),
-                direction=project.direction,
-                project_group=project.project_group,
-                project=project.project,
-                contract=_lookup_contract(row.document, doc_contract),
-                nomenclature=row.nomenclature,
-                cost_section=row.cost_section,
-                tax_type=tax_type,
-                contractor=_lookup_contractor(row.document, doc_contractor),
-            )
-    else:
+    if not exports.cost:
         warnings.append("Файл себестоимости не загружен — себестоимость будет взята из бухрегистра.")
 
-    used_revenue_keys: set[str] = set()
-    used_cost_keys: set[tuple[str, str]] = set()
-    if exports.realization:
-        for row in exports.realization:
-            used_revenue_keys |= document_match_keys(row.document)
-    if exports.cost:
-        used_cost_keys = {(row.document, row.nomenclature.casefold()) for row in exports.cost if row.nomenclature}
+    saw_revenue = False
+    saw_cost = False
 
     for row in exports.buh:
         section = classify_buh_section(row.account_dt, row.account_kt)
         if not section or not row.month:
             continue
 
-        if section == "Выручка" and exports.realization and document_match_keys(row.document) & used_revenue_keys:
-            continue
+        cost_match = None
         if section == "Себестоимость" and exports.cost:
-            key = (row.document, row.nomenclature_kt.casefold())
-            if row.nomenclature_kt and key in used_cost_keys:
-                continue
+            cost_match = _lookup_cost_row(row.document, row.nomenclature_kt, cost_lookup)
 
-        project = lookup_project(
+        rev_match = None
+        if exports.realization and section in {"Выручка", "Себестоимость"}:
+            buh_contract = analytics_value(row.contract, default="") or _lookup_contract(row.document, doc_contract)
+            rev_match = resolve_realization_match(
+                buh_row=row,
+                cost_match=cost_match,
+                buh_contract=buh_contract,
+                index=realization_index,
+                prefer_cost_chain=section == "Себестоимость",
+            )
+
+        amount_buh = _amount_buh_for_section(section, row, cost_match)
+        amount_nu = _amount_nu_for_section(section, row.amount_nu_dt, row.amount_nu_kt)
+
+        fallback_project = lookup_project(
             row.document,
             project_by_document,
             project_key_index,
+            meta_by_key=project_meta_by_key,
             fallback_project=row.project,
         )
-        amount_buh = abs(row.amount_buh)
-        amount_nu = _amount_nu(row.amount_nu_dt, row.amount_nu_kt) or amount_buh
+        analytics = _coalesce_analytics(
+            cost_match=cost_match,
+            rev_match=rev_match,
+            fallback=fallback_project,
+        )
+
+        nomenclature = row.nomenclature_kt
+        if cost_match and cost_match.nomenclature:
+            nomenclature = cost_match.nomenclature
+        elif rev_match and rev_match.nomenclature:
+            nomenclature = rev_match.nomenclature
+
+        contract = analytics_value(row.contract, default="") or _lookup_contract(row.document, doc_contract)
+        if cost_match and cost_match.contract:
+            contract = cost_match.contract or contract
+        contractor = row.contractor or _lookup_contractor(row.document, doc_contractor)
 
         _append_fact(
             facts,
@@ -231,15 +361,38 @@ def build_facts(exports: ParsedExports) -> PipelineResult:
             month=row.month,
             amount_buh=amount_buh,
             amount_nu=amount_nu,
-            direction=project.direction,
-            project_group=project.project_group,
-            project=project.project,
-            contract=analytics_value(row.contract, default=""),
-            nomenclature=row.nomenclature_kt,
-            expense_article=row.expense_article,
+            direction=analytics.direction,
+            project_group=analytics.project_group,
+            project=analytics.project,
+            contract=contract,
+            nomenclature=nomenclature,
+            cost_section=cost_match.cost_section if cost_match else "",
+            expense_article=(
+                cost_match.calc_article
+                if cost_match and section == "Себестоимость" and cost_match.calc_article
+                else row.expense_article
+            ),
             tax_type=row.tax_type,
-            contractor=row.contractor,
+            contractor=contractor,
         )
+
+        if section == "Выручка":
+            saw_revenue = True
+        if section == "Себестоимость":
+            saw_cost = True
+
+    _append_file_fallback_facts(
+        facts,
+        exports,
+        doc_tax=doc_tax,
+        doc_contract=doc_contract,
+        doc_contractor=doc_contractor,
+        project_by_document=project_by_document,
+        project_key_index=project_key_index,
+        project_meta_by_key=project_meta_by_key,
+        include_revenue=not saw_revenue,
+        include_cost=not saw_cost,
+    )
 
     month_order = list(MONTH_NAMES.values())
     months = sorted({fact.month for fact in facts}, key=month_order.index)

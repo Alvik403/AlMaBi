@@ -13,7 +13,159 @@ def _pad_rows(sheet, count: int) -> None:
         sheet.append([None])
 
 
-def create_buh_workbook(path: Path) -> None:
+def create_buh_workbook(
+    path: Path,
+    *,
+    document: str = "Реализация товаров и услуг 00АМ-000017 от 31.01.2026 21:00:00",
+) -> None:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Лист_1"
+    _pad_rows(sheet, 8)
+    headers = [
+        "Документ",
+        "Счет Дт",
+        "Вид субконто2 Дт",
+        "Субконто2 Дт",
+        "Счет Кт",
+        "Вид субконто1 Кт",
+        "Субконто1 Кт",
+        "Дата",
+        "Договор",
+        "Сумма",
+        "Сумма НУ Дт",
+        "Сумма НУ Кт",
+    ]
+    sheet.append(headers)
+    realization_document = document
+    sheet.append(
+        [
+            realization_document,
+            "90.02.1",
+            "Варианты налогообложения прибыли",
+            "Общие условия налогообложения",
+            "43",
+            "Номенклатура",
+            "Лицензия ПО",
+            "15.01.2026",
+            "Д-001",
+            400_000,
+            400_000,
+            0,
+        ]
+    )
+    sheet.append(
+        [
+            realization_document,
+            "62.01",
+            "Варианты налогообложения прибыли",
+            "Доходы по льготируемым видам деятельности",
+            "90.01.3",
+            "",
+            "",
+            "15.01.2026",
+            "Д-001",
+            1_000_000,
+            0,
+            1_000_000,
+        ]
+    )
+    sheet.append(
+        [
+            realization_document,
+            "62.01",
+            "Контрагенты",
+            "ООО Тест Клиент",
+            "51",
+            "",
+            "",
+            "15.01.2026",
+            "Д-001",
+            1,
+            0,
+            0,
+        ]
+    )
+    sheet.append(
+        [
+            realization_document,
+            "90.07.1",
+            "Варианты налогообложения прибыли",
+            "Общие условия налогообложения",
+            "44",
+            "Статьи затрат",
+            "Реклама",
+            "20.02.2026",
+            "",
+            50_000,
+            50_000,
+            0,
+        ]
+    )
+    sheet.append(["Итого"])
+    workbook.save(path)
+
+
+def create_realization_workbook(path: Path, *, document: str = "Реализация товаров и услуг 00АМ-000017 от 31.01.2026 21:00:00") -> None:
+    workbook = Workbook()
+    sheet = workbook.active
+    _pad_rows(sheet, 7)
+    headers = [
+        "Заказ клиента / Реализация",
+        "Номенклатура",
+        "Проект",
+        "Группа проектов",
+        "Направление",
+        "Выручка",
+        "Валовая прибыль",
+    ]
+    sheet.append(headers)
+    sheet.append(
+        [
+            document,
+            "Лицензия ПО",
+            "Обслуживание Долго",
+            "Обслуживание",
+            "Услуги",
+            1_000_000,
+            600_000,
+        ]
+    )
+    sheet.append(["Итого"])
+    workbook.save(path)
+
+
+def create_cost_workbook(path: Path, *, document: str = "Реализация товаров и услуг 00АМ-000017 от 31.01.2026 21:00:00") -> None:
+    workbook = Workbook()
+    sheet = workbook.active
+    _pad_rows(sheet, 5)
+    headers = [
+        "Продукция",
+        "Счет",
+        "Статья калькуляции",
+        "Документ отгрузки",
+        "Договор",
+        "Количество продаж",
+        "Себестоимость (бухг. учет)",
+    ]
+    sheet.append(headers)
+    sheet.append(
+        [
+            "Лицензия ПО",
+            "20",
+            "Сырье и материалы",
+            document,
+            "Д-001",
+            1,
+            400_000,
+        ]
+    )
+    _pad_rows(sheet, 38)
+    workbook.save(path)
+
+
+def create_profit_before_tax_buh_workbook(path: Path) -> None:
+    """Бухрегистр с операционными строками, прочими доходами и расходами."""
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = "Лист_1"
@@ -86,12 +238,44 @@ def create_buh_workbook(path: Path) -> None:
         [
             realization_document,
             "90.07.1",
+            "Варианты налогообложения прибыли",
+            "Общие условия налогообложения",
+            "44",
             "Статьи затрат",
             "Реклама",
-            "44",
-            "",
-            "",
             "20.02.2026",
+            "",
+            50_000,
+            50_000,
+            0,
+        ]
+    )
+    sheet.append(
+        [
+            "Операция 0001 от 15.03.2026",
+            "76.09",
+            "",
+            "",
+            "91.01",
+            "Прочие доходы и расходы",
+            "Проценты полученные",
+            "15.03.2026",
+            "",
+            400_000,
+            0,
+            400_000,
+        ]
+    )
+    sheet.append(
+        [
+            "Операция штраф от 20.04.2026",
+            "91.02",
+            "Прочие доходы и расходы",
+            "Штрафы",
+            "76.09",
+            "",
+            "",
+            "20.04.2026",
             "",
             50_000,
             50_000,
@@ -102,59 +286,123 @@ def create_buh_workbook(path: Path) -> None:
     workbook.save(path)
 
 
-def create_realization_workbook(path: Path, *, document: str = "Реализация товаров и услуг 00АМ-000017 от 31.01.2026 21:00:00") -> None:
+def create_other_income_buh_workbook(
+    path: Path,
+    *,
+    document: str = "Операция 0001 от 15.03.2026",
+    article: str = "Проценты полученные",
+    amount: float = 400_000,
+) -> None:
     workbook = Workbook()
     sheet = workbook.active
-    _pad_rows(sheet, 7)
+    _pad_rows(sheet, 8)
     headers = [
-        "Заказ клиента / Реализация",
-        "Номенклатура",
-        "Проект",
-        "Группа проектов",
-        "Направление",
-        "Выручка",
-        "Валовая прибыль",
+        "Документ",
+        "Счет Дт",
+        "Счет Кт",
+        "Субконто1 Кт",
+        "Дата",
+        "Сумма",
+        "Сумма НУ Дт",
+        "Сумма НУ Кт",
     ]
     sheet.append(headers)
     sheet.append(
         [
             document,
-            "Лицензия ПО",
-            "Обслуживание Долго",
-            "Обслуживание",
-            "Услуги",
-            1_000_000,
-            600_000,
+            "76.09",
+            "91.01",
+            article,
+            "15.03.2026",
+            amount,
+            0,
+            amount,
         ]
     )
     sheet.append(["Итого"])
     workbook.save(path)
 
 
-def create_cost_workbook(path: Path, *, document: str = "Реализация товаров и услуг 00АМ-000017 от 31.01.2026 21:00:00") -> None:
+def create_other_expense_buh_workbook(
+    path: Path,
+    *,
+    document: str = "Операция штраф от 20.04.2026",
+    article: str = "Штрафы",
+    amount: float = 50_000,
+) -> None:
     workbook = Workbook()
     sheet = workbook.active
-    _pad_rows(sheet, 5)
+    _pad_rows(sheet, 8)
     headers = [
-        "Продукция",
-        "Счет",
-        "Статья калькуляции",
-        "Документ отгрузки",
-        "Количество продаж",
-        "Себестоимость (бухг. учет)",
+        "Документ",
+        "Счет Дт",
+        "Субконто1 Дт",
+        "Счет Кт",
+        "Дата",
+        "Сумма",
+        "Сумма НУ Дт",
+        "Сумма НУ Кт",
     ]
     sheet.append(headers)
     sheet.append(
         [
-            "Лицензия ПО",
-            "20",
-            "Материальные затраты",
             document,
-            1,
-            400_000,
+            "91.02",
+            article,
+            "76.09",
+            "20.04.2026",
+            amount,
+            amount,
+            0,
         ]
     )
-    _pad_rows(sheet, 38)
+    sheet.append(["Итого"])
+    workbook.save(path)
+
+
+def create_management_expense_buh_workbook(
+    path: Path,
+    *,
+    document: str = "Операция аренда от 10.05.2026",
+    article: str = "Аренда офиса",
+    amount: float = 75_000,
+) -> None:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Лист_1"
+    _pad_rows(sheet, 8)
+    headers = [
+        "Документ",
+        "Счет Дт",
+        "Вид субконто2 Дт",
+        "Субконто2 Дт",
+        "Счет Кт",
+        "Вид субконто1 Кт",
+        "Субконто1 Кт",
+        "Дата",
+        "Договор",
+        "Сумма",
+        "Сумма НУ Дт",
+        "Сумма НУ Кт",
+    ]
+    sheet.append(headers)
+    sheet.append(
+        [
+            document,
+            "90.08.1",
+            "Варианты налогообложения прибыли",
+            "Общие условия налогообложения",
+            "26",
+            "Статьи затрат",
+            article,
+            "10.05.2026",
+            "",
+            amount,
+            amount,
+            0,
+        ]
+    )
+    sheet.append(["Итого"])
     workbook.save(path)
 
 
@@ -228,6 +476,119 @@ def test_project_index_matches_documents_by_number(tmp_path: Path):
     assert revenue[0].project_group == "Обслуживание"
 
 
+def test_cost_direction_via_contract_chain(tmp_path: Path):
+    from almabi_pipeline import build_facts
+    from almabi_export_parsers import parse_exports
+
+    paths = {
+        "buh": tmp_path / "buh.xlsx",
+        "realization": tmp_path / "realization.xlsx",
+        "cost": tmp_path / "cost.xlsx",
+    }
+    create_buh_workbook(paths["buh"])
+    create_realization_workbook(paths["realization"])
+    create_cost_workbook(paths["cost"])
+
+    result = build_facts(parse_exports(paths))
+    cost = [fact for fact in result.facts if fact.kpi_l1 == "Себестоимость"]
+    assert len(cost) == 1
+    assert cost[0].direction == "Услуги"
+    assert cost[0].project == "Обслуживание Долго"
+    assert cost[0].contract == "Д-001"
+
+
+def test_cost_is_not_duplicated_when_buh_line_has_no_cost_join(tmp_path: Path):
+    from almabi_pipeline import build_facts
+    from almabi_export_parsers import parse_exports
+
+    buh_path = tmp_path / "buh.xlsx"
+    cost_path = tmp_path / "cost.xlsx"
+    realization_path = tmp_path / "realization.xlsx"
+
+    create_buh_workbook(buh_path)
+    create_realization_workbook(realization_path)
+    create_cost_workbook(cost_path, document="Реализация товаров и услуг 00АМ-000017 от 31.01.2026 21:00:00")
+
+    workbook = Workbook()
+    sheet = workbook.active
+    _pad_rows(sheet, 8)
+    headers = [
+        "Документ",
+        "Счет Дт",
+        "Вид субконто2 Дт",
+        "Субконто2 Дт",
+        "Счет Кт",
+        "Вид субконто1 Кт",
+        "Субконто1 Кт",
+        "Дата",
+        "Сумма",
+        "Сумма НУ Дт",
+        "Сумма НУ Кт",
+    ]
+    sheet.append(headers)
+    document = "Реализация товаров и услуг 00АМ-000017 от 31.01.2026 21:00:00"
+    sheet.append(
+        [
+            document,
+            "90.02.1",
+            "Варианты налогообложения прибыли",
+            "Общие условия налогообложения",
+            "43",
+            "Типы затрат",
+            "Прямые",
+            "15.01.2026",
+            542_000_000,
+            0,
+            542_000_000,
+        ]
+    )
+    sheet.append(["Итого"])
+    workbook.save(buh_path)
+
+    exports = parse_exports({"buh": buh_path, "realization": realization_path, "cost": cost_path})
+    result = build_facts(exports)
+    cost_facts = [fact for fact in result.facts if fact.kpi_l1 == "Себестоимость"]
+
+    assert len(cost_facts) == 1
+    assert cost_facts[0].amount_buh == 542_000_000
+
+
+def _max_tree_level(node: dict) -> int:
+    children = node.get("children") or []
+    if not children:
+        return int(node["level"])
+    return max(_max_tree_level(child) for child in children)
+
+
+def test_summary_hierarchy_levels_match_spec(tmp_path: Path):
+    paths = {
+        "buh": tmp_path / "buh.xlsx",
+        "realization": tmp_path / "realization.xlsx",
+        "cost": tmp_path / "cost.xlsx",
+    }
+    create_buh_workbook(paths["buh"])
+    create_realization_workbook(paths["realization"])
+    create_cost_workbook(paths["cost"])
+
+    dashboard = load_almabi_dashboard_from_exports(
+        paths,
+        upload_names={key: path.name for key, path in paths.items()},
+    )
+    rows = {row["name"]: row for row in dashboard["summary_rows"]}
+
+    assert _max_tree_level(rows["Выручка"]) == 5
+    assert _max_tree_level(rows["Себестоимость"]) == 5
+    assert rows["Выручка"]["children"][0]["level"] == 2
+    assert rows["Себестоимость"]["children"][0]["level"] == 2
+    assert _max_tree_level(rows["Коммерческие расходы"]) == 3
+    assert _max_tree_level(rows["Операционная прибыль"]) == 3
+    commercial = rows["Коммерческие расходы"]
+    nelf = next(child for child in commercial["children"] if "Нельгот" in child["name"])
+    assert nelf["children"], "Под льготными/нельготными должны быть договоры"
+    assert _max_tree_level(rows["Прочие доходы"]) >= 2
+    assert _max_tree_level(rows["Чистая прибыль"]) == 3
+
+
 def test_dashboard_builder_from_exports(tmp_path: Path):
     paths = {
         "buh": tmp_path / "buh.xlsx",
@@ -293,7 +654,7 @@ def test_upload_bundle_builds_dashboard(app_client, tmp_path: Path):
     assert payload["is_complete"] is True
     assert set(payload["upload_files"]) == {"buh", "realization", "cost"}
 
-    dashboard = app_client.get("/dashboard/almabi")
+    dashboard = app_client.get("/dashboard/almabi-test")
     assert dashboard.status_code == 200
     assert "Выручка" in dashboard.text
     assert "Услуги" in dashboard.text

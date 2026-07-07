@@ -27,9 +27,12 @@ def _merge_meta(current: ProjectMeta | None, new: ProjectMeta) -> ProjectMeta:
     )
 
 
-def build_project_index(exports: ParsedExports) -> tuple[dict[str, ProjectMeta], dict[str, str]]:
+def build_project_index(
+    exports: ParsedExports,
+) -> tuple[dict[str, ProjectMeta], dict[str, str], dict[str, ProjectMeta]]:
     by_document: dict[str, ProjectMeta] = {}
     key_to_document: dict[str, str] = {}
+    meta_by_key: dict[str, ProjectMeta] = {}
 
     def register(document: str, direction: str, project_group: str, project: str) -> None:
         document = document.strip()
@@ -44,14 +47,16 @@ def build_project_index(exports: ParsedExports) -> tuple[dict[str, ProjectMeta],
         for key in document_match_keys(document):
             key_to_document.setdefault(key, document)
             canonical = key_to_document[key]
-            by_document[canonical] = _merge_meta(by_document.get(canonical), meta)
+            merged = _merge_meta(by_document.get(canonical), meta)
+            by_document[canonical] = merged
+            meta_by_key[key] = _merge_meta(meta_by_key.get(key), merged)
 
     for row in exports.realization:
         register(row.document, row.direction, row.project_group, row.project)
     for row in exports.cost:
         register(row.document, row.direction, row.project_group, row.project)
 
-    return by_document, key_to_document
+    return by_document, key_to_document, meta_by_key
 
 
 def lookup_project(
@@ -59,6 +64,7 @@ def lookup_project(
     by_document: dict[str, ProjectMeta],
     key_to_document: dict[str, str],
     *,
+    meta_by_key: dict[str, ProjectMeta] | None = None,
     fallback_project: str = "",
 ) -> ProjectMeta:
     document = document.strip()
@@ -66,14 +72,11 @@ def lookup_project(
         return by_document[document]
 
     for key in document_match_keys(document):
+        if meta_by_key and key in meta_by_key:
+            return meta_by_key[key]
         canonical = key_to_document.get(key)
         if canonical and canonical in by_document:
             return by_document[canonical]
-
-    document_keys = document_match_keys(document)
-    for canonical, meta in by_document.items():
-        if document_keys & document_match_keys(canonical):
-            return meta
 
     return ProjectMeta(
         direction="Без направления",

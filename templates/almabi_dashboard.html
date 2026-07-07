@@ -1,13 +1,37 @@
 {% extends "dashboard_shell.html" %}
 
-{% block title %}AlMaBi BI{% endblock %}
+{% block title %}{{ dashboard_page_title | default(app_brand) }}{% endblock %}
 
 {% block main_class %}flex min-h-0 flex-1 flex-col overflow-hidden bg-slate-100{% endblock %}
 {% block content_wrapper_class %}flex min-h-0 flex-1 flex-col p-0{% endblock %}
 
 {% block breadcrumbs %}{% endblock %}
 
+{% block top_center %}
+<button
+  type="button"
+  data-dashboard-toolbar-toggle
+  class="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 shadow-sm hover:border-gray-300 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-500"
+  aria-expanded="true"
+  aria-controls="almabiDashboardToolbarBody"
+  title="Скрыть панель"
+>
+  <svg class="h-5 w-5 transition-transform" data-dashboard-toolbar-chevron fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
+  </svg>
+  <span class="sr-only" data-dashboard-toolbar-toggle-label>Скрыть панель</span>
+</button>
+<span class="hidden truncate text-sm font-semibold text-gray-600" data-dashboard-toolbar-compact-label></span>
+{% endblock %}
+
 {% block top_actions %}
+{% if dashboard_mode == 'test' %}
+<div class="flex rounded-lg border border-violet-200 bg-white p-1 shadow-sm" data-tax-bucket-group role="group" aria-label="Вид налогообложения">
+  <button type="button" class="rounded-md px-3 py-1.5 text-xs font-semibold bg-violet-100 text-violet-900 ring-1 ring-violet-200" data-tax-bucket="all">Все</button>
+  <button type="button" class="rounded-md px-3 py-1.5 text-xs font-semibold text-slate-500 hover:text-slate-700" data-tax-bucket="Льготные проекты">Льготные</button>
+  <button type="button" class="rounded-md px-3 py-1.5 text-xs font-semibold text-slate-500 hover:text-slate-700" data-tax-bucket="Нельготные проекты">Нельготные</button>
+</div>
+{% endif %}
 <button
   type="button"
   data-file-menu-open
@@ -24,9 +48,10 @@
 
 {% block content %}
 <div class="flex min-h-0 flex-1 flex-col text-slate-800" data-almabi-dashboard>
-  <div class="sticky top-0 z-20 shrink-0 border-b border-slate-200 bg-white/95 px-5 py-4 shadow-sm backdrop-blur">
+  <div class="almabi-dashboard-toolbar sticky top-0 z-20 shrink-0 border-b border-slate-200 bg-white/95 px-5 py-3 shadow-sm backdrop-blur" data-dashboard-toolbar>
+    <div id="almabiDashboardToolbarBody" data-dashboard-toolbar-body class="space-y-3">
     <div class="flex flex-wrap items-center justify-between gap-4">
-      <div class="flex flex-wrap gap-2 rounded-xl border border-slate-200 bg-slate-50/80 p-1.5" role="tablist" aria-label="Разделы AlMaBi BI">
+      <div class="flex flex-wrap gap-2 rounded-xl border border-slate-200 bg-slate-50/80 p-1.5" role="tablist" aria-label="Разделы {{ app_brand }}">
         <button type="button" class="almabi-tab is-active rounded-lg px-5 py-2.5 text-sm font-semibold" data-tab-button="summary">Сводная информация</button>
         <button type="button" class="almabi-tab rounded-lg px-5 py-2.5 text-sm font-semibold" data-tab-button="revenue">Детализация выручки</button>
         <button type="button" class="almabi-tab rounded-lg px-5 py-2.5 text-sm font-semibold" data-tab-button="contractors">Детализация по контрагентам</button>
@@ -35,18 +60,32 @@
       <div class="flex flex-wrap items-center gap-3 text-sm font-semibold">
         <div class="flex rounded-lg border border-slate-200 bg-white p-1 shadow-sm" data-unit-group>
           {% for unit in dashboard.units %}
-          <button type="button" class="rounded-md px-3 py-1.5 text-sm {% if loop.index == 2 %}bg-sky-100 text-sky-900 ring-1 ring-sky-200{% else %}text-slate-500 hover:text-slate-700{% endif %}" data-unit="{{ unit.key }}" data-divisor="{{ unit.divisor }}">{{ unit.label }}</button>
+          <button type="button" class="rounded-md px-3 py-1.5 text-sm font-semibold {% if loop.index == 2 %}bg-sky-100 text-sky-900 ring-1 ring-sky-200{% else %}text-slate-700 hover:text-slate-900{% endif %}" data-unit="{{ unit.key }}" data-divisor="{{ unit.divisor }}">{{ unit.label }}</button>
           {% endfor %}
         </div>
-        <div class="flex rounded-lg border border-slate-200 bg-white p-1 shadow-sm" data-scenario-group>
-          {% for scenario in dashboard.scenarios %}
-          <button type="button" class="rounded-md px-3.5 py-1.5 text-sm {% if loop.first %}bg-sky-100 text-sky-900 ring-1 ring-sky-200{% else %}text-slate-500 hover:text-slate-700{% endif %}" data-scenario="{{ scenario }}">{{ scenario }}</button>
-          {% endfor %}
+        <div class="almabi-select shrink-0" data-scenario-picker>
+          <button type="button" class="almabi-select__trigger min-w-[10.5rem]" aria-haspopup="listbox" aria-expanded="false">
+            <span class="almabi-select__label">Сценарии</span>
+            <span class="almabi-select__value" data-scenario-summary>Факт БУ</span>
+            <svg class="almabi-select__chevron" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          <div class="almabi-select__menu hidden min-w-[13rem]" role="listbox" aria-label="Сценарии">
+            {% for scenario in dashboard.scenarios %}
+            <label class="almabi-select__option almabi-select__option--check{% if loop.first %} is-selected{% endif %}" role="option">
+              <input
+                type="checkbox"
+                class="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+                data-scenario-option
+                value="{{ scenario }}"
+                {% if loop.first %}checked{% endif %}
+              />
+              <span>{{ scenario }}</span>
+            </label>
+            {% endfor %}
+          </div>
         </div>
-        <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 shadow-sm hover:border-sky-200">
-          <input type="checkbox" class="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500" data-plan-toggle checked />
-          План / прогноз
-        </label>
       </div>
     </div>
 
@@ -121,13 +160,42 @@
       </button>
     </div>
     <p data-filter-hint class="mt-2 hidden text-xs text-sky-800"></p>
+    </div>
   </div>
 
-  <section class="flex min-h-0 flex-1 flex-col overflow-hidden p-5" data-tab-panel="summary">
-    <div class="almabi-summary-card flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-md">
+  <section class="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-y-contain p-5 gap-5" data-tab-panel="summary">
+    {% if dashboard_mode == 'test' %}
+    <div class="almabi-summary-card almabi-consolidated-card flex max-h-[min(22rem,38vh)] min-h-0 shrink-0 flex-col overflow-hidden rounded-lg border border-violet-200 bg-white shadow-md" data-consolidated-panel>
+      <div class="flex shrink-0 items-center justify-between gap-3 border-b border-violet-100 px-5 py-3">
+        <h2 class="text-sm font-bold text-violet-900">Консолидированный P&amp;L</h2>
+        <div class="flex rounded-lg border border-violet-200 bg-white p-0.5 shadow-sm" data-table-period-group role="group" aria-label="Период таблицы">
+          <button type="button" class="rounded-md px-2.5 py-1 text-xs font-semibold bg-violet-100 text-violet-900 ring-1 ring-violet-200" data-table-period="month">Месяцы</button>
+          <button type="button" class="rounded-md px-2.5 py-1 text-xs font-semibold text-violet-700 hover:text-violet-900" data-table-period="quarter">Кварталы</button>
+        </div>
+      </div>
+      <div class="almabi-table-panel min-h-0 flex-1">
+        <div class="almabi-table-viewport" data-consolidated-table-viewport data-scrolled-y="0">
+          <div class="almabi-table-wrap" data-consolidated-table-scroll tabindex="0" role="region" aria-label="Консолидированная таблица P&amp;L">
+            <table class="almabi-table almabi-table--grid w-full">
+              <thead>
+                <tr id="almabiConsolidatedHead"></tr>
+              </thead>
+              <tbody id="almabiConsolidatedBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="almabi-summary-card flex min-h-[min(28rem,52vh)] flex-1 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-md">
       <div class="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
-        <h1 class="text-lg font-bold text-slate-900">Сводная информация</h1>
+        <h1 class="text-lg font-bold text-slate-900">{% if dashboard_mode == 'test' %}Детализация по уровням{% else %}Сводная информация{% endif %}</h1>
         <div class="flex flex-wrap items-center gap-2">
+          <div class="flex rounded-lg border border-slate-200 bg-white p-0.5 shadow-sm" data-table-period-group role="group" aria-label="Период таблицы">
+            <button type="button" class="rounded-md px-2.5 py-1 text-xs font-semibold bg-sky-100 text-sky-900 ring-1 ring-sky-200" data-table-period="month">Месяцы</button>
+            <button type="button" class="rounded-md px-2.5 py-1 text-xs font-semibold text-slate-600 hover:text-slate-800" data-table-period="quarter">Кварталы</button>
+          </div>
           <button type="button" data-summary-expand-all class="rounded-sm bg-white px-3 py-2 text-xs font-semibold text-slate-600 ring-1 ring-slate-200 hover:ring-sky-200">
             Раскрыть всё
           </button>
@@ -162,7 +230,7 @@
             role="region"
             aria-label="Сводная таблица. Прокрутка: колёсико, полоса внизу или стрелки на панели."
           >
-            <table class="almabi-table">
+            <table class="almabi-table almabi-table--grid">
               <thead>
                 <tr id="almabiSummaryHead"></tr>
               </thead>
@@ -188,43 +256,81 @@
   </section>
 
   <section class="hidden min-h-0 flex-1 flex-col space-y-5 overflow-y-auto p-5" data-tab-panel="revenue">
-    <div class="grid gap-5 xl:grid-cols-3">
-      <div class="rounded-lg border border-slate-200 bg-white p-5 shadow-md xl:col-span-1">
-        <h2 class="mb-1 text-base font-bold text-slate-900">Структура себестоимости</h2>
-        <p class="mb-4 text-xs text-slate-500">Общая сумма за период (детализация в разработке)</p>
-        <div class="rounded-lg border border-orange-100 bg-orange-50/60 px-4 py-5">
-          <p class="text-xs font-semibold uppercase tracking-wide text-orange-700/80">Себестоимость</p>
-          <p class="mt-2 text-2xl font-bold tabular-nums text-slate-900" data-cost-structure-total data-money="{{ dashboard.cost_structure_total }}"></p>
-        </div>
+    <div class="flex flex-wrap items-center justify-end gap-3">
+      <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Период графиков</span>
+      <div class="flex rounded-lg border border-slate-200 bg-white p-1 shadow-sm" data-chart-period-group role="group" aria-label="Период графиков">
+        <button type="button" class="rounded-md px-3 py-1.5 text-xs font-semibold bg-sky-100 text-sky-900 ring-1 ring-sky-200" data-chart-period="month">Месяцы</button>
+        <button type="button" class="rounded-md px-3 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-800" data-chart-period="quarter">Кварталы</button>
       </div>
+    </div>
 
-      <div class="rounded-lg border border-slate-200 bg-white p-5 shadow-md xl:col-span-1">
-        <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
-          <h2 class="text-base font-bold text-slate-900">Динамика выручки</h2>
-          <div class="flex rounded-sm bg-slate-50 p-1 text-sm font-semibold">
-            <button type="button" class="rounded-sm bg-white px-4 py-2 text-slate-800 shadow-sm">Выручка</button>
-            <button type="button" class="rounded-sm px-4 py-2 text-slate-500">Детализация</button>
-          </div>
-        </div>
-        <div class="h-72">
-          <canvas id="almabiRevenueChart"></canvas>
-        </div>
+    <div class="almabi-chart-card rounded-xl border border-slate-200 bg-white shadow-md">
+      <div class="border-b border-slate-100 px-5 py-3 sm:px-6">
+        <h2 class="text-lg font-bold text-slate-900">Выручка, себестоимость и прибыль</h2>
       </div>
-
-      <div class="rounded-lg border border-slate-200 bg-white p-5 shadow-md xl:col-span-1">
-        <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
-          <h2 class="text-base font-bold text-slate-900">Динамика себестоимости</h2>
-          <div class="flex rounded-sm bg-slate-50 p-1 text-sm font-semibold">
-            <button type="button" class="rounded-sm bg-white px-4 py-2 text-slate-800 shadow-sm">Себестоимость</button>
-            <button type="button" class="rounded-sm px-4 py-2 text-slate-500">Детализация</button>
-          </div>
-        </div>
-        <div class="h-72">
-          <canvas id="almabiCostChart"></canvas>
+      <div class="px-5 pb-5 pt-4 sm:px-6">
+        <div class="h-[28rem] min-h-[20rem]">
+          <canvas id="almabiOverviewChart"></canvas>
         </div>
       </div>
     </div>
+
+    <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-md sm:p-6">
+      <div class="mb-4">
+        <h2 class="text-lg font-bold text-slate-900">Структура себестоимости</h2>
+        <p class="mt-1 text-sm text-slate-500">Доля статей по месяцам; мелкие статьи видны минимум 7%, в подсказке — точная доля</p>
+      </div>
+      <div class="h-[28rem] min-h-[20rem]">
+        <canvas id="almabiCostStructureChart"></canvas>
+      </div>
+    </div>
   </section>
+
+  <div
+    class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/40 p-4 sm:p-6 backdrop-blur-sm"
+    data-cell-drill-modal
+    aria-hidden="true"
+  >
+    <div class="flex max-h-[min(90vh,40rem)] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="almabiCellDrillTitle">
+      <div class="flex shrink-0 items-start justify-between gap-4 border-b border-slate-100 px-6 py-5">
+        <div>
+          <h3 id="almabiCellDrillTitle" class="text-xl font-bold text-slate-900" data-cell-drill-title>Статьи</h3>
+          <p class="mt-1 text-sm text-slate-500" data-cell-drill-subtitle></p>
+        </div>
+        <button type="button" class="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700" data-cell-drill-close aria-label="Закрыть">
+          <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="grid shrink-0 grid-cols-2 gap-4 px-6 py-4 sm:grid-cols-3">
+        <div class="rounded-xl bg-sky-50 px-4 py-3">
+          <p class="text-xs font-semibold uppercase tracking-wide text-sky-800/80">Льготные</p>
+          <p class="mt-1 text-lg font-bold tabular-nums text-slate-900" data-cell-drill-privileged>—</p>
+        </div>
+        <div class="rounded-xl bg-rose-50 px-4 py-3">
+          <p class="text-xs font-semibold uppercase tracking-wide text-rose-800/80">Нельготные</p>
+          <p class="mt-1 text-lg font-bold tabular-nums text-slate-900" data-cell-drill-non-privileged>—</p>
+        </div>
+        <div class="rounded-xl bg-slate-50 px-4 py-3 sm:col-span-1 col-span-2">
+          <p class="text-xs font-semibold uppercase tracking-wide text-slate-600">Итого</p>
+          <p class="mt-1 text-lg font-bold tabular-nums text-slate-900" data-cell-drill-total>—</p>
+        </div>
+      </div>
+      <div class="min-h-0 flex-1 overflow-y-auto px-6 pb-6">
+        <table class="w-full text-sm">
+          <thead class="sticky top-0 bg-white">
+            <tr class="border-b border-slate-200 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <th class="py-3 pr-4">Статья</th>
+              <th class="py-3 pr-4 text-right">Льготные</th>
+              <th class="py-3 pr-4 text-right">Нельготные</th>
+              <th class="py-3 text-right">Итого</th>
+            </tr>
+          </thead>
+          <tbody data-cell-drill-rows></tbody>
+        </table>
+        <p class="hidden py-8 text-center text-sm text-slate-500" data-cell-drill-empty>Нет детализации для выбранной ячейки.</p>
+      </div>
+    </div>
+  </div>
 </div>
 {% endblock %}
 
@@ -232,6 +338,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 <script>
   const almabiData = {{ dashboard | tojson }};
+  const dashboardMode = {{ dashboard_mode | tojson if dashboard_mode is defined else 'null' }};
 
   const FILTER_KEYS = ["taxType", "direction", "projectGroup", "project", "contract", "contractor", "quarter", "month"];
 
@@ -241,6 +348,83 @@
     Q3: ["Июль", "Август", "Сентябрь"],
     Q4: ["Октябрь", "Ноябрь", "Декабрь"],
   };
+
+  const QUARTER_DEFS = [
+    { key: "Q1", label: "Q1", months: QUARTER_MONTHS.Q1 },
+    { key: "Q2", label: "Q2", months: QUARTER_MONTHS.Q2 },
+    { key: "Q3", label: "Q3", months: QUARTER_MONTHS.Q3 },
+    { key: "Q4", label: "Q4", months: QUARTER_MONTHS.Q4 },
+  ];
+
+  const COST_SECTION_COLORS = [
+    "rgba(251, 146, 60, 0.92)",
+    "rgba(249, 115, 22, 0.92)",
+    "rgba(245, 158, 11, 0.92)",
+    "rgba(234, 88, 12, 0.92)",
+    "rgba(217, 119, 6, 0.92)",
+    "rgba(180, 83, 9, 0.92)",
+  ];
+
+  const COST_SECTION_LABELS = {
+    "Аренда (прямые)": "Аренда",
+  };
+
+  const COST_STRUCTURE_MIN_VISUAL_SHARE = 7;
+
+  function costSectionLabel(name) {
+    return COST_SECTION_LABELS[name] || name;
+  }
+
+  function formatStructureShare(share) {
+    const value = Number(share || 0);
+    if (value >= 10) return percentFormatter.format(value);
+    if (value >= 1) return `${value.toFixed(1)}%`;
+    if (value >= 0.01) return `${value.toFixed(2)}%`;
+    if (value > 0) return `${value.toFixed(4)}%`;
+    return "0%";
+  }
+
+  function formatStructureShareOnChart(share) {
+    const value = Number(share || 0);
+    if (value >= 10) return `${Math.round(value)}%`;
+    if (value >= 1) return `${value.toFixed(1)}%`;
+    if (value >= 0.1) return `${value.toFixed(2)}%`;
+    if (value >= 0.01) return `${value.toFixed(2)}%`;
+    if (value > 0) return "<0.01%";
+    return "";
+  }
+
+  function computeVisualSegmentSizes(sectionValues) {
+    const entries = sectionValues.filter((entry) => Number(entry.actual) > 0);
+    const count = entries.length;
+    if (!count) return new Map();
+
+    const total = entries.reduce((sum, entry) => sum + Number(entry.actual), 0);
+    const remainderShare = Math.max(0, 100 - count * COST_STRUCTURE_MIN_VISUAL_SHARE);
+    const visual = new Map();
+
+    entries.forEach(({ name, actual }) => {
+      const amount =
+        total * (COST_STRUCTURE_MIN_VISUAL_SHARE / 100) + Number(actual) * (remainderShare / 100);
+      visual.set(name, amount);
+    });
+    return visual;
+  }
+
+  function enrichCostStructurePeriods(periods, activeSections) {
+    return periods.map((period) => {
+      const entries = activeSections.map((name) => ({
+        name,
+        actual: Number(period.sections[name] || 0),
+      }));
+      const visualMap = computeVisualSegmentSizes(entries);
+      const visualSections = {};
+      activeSections.forEach((name) => {
+        visualSections[name] = visualMap.has(name) ? visualMap.get(name) : null;
+      });
+      return { ...period, visualSections };
+    });
+  }
 
   const MONTH_HEADER_SHORT = {
     "Январь": "Янв",
@@ -258,19 +442,26 @@
   };
 
   const state = {
-    scenario: "Факт БУХ",
+    selectedScenarios: new Set(["Факт БУ"]),
     unit: "thousands",
     divisor: 1000,
-    showPlan: true,
     expandedIds: new Set(),
+    taxBucketFilter: "all",
+    chartPeriod: "month",
+    tablePeriod: "month",
+    rowById: {},
+    rowByName: {},
     filters: Object.fromEntries(
       FILTER_KEYS.map((key) => [key, almabiData.filters[key][0]]),
     ),
   };
 
+  const PRIVILEGED_BUCKET = "Льготные проекты";
+  const NON_PRIVILEGED_BUCKET = "Нельготные проекты";
+
   const numberFormatter = new Intl.NumberFormat("ru-RU", {
-    minimumFractionDigits: 1,
-    maximumFractionDigits: 1,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   });
   const percentFormatter = new Intl.NumberFormat("ru-RU", {
     minimumFractionDigits: 1,
@@ -329,9 +520,421 @@
       .filter(Boolean);
   }
 
+  function getBaseSummaryRows() {
+    if (dashboardMode === "test" && almabiData.summary_by_tax) {
+      return almabiData.summary_by_tax[state.taxBucketFilter] || almabiData.summary_rows;
+    }
+    return almabiData.summary_rows;
+  }
+
   function getFilteredSummaryRows() {
-    if (!hasActiveFilters()) return almabiData.summary_rows;
-    return pruneTree(almabiData.summary_rows);
+    if (!hasActiveFilters()) return getBaseSummaryRows();
+    return pruneTree(getBaseSummaryRows());
+  }
+
+  function rebuildRowIndex() {
+    state.rowById = {};
+    state.rowByName = {};
+    const walk = (rows) => {
+      rows.forEach((row) => {
+        state.rowById[row.id] = row;
+        if (row.level === 1) state.rowByName[row.name] = row;
+        if (row.children?.length) walk(row.children);
+      });
+    };
+    walk(getBaseSummaryRows());
+  }
+
+  function orderedSelectedScenarios() {
+    return (almabiData.scenarios || []).filter((scenario) => state.selectedScenarios.has(scenario));
+  }
+
+  function primaryFactScenario() {
+    if (state.selectedScenarios.has("Факт БУ")) return "Факт БУ";
+    if (state.selectedScenarios.has("Факт НУ")) return "Факт НУ";
+    return orderedSelectedScenarios()[0] || "Факт БУ";
+  }
+
+  function scenarioSummaryLabel() {
+    const selected = orderedSelectedScenarios();
+    if (!selected.length) return "Сценарии";
+    if (selected.length <= 2) return selected.join(" · ");
+    return `${selected.length} сценария`;
+  }
+
+  function scenarioHeaderTitle(columnTitle) {
+    const selected = orderedSelectedScenarios();
+    if (!selected.length) return columnTitle;
+    if (
+      selected.length === 2
+      && primaryDisplayFactScenario(selected)
+      && selected.some(isPlanLikeScenario)
+    ) {
+      return `${columnTitle} — план / факт`;
+    }
+    if (selected.length === 1) {
+      return `${columnTitle} — ${selected[0]}`;
+    }
+    return `${columnTitle} — ${selected.join(" · ")}`;
+  }
+
+  function tableTotalHeaderTitle() {
+    const selected = orderedSelectedScenarios();
+    if (
+      selected.length === 2
+      && primaryDisplayFactScenario(selected)
+      && selected.some(isPlanLikeScenario)
+    ) {
+      return "Итого (план / факт)";
+    }
+    if (selected.length === 1) {
+      return "Итого";
+    }
+    return scenarioHeaderTitle("Итого");
+  }
+
+  function syncScenarioPickerUi() {
+    document.querySelectorAll("[data-scenario-option]").forEach((input) => {
+      input.checked = state.selectedScenarios.has(input.value);
+      input.closest(".almabi-select__option")?.classList.toggle("is-selected", input.checked);
+    });
+    document.querySelectorAll("[data-scenario-summary]").forEach((node) => {
+      node.textContent = scenarioSummaryLabel();
+    });
+  }
+
+  function setSelectedScenarios(nextSelected) {
+    const allowed = new Set(almabiData.scenarios || []);
+    const normalized = [...nextSelected].filter((scenario) => allowed.has(scenario));
+    if (!normalized.length) return false;
+    state.selectedScenarios = new Set(normalized);
+    syncScenarioPickerUi();
+    return true;
+  }
+
+  function initScenarioPicker() {
+    const root = document.querySelector("[data-scenario-picker]");
+    if (!root || root.dataset.bound) return;
+    root.dataset.bound = "true";
+
+    const trigger = root.querySelector(".almabi-select__trigger");
+    const menu = root.querySelector(".almabi-select__menu");
+
+    menu?.addEventListener("click", (event) => {
+      event.stopPropagation();
+    });
+
+    trigger?.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const willOpen = !root.classList.contains("is-open");
+      closeAllFilterMenus(root);
+      if (willOpen) {
+        root.classList.add("is-open");
+        menu?.classList.remove("hidden");
+        trigger.setAttribute("aria-expanded", "true");
+      }
+    });
+
+    root.querySelectorAll("[data-scenario-option]").forEach((input) => {
+      input.addEventListener("change", (event) => {
+        event.stopPropagation();
+        const next = new Set(state.selectedScenarios);
+        if (input.checked) {
+          next.add(input.value);
+        } else {
+          next.delete(input.value);
+        }
+        if (!setSelectedScenarios(next)) {
+          input.checked = true;
+          return;
+        }
+        renderConsolidatedTable();
+        renderSummary();
+      });
+    });
+
+    syncScenarioPickerUi();
+  }
+
+  function scenarioDrillAmount(bucket) {
+    const buh = Number(bucket?.buh || 0);
+    const nu = Number(bucket?.nu || 0);
+    const scenario = primaryFactScenario();
+    if (scenario === "Факт НУ") return nu;
+    if (scenario === "Факт БУ") return buh;
+    if (scenario === "План") return buh * 1.08;
+    return buh * 1.12;
+  }
+
+  function articleDrillTotals(article) {
+    const privileged = scenarioDrillAmount(article[PRIVILEGED_BUCKET]);
+    const nonPrivileged = scenarioDrillAmount(article[NON_PRIVILEGED_BUCKET]);
+    return {
+      privileged,
+      nonPrivileged,
+      total: privileged + nonPrivileged,
+    };
+  }
+
+  function renderDrillCell(monthKey, row) {
+    if (!row?.drill) return "";
+    return ` data-cell-drill="true" data-drill-month="${monthKey}" tabindex="0" role="button" title="Показать статьи и льготу / нельготу"`;
+  }
+
+  function drillCellClass(row) {
+    return row?.drill ? " is-drillable" : "";
+  }
+
+  function openCellDrillModal(row, periodKey) {
+    const modal = document.querySelector("[data-cell-drill-modal]");
+    if (!modal || !row?.drill) return;
+
+    const payload = drillPayloadForPeriod(row, periodKey);
+    const articles = (payload?.articles || []).filter((article) => {
+      const totals = articleDrillTotals(article);
+      return totals.total !== 0;
+    });
+
+    const monthLabel = periodKey === "total"
+      ? "Итого"
+      : (QUARTER_DEFS.find((item) => item.key === periodKey)?.label
+        || MONTH_HEADER_SHORT[periodKey]
+        || periodKey);
+    modal.querySelector("[data-cell-drill-title]").textContent = row.name;
+    modal.querySelector("[data-cell-drill-subtitle]").textContent = `${monthLabel} · ${orderedSelectedScenarios().join(" · ")}`;
+
+    let privilegedSum = 0;
+    let nonPrivilegedSum = 0;
+    articles.forEach((article) => {
+      const totals = articleDrillTotals(article);
+      privilegedSum += totals.privileged;
+      nonPrivilegedSum += totals.nonPrivileged;
+    });
+
+    modal.querySelector("[data-cell-drill-privileged]").textContent = formatMoney(privilegedSum);
+    modal.querySelector("[data-cell-drill-non-privileged]").textContent = formatMoney(nonPrivilegedSum);
+    modal.querySelector("[data-cell-drill-total]").textContent = formatMoney(privilegedSum + nonPrivilegedSum);
+
+    const tbody = modal.querySelector("[data-cell-drill-rows]");
+    const empty = modal.querySelector("[data-cell-drill-empty]");
+    if (!articles.length) {
+      tbody.innerHTML = "";
+      empty?.classList.remove("hidden");
+    } else {
+      empty?.classList.add("hidden");
+      tbody.innerHTML = articles
+        .map((article) => {
+          const totals = articleDrillTotals(article);
+          const totalClass = totals.total < 0 ? "text-rose-600" : "";
+          return `
+            <tr class="border-b border-slate-100 last:border-0">
+              <td class="py-3 pr-4 font-medium text-slate-700">${article.name}</td>
+              <td class="py-3 pr-4 text-right tabular-nums text-sky-800">${formatMoney(totals.privileged)}</td>
+              <td class="py-3 pr-4 text-right tabular-nums text-rose-700">${formatMoney(totals.nonPrivileged)}</td>
+              <td class="py-3 text-right tabular-nums font-semibold ${totalClass}">${formatMoney(totals.total)}</td>
+            </tr>
+          `;
+        })
+        .join("");
+    }
+
+    modal.classList.remove("hidden");
+    modal.classList.add("flex");
+    modal.setAttribute("aria-hidden", "false");
+  }
+
+  function closeCellDrillModal() {
+    const modal = document.querySelector("[data-cell-drill-modal]");
+    if (!modal) return;
+    modal.classList.add("hidden");
+    modal.classList.remove("flex");
+    modal.setAttribute("aria-hidden", "true");
+  }
+
+  function initCellDrillModal() {
+    document.getElementById("almabiSummaryBody")?.addEventListener("click", (event) => {
+      const cell = event.target.closest("[data-cell-drill]");
+      if (cell) {
+        event.stopPropagation();
+        const rowEl = cell.closest("[data-summary-row]");
+        const row = state.rowById[rowEl?.dataset.summaryRow];
+        if (row) openCellDrillModal(row, cell.dataset.drillMonth || "total");
+        return;
+      }
+
+      const indicator = event.target.closest(".col-indicator");
+      const rowEl = event.target.closest("[data-summary-row]");
+      if (!indicator || !rowEl || rowEl.dataset.expandable !== "true") return;
+      event.stopPropagation();
+      const rowId = rowEl.dataset.summaryRow;
+      if (state.expandedIds.has(rowId)) state.expandedIds.delete(rowId);
+      else state.expandedIds.add(rowId);
+      renderSummary();
+    });
+
+    document.getElementById("almabiSummaryBody")?.addEventListener("keydown", (event) => {
+      const cell = event.target.closest("[data-cell-drill]");
+      if (!cell || (event.key !== "Enter" && event.key !== " ")) return;
+      event.preventDefault();
+      cell.click();
+    });
+
+    document.getElementById("almabiConsolidatedBody")?.addEventListener("click", (event) => {
+      const cell = event.target.closest("[data-cell-drill]");
+      if (!cell) return;
+      event.stopPropagation();
+      const row = state.rowByName[cell.closest("[data-consolidated-name]")?.dataset.consolidatedName];
+      if (row) openCellDrillModal(row, cell.dataset.drillMonth || "total");
+    });
+
+    document.querySelector("[data-cell-drill-close]")?.addEventListener("click", closeCellDrillModal);
+    document.querySelector("[data-cell-drill-modal]")?.addEventListener("click", (event) => {
+      if (event.target.matches("[data-cell-drill-modal]")) closeCellDrillModal();
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") closeCellDrillModal();
+    });
+  }
+
+  function getActiveChartSeries() {
+    const fallbackStructure = almabiData.cost_structure_by_month || { sections: [], by_month: [] };
+    if (dashboardMode === "test" && almabiData.charts_by_tax) {
+      const bucket = state.taxBucketFilter === "all" ? "all" : state.taxBucketFilter;
+      const charts = almabiData.charts_by_tax[bucket] || almabiData.charts_by_tax.all;
+      if (charts) {
+        return {
+          revenue_by_month: charts.revenue_by_month || almabiData.revenue_by_month,
+          cost_by_month: charts.cost_by_month || almabiData.cost_by_month,
+          cost_structure_by_month: charts.cost_structure_by_month || fallbackStructure,
+        };
+      }
+    }
+    return {
+      revenue_by_month: almabiData.revenue_by_month,
+      cost_by_month: almabiData.cost_by_month,
+      cost_structure_by_month: fallbackStructure,
+    };
+  }
+
+  function visibleMonthEntries() {
+    const visibleSet = new Set(getVisibleMonths());
+    return almabiData.months
+      .map((full, index) => ({ full, index, visible: visibleSet.has(full) }))
+      .filter((entry) => entry.visible);
+  }
+
+  function aggregateValueSeries(rows) {
+    const entries = visibleMonthEntries().map(({ full, index }) => ({
+      full,
+      short: rows[index]?.month || MONTH_HEADER_SHORT[full] || full,
+      value: Number(rows[index]?.value || 0),
+    }));
+
+    if (state.chartPeriod === "month") {
+      return {
+        labels: entries.map((entry) => entry.short),
+        values: entries.map((entry) => entry.value),
+      };
+    }
+
+    return {
+      labels: QUARTER_DEFS.map((quarter) => quarter.label),
+      values: QUARTER_DEFS.map((quarter) =>
+        entries
+          .filter((entry) => quarter.months.includes(entry.full))
+          .reduce((sum, entry) => sum + entry.value, 0),
+      ),
+    };
+  }
+
+  function normalizeCostStructure(structure) {
+    const byMonth = (structure?.by_month || []).map((row) => ({
+      month: row.month,
+      total: Number(row.total || 0),
+      sections: row.sections || {},
+    }));
+    return {
+      sections: structure?.sections || [],
+      by_month: byMonth,
+    };
+  }
+
+  function buildCostStructureModel(structure) {
+    const normalized = normalizeCostStructure(structure);
+    const allSections = normalized.sections || [];
+    const byMonth = normalized.by_month || [];
+
+    const entries = visibleMonthEntries().map(({ full, index }) => {
+      const row = byMonth[index] || {};
+      return {
+        key: full,
+        label: row.month || MONTH_HEADER_SHORT[full] || full,
+        total: Number(row.total || 0),
+        sections: row.sections || {},
+      };
+    });
+
+    let periods;
+    if (state.chartPeriod === "month") {
+      periods = entries;
+    } else {
+      periods = QUARTER_DEFS.map((quarter) => {
+        const quarterEntries = entries.filter((entry) => quarter.months.includes(entry.key));
+        const sectionBucket = {};
+        quarterEntries.forEach((entry) => {
+          Object.entries(entry.sections || {}).forEach(([name, value]) => {
+            sectionBucket[name] = (sectionBucket[name] || 0) + Number(value || 0);
+          });
+        });
+        return {
+          key: quarter.key,
+          label: quarter.label,
+          total: Object.values(sectionBucket).reduce((sum, value) => sum + Number(value || 0), 0),
+          sections: sectionBucket,
+        };
+      });
+    }
+
+    periods = periods.filter((period) => period.total > 0);
+    periods = enrichCostStructurePeriods(periods, allSections);
+
+    const activeSections = allSections.filter((name) =>
+      periods.some((period) => Number(period.sections[name] || 0) > 0),
+    );
+
+    return {
+      sections: activeSections,
+      allSections,
+      periods,
+      labels: periods.map((period) => period.label),
+      totals: periods.map((period) => period.total),
+      sectionSeries: activeSections.map((name) => {
+        const paletteIndex = Math.max(allSections.indexOf(name), 0);
+        return {
+          name,
+          label: costSectionLabel(name),
+          color: COST_SECTION_COLORS[paletteIndex % COST_SECTION_COLORS.length],
+          actualValues: periods.map((period) => {
+            const value = Number(period.sections[name] || 0);
+            return value > 0 ? value : null;
+          }),
+          values: periods.map((period) => {
+            const actual = Number(period.sections[name] || 0);
+            if (actual <= 0) return null;
+            return Number(period.visualSections?.[name] ?? actual);
+          }),
+        };
+      }),
+    };
+  }
+
+  function aggregateCostStructure(structure) {
+    return buildCostStructureModel(structure);
+  }
+
+  function activeTaxBucketFilter() {
+    if (dashboardMode !== "test" || state.taxBucketFilter === "all") return null;
+    return state.taxBucketFilter;
   }
 
   function getVisibleMonths() {
@@ -346,6 +949,62 @@
       return QUARTER_MONTHS[quarter];
     }
     return all;
+  }
+
+  function getTablePeriodColumns() {
+    if (state.tablePeriod === "quarter") {
+      let quarters = QUARTER_DEFS;
+      if (!isDefaultFilter("quarter")) {
+        quarters = quarters.filter((item) => item.key === state.filters.quarter);
+      }
+      return quarters.map((quarter) => ({
+        key: quarter.key,
+        label: quarter.label,
+        months: quarter.months,
+        title: `${quarter.label} (${quarter.months.map((m) => MONTH_HEADER_SHORT[m] || m).join(", ")})`,
+      }));
+    }
+    return getVisibleMonths().map((month) => ({
+      key: month,
+      label: MONTH_HEADER_SHORT[month] || month,
+      months: [month],
+      title: month,
+    }));
+  }
+
+  function sumScenarioValues(valuesByMonth, months, scenario) {
+    const bucket = valuesByMonth?.[scenario] || valuesByMonth?.["Факт БУ"] || {};
+    return months.reduce((sum, month) => sum + Number(bucket[month] || 0), 0);
+  }
+
+  function mergeDrillPayloads(payloads) {
+    const merged = new Map();
+    payloads.forEach((payload) => {
+      (payload?.articles || []).forEach((article) => {
+        const current = merged.get(article.name) || {
+          name: article.name,
+          [PRIVILEGED_BUCKET]: { buh: 0, nu: 0 },
+          [NON_PRIVILEGED_BUCKET]: { buh: 0, nu: 0 },
+        };
+        [PRIVILEGED_BUCKET, NON_PRIVILEGED_BUCKET].forEach((bucket) => {
+          current[bucket].buh += Number(article[bucket]?.buh || 0);
+          current[bucket].nu += Number(article[bucket]?.nu || 0);
+        });
+        merged.set(article.name, current);
+      });
+    });
+    return { articles: Array.from(merged.values()) };
+  }
+
+  function drillPayloadForPeriod(row, periodKey) {
+    if (!row?.drill) return null;
+    if (periodKey === "total") return row.drill.total;
+    const quarter = QUARTER_DEFS.find((item) => item.key === periodKey);
+    if (quarter) {
+      const payloads = quarter.months.map((month) => row.drill.months?.[month]).filter(Boolean);
+      return mergeDrillPayloads(payloads);
+    }
+    return row.drill.months?.[periodKey] || null;
   }
 
   function collectExpandableIds(rows, bucket = []) {
@@ -376,27 +1035,61 @@
     return ratioPercent > 105 ? "text-emerald-700" : "text-rose-500";
   }
 
-  function renderPlanFactCell(planValue, factValue) {
-    const plan = Number(planValue || 0);
-    const fact = Number(factValue || 0);
-    const ratio = plan ? (fact / plan) * 100 : 0;
-    const tone = varianceClass(ratio);
-    const factClass = fact < 0 ? "text-rose-600" : "";
+  function isPlanLikeScenario(scenario) {
+    return scenario === "План" || scenario === "Прогноз";
+  }
 
-    if (!state.showPlan) {
+  function primaryDisplayFactScenario(scenarios) {
+    if (scenarios.includes("Факт БУ")) return "Факт БУ";
+    if (scenarios.includes("Факт НУ")) return "Факт НУ";
+    return null;
+  }
+
+  function renderScenarioCell(valuesByMonth, months) {
+    const scenarios = orderedSelectedScenarios();
+
+    if (scenarios.length === 1) {
+      const value = sumScenarioValues(valuesByMonth, months, scenarios[0]);
+      const factClass = value < 0 ? "text-rose-600" : "";
       return `
         <div class="cell-plan-fact cell-plan-fact--fact-only">
-          <strong class="values ${factClass}">${formatMoney(fact)}</strong>
+          <strong class="values ${factClass}">${formatMoney(value)}</strong>
+        </div>
+      `;
+    }
+
+    const factScenario = primaryDisplayFactScenario(scenarios);
+    const planScenarios = scenarios.filter(isPlanLikeScenario);
+    const rest = scenarios.filter((scenario) => scenario !== factScenario && !isPlanLikeScenario(scenario));
+
+    if (scenarios.length === 2 && factScenario && planScenarios.length === 1 && !rest.length) {
+      const plan = sumScenarioValues(valuesByMonth, months, planScenarios[0]);
+      const fact = sumScenarioValues(valuesByMonth, months, factScenario);
+      const ratio = plan ? (fact / plan) * 100 : 0;
+      const tone = varianceClass(ratio);
+      const factClass = fact < 0 ? "text-rose-600" : "";
+      return `
+        <div class="cell-plan-fact">
+          <span class="values">
+            <span class="plan-value">${formatMoney(plan)}</span> / <strong class="${factClass}">${formatMoney(fact)}</strong>
+          </span>
+          <span class="pct ${tone}">${percentFormatter.format(ratio)}%</span>
         </div>
       `;
     }
 
     return `
       <div class="cell-plan-fact">
-        <span class="values">
-          <span class="plan-value">${formatMoney(plan)}</span> / <strong class="${factClass}">${formatMoney(fact)}</strong>
-        </span>
-        <span class="pct ${tone}">${percentFormatter.format(ratio)}%</span>
+        ${scenarios
+          .map((scenario) => {
+            const value = sumScenarioValues(valuesByMonth, months, scenario);
+            const factClass = value < 0 ? "text-rose-600" : "";
+            return `
+          <span class="values">
+            <span class="plan-value">${scenario}</span> / <strong class="${factClass}">${formatMoney(value)}</strong>
+          </span>`;
+          })
+          .join("")}
       </div>
     `;
   }
@@ -407,32 +1100,75 @@
     });
   }
 
+  function getConsolidatedRows() {
+    if (!almabiData.consolidated_by_tax) return [];
+    return almabiData.consolidated_by_tax[state.taxBucketFilter] || almabiData.consolidated_by_tax.all || [];
+  }
+
+  function renderConsolidatedHead() {
+    const head = document.getElementById("almabiConsolidatedHead");
+    if (!head) return;
+    const columns = getTablePeriodColumns();
+    head.innerHTML = `
+      <th class="text-left col-indicator">Показатель</th>
+      <th class="text-right col-total" title="${scenarioHeaderTitle("Итого")}">${tableTotalHeaderTitle()}</th>
+      ${columns
+        .map((column) => {
+          const title = scenarioHeaderTitle(column.title);
+          return `<th class="text-right col-month" title="${title}">${column.label}</th>`;
+        })
+        .join("")}
+    `;
+  }
+
+  function renderConsolidatedTable() {
+    const tbody = document.getElementById("almabiConsolidatedBody");
+    if (!tbody || dashboardMode !== "test") return;
+
+    rebuildRowIndex();
+
+    const rows = getConsolidatedRows();
+    const columns = getTablePeriodColumns();
+    renderConsolidatedHead();
+
+    tbody.innerHTML = rows
+      .map((row) => {
+        const sourceRow = state.rowByName[row.name];
+        const monthCells = columns
+          .map((column) => `<td class="text-right col-month${drillCellClass(sourceRow)}"${renderDrillCell(column.key, sourceRow)}>${renderScenarioCell(row.values, column.months)}</td>`)
+          .join("");
+        const rowClass = row.is_calculated ? "is-level-1 font-semibold bg-violet-50/50" : "is-level-1";
+
+        return `
+          <tr class="${rowClass}" data-consolidated-name="${row.name.replace(/"/g, "&quot;")}">
+            <td class="col-indicator">
+              <span class="row-name">${row.name}</span>
+            </td>
+            <td class="text-right col-total${drillCellClass(sourceRow)}"${renderDrillCell("total", sourceRow)}>${renderScenarioCell(row.values, almabiData.months)}</td>
+            ${monthCells}
+          </tr>
+        `;
+      })
+      .join("");
+  }
+
   function renderSummaryHead() {
     const head = document.getElementById("almabiSummaryHead");
-    const months = getVisibleMonths();
+    const columns = getTablePeriodColumns();
     head.innerHTML = `
       <th class="text-left col-indicator">Показатели</th>
-      <th class="text-right col-total">${state.showPlan ? "Итого (план / факт)" : "Итого"}</th>
-      ${months
-        .map((month) => {
-          const short = MONTH_HEADER_SHORT[month] || month;
-          const title = state.showPlan ? `${month} — план / факт` : `${month} — факт`;
-          return `<th class="text-right col-month" title="${title}">${short}</th>`;
+      <th class="text-right col-total" title="${scenarioHeaderTitle("Итого")}">${tableTotalHeaderTitle()}</th>
+      ${columns
+        .map((column) => {
+          const title = scenarioHeaderTitle(column.title);
+          return `<th class="text-right col-month" title="${title}">${column.label}</th>`;
         })
         .join("")}
     `;
   }
 
   function bindSummaryRowEvents() {
-    document.querySelectorAll("[data-summary-row]").forEach((rowEl) => {
-      rowEl.addEventListener("click", () => {
-        if (rowEl.dataset.expandable !== "true") return;
-        const rowId = rowEl.dataset.summaryRow;
-        if (state.expandedIds.has(rowId)) state.expandedIds.delete(rowId);
-        else state.expandedIds.add(rowId);
-        renderSummary();
-      });
-    });
+    // Обработка кликов — в initCellDrillModal (делегирование).
   }
 
   function updateFilterHint() {
@@ -443,18 +1179,17 @@
   }
 
   function renderSummary() {
+    rebuildRowIndex();
     const tbody = document.getElementById("almabiSummaryBody");
     const tree = getFilteredSummaryRows();
     const visibleRows = flattenVisibleRows(tree);
-    const months = getVisibleMonths();
+    const columns = getTablePeriodColumns();
     let rowIndex = 0;
 
     renderSummaryHead();
 
     tbody.innerHTML = visibleRows
       .map(({ row, depth }) => {
-        const factValues = row.values[state.scenario] || row.values["Факт БУХ"];
-        const planValues = row.values["План"];
         const indent = 16 + depth * 22;
         const isExpanded = state.expandedIds.has(row.id);
         const chevronIcon = isExpanded
@@ -463,12 +1198,9 @@
         const chevron = row.expandable
           ? `<span class="row-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor">${chevronIcon}</svg></span>`
           : `<span class="row-chevron is-placeholder" aria-hidden="true"></span>`;
-        const monthCells = months
-          .map((month) => `<td class="text-right col-month">${renderPlanFactCell(planValues[month], factValues[month])}</td>`)
+        const monthCells = columns
+          .map((column) => `<td class="text-right col-month${drillCellClass(row)}"${renderDrillCell(column.key, row)}>${renderScenarioCell(row.values, column.months)}</td>`)
           .join("");
-
-        const totalPlan = almabiData.months.reduce((sum, month) => sum + Number(planValues[month] || 0), 0);
-        const totalFact = almabiData.months.reduce((sum, month) => sum + Number(factValues[month] || 0), 0);
         const depthClass = `is-depth-${Math.min(depth, 6)}`;
         const levelClass = row.level === 1 ? "is-level-1" : "is-child";
         const zebra = row.level > 1 && rowIndex % 2 === 0 ? "is-even" : "";
@@ -486,7 +1218,7 @@
                 <span class="row-name">${row.name}</span>
               </div>
             </td>
-            <td class="text-right col-total">${renderPlanFactCell(totalPlan, totalFact)}</td>
+            <td class="text-right col-total${drillCellClass(row)}"${renderDrillCell("total", row)}>${renderScenarioCell(row.values, almabiData.months)}</td>
             ${monthCells}
           </tr>
         `;
@@ -671,7 +1403,7 @@
   }
 
   function closeAllFilterMenus(except = null) {
-    document.querySelectorAll("[data-filter-select]").forEach((root) => {
+    document.querySelectorAll("[data-filter-select], [data-scenario-picker]").forEach((root) => {
       if (root === except) return;
       root.classList.remove("is-open");
       root.querySelector(".almabi-select__trigger")?.setAttribute("aria-expanded", "false");
@@ -730,49 +1462,426 @@
       });
     });
 
-    document.addEventListener("click", () => closeAllFilterMenus());
+    document.addEventListener("click", (event) => {
+      if (event.target.closest("[data-scenario-picker]")) return;
+      closeAllFilterMenus();
+    });
     document.querySelector("[data-filter-reset]")?.addEventListener("click", () => {
       resetFilters();
       renderAll();
     });
   }
 
-  function makeBarChart(canvasId, rows, color) {
+  function buildChartMetrics() {
+    const charts = getActiveChartSeries();
+    const revenueAgg = aggregateValueSeries(charts.revenue_by_month || []);
+    const costAgg = aggregateValueSeries(charts.cost_by_month || []);
+    const profitValues = revenueAgg.values.map((value, index) => value - Number(costAgg.values[index] || 0));
+    const costStructure = aggregateCostStructure(charts.cost_structure_by_month);
+
+    const revenue = revenueAgg.labels.map((label, index) => ({ month: label, value: revenueAgg.values[index] }));
+    const cost = costAgg.labels.map((label, index) => ({ month: label, value: costAgg.values[index] }));
+    const profit = revenueAgg.labels.map((label, index) => ({ month: label, value: profitValues[index] }));
+
+    const revenueTotal = revenueAgg.values.reduce((sum, value) => sum + value, 0);
+    const costTotal = costAgg.values.reduce((sum, value) => sum + value, 0);
+    const profitTotal = revenueTotal - costTotal;
+    const margin = revenueTotal ? (profitTotal / revenueTotal) * 100 : 0;
+
+    return {
+      revenue,
+      cost,
+      profit,
+      revenueTotal,
+      costTotal,
+      profitTotal,
+      margin,
+      costStructure,
+    };
+  }
+
+  let overviewChart;
+  let costStructureChart;
+
+  const overviewValueLabels = {
+    id: "overviewValueLabels",
+    afterDatasetsDraw(chart) {
+      const ctx = chart.ctx;
+      ctx.save();
+      ctx.font = "600 10px system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "bottom";
+      chart.data.datasets.forEach((dataset, datasetIndex) => {
+        const meta = chart.getDatasetMeta(datasetIndex);
+        meta.data.forEach((bar, index) => {
+          const value = dataset.data[index];
+          if (value == null || !bar || Math.abs(bar.height) < 18) return;
+          const raw = value * state.divisor;
+          ctx.fillStyle = datasetIndex === 0 ? "#047857" : datasetIndex === 1 ? "#c2410c" : "#0369a1";
+          ctx.fillText(compactMoney(raw), bar.x, bar.y - 4);
+        });
+      });
+      ctx.restore();
+    },
+  };
+
+  function compactMoney(value) {
+    const abs = Math.abs(Number(value || 0));
+    if (abs >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(1)} млрд`;
+    if (abs >= 1_000_000) return `${(value / 1_000_000).toFixed(1)} млн`;
+    if (abs >= 1_000) return `${(value / 1_000).toFixed(0)} тыс`;
+    return numberFormatter.format(scaled(value));
+  }
+
+  function makeOverviewChart(canvasId, metrics) {
     const context = document.getElementById(canvasId);
+    if (!context) return null;
+
+    const revScaled = metrics.revenue.map((row) => scaled(row.value));
+    const costScaled = metrics.cost.map((row) => scaled(row.value));
+    const profitScaled = metrics.profit.map((row) => scaled(row.value));
+    const periodSuffix = state.chartPeriod === "quarter" ? "кв." : "мес.";
+
+    const overviewTooltip = {
+      backgroundColor: "#0f172a",
+      titleColor: "#f8fafc",
+      bodyColor: "#e2e8f0",
+      footerColor: "#94a3b8",
+      padding: 14,
+      cornerRadius: 10,
+      filter(item) {
+        return item.parsed.y !== null && item.parsed.y !== undefined;
+      },
+      callbacks: {
+        title(items) {
+          return `${periodSuffix} ${items[0]?.label || ""}`;
+        },
+        label(context) {
+          const label = context.dataset.label ? `${context.dataset.label}: ` : "";
+          return `${label}${numberFormatter.format(context.parsed.y ?? 0)}`;
+        },
+        footer(items) {
+          const index = items[0]?.dataIndex ?? 0;
+          const revenue = Number(metrics.revenue[index]?.value || 0);
+          const cost = Number(metrics.cost[index]?.value || 0);
+          const profit = revenue - cost;
+          const margin = revenue ? (profit / revenue) * 100 : 0;
+          return [
+            `Прибыль: ${formatMoney(profit)}`,
+            `Маржа: ${percentFormatter.format(margin)}%`,
+          ];
+        },
+      },
+    };
+
+    const summaryTitle = [
+      `Выручка ${formatMoney(metrics.revenueTotal)}`,
+      `Себестоимость ${formatMoney(metrics.costTotal)}`,
+      `Прибыль ${formatMoney(metrics.profitTotal)} (${percentFormatter.format(metrics.margin)}%)`,
+    ].join("  ·  ");
+
     return new Chart(context, {
       type: "bar",
       data: {
-        labels: rows.map((row) => row.month),
-        datasets: [{
-          data: rows.map((row) => scaled(row.value)),
-          backgroundColor: color,
-          borderRadius: 2,
-          maxBarThickness: 28,
-        }],
+        labels: metrics.revenue.map((row) => row.month),
+        datasets: [
+          {
+            label: "Выручка",
+            data: revScaled,
+            stack: "revenue",
+            backgroundColor: "rgba(16, 185, 129, 0.92)",
+            maxBarThickness: 44,
+            borderRadius: 6,
+            borderSkipped: false,
+          },
+          {
+            label: "Себестоимость",
+            data: costScaled,
+            stack: "pnl",
+            backgroundColor: "rgba(249, 115, 22, 0.92)",
+            maxBarThickness: 44,
+            borderRadius: 0,
+            borderSkipped: false,
+          },
+          {
+            label: "Валовая прибыль",
+            data: profitScaled,
+            stack: "pnl",
+            backgroundColor: metrics.profit.map((row) => (
+              Number(row.value || 0) >= 0 ? "rgba(14, 165, 233, 0.92)" : "rgba(244, 63, 94, 0.92)"
+            )),
+            maxBarThickness: 44,
+            borderRadius: 6,
+            borderSkipped: false,
+          },
+        ],
       },
+      plugins: [overviewValueLabels],
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
+        interaction: { mode: "index", intersect: false },
+        datasets: {
+          bar: {
+            categoryPercentage: 0.62,
+            barPercentage: 0.88,
+          },
+        },
+        plugins: {
+          title: {
+            display: true,
+            text: summaryTitle,
+            color: "#475569",
+            font: { size: 12, weight: "600" },
+            padding: { bottom: 12 },
+          },
+          legend: {
+            display: true,
+            position: "bottom",
+            labels: {
+              boxWidth: 12,
+              boxHeight: 12,
+              usePointStyle: true,
+              pointStyle: "rectRounded",
+              color: "#475569",
+              font: { size: 12, weight: "600" },
+            },
+          },
+          tooltip: overviewTooltip,
+        },
         scales: {
-          x: { grid: { display: false }, ticks: { color: "#334155", font: { weight: "600" } } },
-          y: { grid: { color: "#f1f5f9" }, ticks: { callback: (value) => numberFormatter.format(value) } },
+          x: {
+            stacked: true,
+            grid: { display: false },
+            ticks: { color: "#64748b", font: { size: 12, weight: "600" } },
+          },
+          y: {
+            stacked: true,
+            beginAtZero: true,
+            grid: { color: "#eef2f7", drawBorder: false },
+            ticks: {
+              color: "#94a3b8",
+              callback: (value) => numberFormatter.format(value),
+            },
+          },
         },
       },
     });
   }
 
-  let revenueChart;
-  let costChart;
+  const costStructureShareLabels = {
+    id: "costStructureShareLabels",
+    afterDatasetsDraw(chart) {
+      if (chart.config.type !== "bar" || chart.config.options.indexAxis === "y") return;
+      const ctx = chart.ctx;
+      ctx.save();
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      chart.data.datasets.forEach((dataset, datasetIndex) => {
+        const meta = chart.getDatasetMeta(datasetIndex);
+        meta.data.forEach((bar, index) => {
+          const value = dataset.data[index];
+          if (value == null || value === 0 || !bar) return;
+          const barHeight = Math.abs(bar.height);
+          if (barHeight < 14) return;
+
+          const actual = chart.$costStructureActuals?.[datasetIndex]?.[index];
+          const total = chart.$costStructureTotals?.[index] || 0;
+          const share = total && actual != null ? (actual / total) * 100 : 0;
+          const label = formatStructureShareOnChart(share);
+          if (!label) return;
+
+          const fontSize = Math.min(12, Math.max(9, Math.round(barHeight / 2.6)));
+          ctx.font = `600 ${fontSize}px system-ui, sans-serif`;
+          ctx.lineWidth = 3;
+          ctx.strokeStyle = "rgba(15, 23, 42, 0.45)";
+          ctx.fillStyle = "#ffffff";
+          const textY = bar.y + bar.height / 2;
+          ctx.strokeText(label, bar.x, textY);
+          ctx.fillText(label, bar.x, textY);
+        });
+      });
+      ctx.restore();
+    },
+  };
+
+  function makeCostStructureChart(canvasId, model) {
+    const context = document.getElementById(canvasId);
+    if (!context) return null;
+
+    const labels = model.labels || [];
+    const totals = (model.totals || []).map((value) => Number(value || 0));
+    const sectionSeries = model.sectionSeries || [];
+
+    if (!labels.length || !sectionSeries.length) {
+      return new Chart(context, {
+        type: "bar",
+        data: { labels: ["—"], datasets: [{ data: [0], backgroundColor: "#e2e8f0" }] },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false }, tooltip: { enabled: false } },
+          scales: { x: { display: false }, y: { display: false } },
+        },
+      });
+    }
+
+    const datasets = sectionSeries.map((section, index) => ({
+      label: section.label || costSectionLabel(section.name),
+      data: section.values.map((value) => (value == null ? null : scaled(Number(value)))),
+      stack: "cost",
+      backgroundColor: section.color || COST_SECTION_COLORS[index % COST_SECTION_COLORS.length],
+      maxBarThickness: 64,
+      borderRadius: index === sectionSeries.length - 1 ? 6 : 0,
+      borderSkipped: false,
+      borderColor: "rgba(255, 255, 255, 0.92)",
+      borderWidth: 1.5,
+    }));
+    const actualValuesMatrix = sectionSeries.map((section) => section.actualValues || []);
+
+    const chart = new Chart(context, {
+      type: "bar",
+      data: { labels, datasets },
+      plugins: [costStructureShareLabels],
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        datasets: {
+          bar: {
+            categoryPercentage: 0.72,
+            barPercentage: 0.92,
+          },
+        },
+        plugins: {
+          legend: {
+            display: true,
+            position: "bottom",
+            labels: {
+              boxWidth: 12,
+              boxHeight: 12,
+              usePointStyle: true,
+              pointStyle: "rectRounded",
+              color: "#475569",
+              font: { size: 11, weight: "600" },
+            },
+          },
+          tooltip: {
+            backgroundColor: "#0f172a",
+            titleColor: "#f8fafc",
+            bodyColor: "#e2e8f0",
+            padding: 12,
+            cornerRadius: 8,
+            filter(item) {
+              return item.parsed.y !== null && item.parsed.y !== undefined && item.parsed.y !== 0;
+            },
+            callbacks: {
+              title(items) {
+                const suffix = state.chartPeriod === "quarter" ? "квартал" : "месяц";
+                return `${suffix}: ${items[0]?.label || ""}`;
+              },
+              label(context) {
+                const actual = chart.$costStructureActuals?.[context.datasetIndex]?.[context.dataIndex];
+                const total = chart.$costStructureTotals?.[context.dataIndex] || 0;
+                const rawValue = Number(actual || 0);
+                const share = total ? (rawValue / total) * 100 : 0;
+                return `${context.dataset.label}: ${formatMoney(rawValue)} (${formatStructureShare(share)})`;
+              },
+              footer(items) {
+                const index = items[0]?.dataIndex ?? 0;
+                const total = chart.$costStructureTotals?.[index] || 0;
+                if (!total) return [];
+                return [`Итого: ${numberFormatter.format(scaled(total))}`];
+              },
+            },
+          },
+        },
+        scales: {
+          x: {
+            stacked: true,
+            grid: { display: false },
+            ticks: { color: "#64748b", font: { size: 12, weight: "600" } },
+          },
+          y: {
+            stacked: true,
+            beginAtZero: true,
+            grid: { color: "#eef2f7", drawBorder: false },
+            ticks: {
+              color: "#94a3b8",
+              callback: (value) => numberFormatter.format(value),
+            },
+          },
+        },
+      },
+    });
+    chart.$costStructureTotals = totals;
+    chart.$costStructureActuals = actualValuesMatrix;
+    return chart;
+  }
 
   function renderCharts() {
-    if (revenueChart) revenueChart.destroy();
-    if (costChart) costChart.destroy();
-    revenueChart = makeBarChart("almabiRevenueChart", almabiData.revenue_by_month, "#58ad70");
-    costChart = makeBarChart("almabiCostChart", almabiData.cost_by_month, "#f08a72");
+    if (overviewChart) overviewChart.destroy();
+    if (costStructureChart) costStructureChart.destroy();
+
+    const metrics = buildChartMetrics();
+    overviewChart = makeOverviewChart("almabiOverviewChart", metrics);
+    costStructureChart = makeCostStructureChart("almabiCostStructureChart", metrics.costStructure);
+  }
+
+  function syncTablePeriodButtons() {
+    document.querySelectorAll("[data-table-period]").forEach((button) => {
+      const active = (button.dataset.tablePeriod || "month") === state.tablePeriod;
+      const inConsolidated = !!button.closest("[data-consolidated-panel]");
+      if (inConsolidated) {
+        button.classList.toggle("bg-violet-100", active);
+        button.classList.toggle("text-violet-900", active);
+        button.classList.toggle("ring-1", active);
+        button.classList.toggle("ring-violet-200", active);
+        button.classList.toggle("text-violet-700", !active);
+        button.classList.toggle("hover:text-violet-900", !active);
+      } else {
+        button.classList.toggle("bg-sky-100", active);
+        button.classList.toggle("text-sky-900", active);
+        button.classList.toggle("ring-1", active);
+        button.classList.toggle("ring-sky-200", active);
+        button.classList.toggle("text-slate-600", !active);
+        button.classList.toggle("hover:text-slate-800", !active);
+      }
+    });
+  }
+
+  function initTablePeriodToggle() {
+    document.querySelectorAll("[data-table-period]").forEach((button) => {
+      button.addEventListener("click", () => {
+        state.tablePeriod = button.dataset.tablePeriod || "month";
+        syncTablePeriodButtons();
+        renderConsolidatedTable();
+        renderSummary();
+      });
+    });
+    syncTablePeriodButtons();
+  }
+
+  function initChartPeriodToggle() {
+    document.querySelectorAll("[data-chart-period]").forEach((button) => {
+      button.addEventListener("click", () => {
+        state.chartPeriod = button.dataset.chartPeriod || "month";
+        document.querySelectorAll("[data-chart-period]").forEach((item) => {
+          const active = item === button;
+          item.classList.toggle("bg-sky-100", active);
+          item.classList.toggle("text-sky-900", active);
+          item.classList.toggle("ring-1", active);
+          item.classList.toggle("ring-sky-200", active);
+          item.classList.toggle("text-slate-600", !active);
+        });
+        renderCharts();
+      });
+    });
   }
 
   function contractorDetailMatchesFilters(item) {
+    const taxBucket = activeTaxBucketFilter();
+    if (taxBucket && item.tax_bucket !== taxBucket) return false;
     if (!isDefaultFilter("taxType") && item.tax_bucket !== state.filters.taxType) return false;
     if (!isDefaultFilter("direction") && item.direction && item.direction !== state.filters.direction) return false;
     if (!isDefaultFilter("projectGroup") && item.project_group && item.project_group !== state.filters.projectGroup) return false;
@@ -867,10 +1976,11 @@
   }
 
   function renderAll() {
+    renderConsolidatedTable();
     renderSummary();
     renderContractorCards();
     renderMoneyAttributes();
-    if (document.getElementById("almabiRevenueChart")) {
+    if (document.getElementById("almabiOverviewChart")) {
       renderCharts();
     }
   }
@@ -904,24 +2014,20 @@
     });
   });
 
-  document.querySelectorAll("[data-scenario]").forEach((button) => {
+  document.querySelectorAll("[data-tax-bucket]").forEach((button) => {
     button.addEventListener("click", () => {
-      state.scenario = button.dataset.scenario;
-      document.querySelectorAll("[data-scenario]").forEach((item) => {
+      state.taxBucketFilter = button.dataset.taxBucket;
+      document.querySelectorAll("[data-tax-bucket]").forEach((item) => {
         const active = item === button;
-        item.classList.toggle("bg-sky-100", active);
-        item.classList.toggle("text-sky-900", active);
+        item.classList.toggle("bg-violet-100", active);
+        item.classList.toggle("text-violet-900", active);
         item.classList.toggle("ring-1", active);
-        item.classList.toggle("ring-sky-200", active);
+        item.classList.toggle("ring-violet-200", active);
         item.classList.toggle("text-slate-500", !active);
+        item.classList.toggle("hover:text-slate-700", !active);
       });
-      renderSummary();
+      renderAll();
     });
-  });
-
-  document.querySelector("[data-plan-toggle]")?.addEventListener("change", (event) => {
-    state.showPlan = event.target.checked;
-    renderSummary();
   });
 
   document.querySelector("[data-summary-expand-all]")?.addEventListener("click", () => {
@@ -935,7 +2041,59 @@
   });
 
   initFilterSelects();
+  initScenarioPicker();
   initSummaryTableScroll();
+  initDashboardToolbar();
+  initCellDrillModal();
+  initChartPeriodToggle();
+  initTablePeriodToggle();
   renderAll();
+
+  function initDashboardToolbar() {
+    const toolbar = document.querySelector("[data-dashboard-toolbar]");
+    const body = document.querySelector("[data-dashboard-toolbar-body]");
+    const toggle = document.querySelector("[data-dashboard-toolbar-toggle]");
+    const label = document.querySelector("[data-dashboard-toolbar-toggle-label]");
+    const chevron = document.querySelector("[data-dashboard-toolbar-chevron]");
+    const compactLabel = document.querySelector("[data-dashboard-toolbar-compact-label]");
+    if (!toolbar || !body || !toggle) return;
+
+    const tabLabels = {
+      summary: "Сводная информация",
+      revenue: "Детализация выручки",
+      contractors: "Детализация по контрагентам",
+    };
+
+    const updateCompactLabel = () => {
+      if (!compactLabel) return;
+      const activeTab = document.querySelector("[data-tab-button].is-active");
+      compactLabel.textContent = tabLabels[activeTab?.dataset.tabButton || "summary"] || "Тест BI";
+    };
+
+    const setCollapsed = (collapsed) => {
+      const dashboard = document.querySelector("[data-almabi-dashboard]");
+      toolbar.classList.toggle("is-collapsed", collapsed);
+      toolbar.classList.toggle("hidden", collapsed);
+      body.hidden = collapsed;
+      document.body.classList.toggle("almabi-toolbar-collapsed", collapsed);
+      dashboard?.classList.toggle("almabi-toolbar-collapsed", collapsed);
+      toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
+      toggle.title = collapsed ? "Показать панель" : "Скрыть панель";
+      if (label) label.textContent = collapsed ? "Показать панель" : "Скрыть панель";
+      if (chevron) chevron.classList.toggle("rotate-180", collapsed);
+      if (compactLabel) compactLabel.classList.toggle("hidden", !collapsed);
+      updateCompactLabel();
+    };
+
+    toggle.addEventListener("click", () => {
+      setCollapsed(!toolbar.classList.contains("is-collapsed"));
+    });
+
+    document.querySelectorAll("[data-tab-button]").forEach((button) => {
+      button.addEventListener("click", updateCompactLabel);
+    });
+
+    setCollapsed(false);
+  }
 </script>
 {% endblock %}

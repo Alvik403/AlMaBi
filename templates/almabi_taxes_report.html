@@ -1,0 +1,239 @@
+{% extends "dashboard_shell.html" %}
+
+{% block title %}Отчёт — Налоги{% endblock %}
+
+{% block main_class %}flex-1 min-h-0 overflow-hidden{% endblock %}
+{% block content_wrapper_class %}flex h-full min-h-0 flex-col px-4 py-4 sm:px-6 lg:px-8 max-w-[1600px]{% endblock %}
+
+{% block content %}
+<section class="flex h-full min-h-0 flex-col gap-4" data-taxes-report-root data-upload-url="/api/almabi-taxes-report/upload">
+  <div class="shrink-0">
+    <h1 class="text-xl font-bold text-gray-900">Налоги</h1>
+    <p class="mt-1 text-sm text-gray-500">
+      Расчёт от налоговой базы НУ: льготные — 2%, нельготные — 25% (выручка, себестоимость, прочие доходы и расходы).
+    </p>
+  </div>
+
+  <div class="shrink-0 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+    <h2 class="mb-3 text-sm font-bold text-gray-900">Загрузка файлов</h2>
+    <form data-taxes-report-upload class="flex flex-col gap-3">
+      <div class="grid grid-cols-1 gap-3 lg:grid-cols-3">
+        <div class="min-w-0">
+          <label class="mb-1 block text-sm font-semibold text-gray-700">Бух.регистр (.xlsx) *</label>
+          <input type="file" name="buh_file" accept=".xlsx" class="block w-full text-sm text-gray-600 file:mr-3 file:rounded-lg file:border-0 file:bg-brand-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-brand-700 hover:file:bg-brand-100" required />
+        </div>
+        <div class="min-w-0">
+          <label class="mb-1 block text-sm font-semibold text-gray-700">Себестоимость (.xlsx)</label>
+          <input type="file" name="cost_file" accept=".xlsx" class="block w-full text-sm text-gray-600 file:mr-3 file:rounded-lg file:border-0 file:bg-brand-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-brand-700 hover:file:bg-brand-100" />
+        </div>
+        <div class="min-w-0">
+          <label class="mb-1 block text-sm font-semibold text-gray-700">Реализация (.xlsx)</label>
+          <input type="file" name="revenue_file" accept=".xlsx" class="block w-full text-sm text-gray-600 file:mr-3 file:rounded-lg file:border-0 file:bg-brand-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-brand-700 hover:file:bg-brand-100" />
+        </div>
+      </div>
+      <div>
+        <button type="submit" class="rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300">
+          Загрузить и собрать отчёт
+        </button>
+      </div>
+    </form>
+    <p data-taxes-report-status class="mt-2 text-xs text-gray-500">
+      {% if payload.loaded %}
+      Загружено: <span class="font-medium text-gray-800">{{ payload.file_name }}</span>
+      {% if payload.cost_file_name %} · Себестоимость: <span class="font-medium text-gray-800">{{ payload.cost_file_name }}</span>{% endif %}
+      {% if payload.revenue_file_name %} · Реализация: <span class="font-medium text-gray-800">{{ payload.revenue_file_name }}</span>{% endif %}
+      {% else %}
+      Загрузите три выгрузки 1С или используйте файлы, уже загруженные в «Тест Excel».
+      {% endif %}
+    </p>
+  </div>
+
+  <div class="grid shrink-0 grid-cols-2 gap-3 lg:grid-cols-5">
+    <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+      <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Строк базы</p>
+      <p data-taxes-report-row-count class="mt-1 text-2xl font-bold text-gray-900">{{ payload.summary.row_count }}</p>
+    </div>
+    <div class="rounded-xl border border-brand-200 bg-brand-50 p-4 shadow-sm">
+      <p class="text-xs font-semibold uppercase tracking-wide text-brand-700">Налоги итого</p>
+      <p data-taxes-report-total class="mt-1 text-2xl font-bold text-brand-800">{{ payload.summary.total_amount | money }}</p>
+    </div>
+    <div class="rounded-xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
+      <p class="text-xs font-semibold uppercase tracking-wide text-emerald-700">Льготные (2%)</p>
+      <p data-taxes-report-privileged class="mt-1 text-2xl font-bold text-emerald-800">{{ payload.summary.privileged_amount | money }}</p>
+    </div>
+    <div class="rounded-xl border border-rose-200 bg-rose-50 p-4 shadow-sm">
+      <p class="text-xs font-semibold uppercase tracking-wide text-rose-700">Нельготные (25%)</p>
+      <p data-taxes-report-non-privileged class="mt-1 text-2xl font-bold text-rose-800">{{ payload.summary.non_privileged_amount | money }}</p>
+    </div>
+    <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+      <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Месяцев</p>
+      <p data-taxes-report-months class="mt-1 text-2xl font-bold text-gray-900">{{ payload.summary.month_count }}</p>
+    </div>
+  </div>
+
+  <div class="shrink-0 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+    <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+      <h2 class="text-sm font-bold text-gray-900">Состав расчёта</h2>
+      <div class="flex gap-1 rounded-lg border border-gray-200 p-1">
+        <button type="button" data-taxes-tax-filter="all" class="rounded-md px-2.5 py-1 text-xs font-semibold bg-brand-50 text-brand-700">Все</button>
+        <button type="button" data-taxes-tax-filter="privileged" class="rounded-md px-2.5 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-50">Льготные</button>
+        <button type="button" data-taxes-tax-filter="non_privileged" class="rounded-md px-2.5 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-50">Нельготные</button>
+      </div>
+    </div>
+    <div class="overflow-auto">
+      <table class="min-w-full text-sm">
+        <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
+          <tr>
+            <th class="px-3 py-2">Льгота</th>
+            <th class="px-3 py-2 text-right">База НУ</th>
+            <th class="px-3 py-2 text-right">Ставка</th>
+            <th class="px-3 py-2 text-right">Налог</th>
+          </tr>
+        </thead>
+        <tbody data-taxes-report-component-table>
+          {% set bases = payload.summary.base_totals %}
+          {% set taxes = payload.summary.component_totals %}
+          {% set rates = payload.summary.rates %}
+          <tr class="border-t border-gray-100">
+            <td class="px-3 py-2 font-medium">Льготные проекты</td>
+            <td class="px-3 py-2 text-right tabular-nums" data-taxes-base="Льготные проекты">{{ bases["Льготные проекты"] | money }}</td>
+            <td class="px-3 py-2 text-right tabular-nums text-gray-600">{{ rates["Льготные проекты"] }}</td>
+            <td class="px-3 py-2 text-right tabular-nums text-emerald-700" data-taxes-component="Льготные проекты">{{ taxes["Льготные проекты"] | money }}</td>
+          </tr>
+          <tr class="border-t border-gray-100">
+            <td class="px-3 py-2 font-medium">Нельготные проекты</td>
+            <td class="px-3 py-2 text-right tabular-nums" data-taxes-base="Нельготные проекты">{{ bases["Нельготные проекты"] | money }}</td>
+            <td class="px-3 py-2 text-right tabular-nums text-gray-600">{{ rates["Нельготные проекты"] }}</td>
+            <td class="px-3 py-2 text-right tabular-nums text-rose-700" data-taxes-component="Нельготные проекты">{{ taxes["Нельготные проекты"] | money }}</td>
+          </tr>
+          <tr class="border-t border-gray-200 bg-brand-50/50">
+            <td class="px-3 py-2 font-bold">Итого налоги</td>
+            <td class="px-3 py-2 text-right font-bold tabular-nums" data-taxes-base-total>{{ (bases["Льготные проекты"] + bases["Нельготные проекты"]) | money }}</td>
+            <td class="px-3 py-2"></td>
+            <td class="px-3 py-2 text-right font-bold tabular-nums text-brand-800" data-taxes-component-total>{{ payload.summary.total_amount | money }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="shrink-0 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+    <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+      <h2 class="text-sm font-bold text-gray-900">По месяцам: льгота / нельгота</h2>
+    </div>
+    <div class="overflow-auto">
+      <table class="min-w-full text-sm">
+        <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
+          <tr>
+            <th class="px-3 py-2">Месяц</th>
+            <th class="px-3 py-2 text-right">Льготные</th>
+            <th class="px-3 py-2 text-right">Нельготные</th>
+            <th class="px-3 py-2 text-right">Итого</th>
+          </tr>
+        </thead>
+        <tbody data-taxes-report-month-table>
+          {% if payload.month_table %}
+            {% for row in payload.month_table %}
+            <tr class="border-t border-gray-100">
+              <td class="px-3 py-2 font-medium">{{ row.month }}</td>
+              <td class="px-3 py-2 text-right tabular-nums text-emerald-700">{{ row.privileged | money }}</td>
+              <td class="px-3 py-2 text-right tabular-nums text-rose-700">{{ row.non_privileged | money }}</td>
+              <td class="px-3 py-2 text-right font-semibold tabular-nums">{{ row.total | money }}</td>
+            </tr>
+            {% endfor %}
+          {% else %}
+            <tr><td colspan="4" class="px-4 py-6 text-center text-gray-500">Нет данных</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="grid min-h-0 flex-1 grid-cols-1 gap-4 xl:grid-cols-2">
+    <div class="flex min-h-0 flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+      <div class="shrink-0 border-b border-gray-100 px-4 py-3">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 class="text-sm font-bold text-gray-900">Структура</h2>
+            <p class="text-xs text-gray-500">Налог по льготе</p>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <div class="flex gap-1 rounded-lg border border-gray-200 p-1">
+              <button type="button" data-taxes-tree-mode="analytics" class="rounded-md px-2.5 py-1 text-xs font-semibold bg-brand-50 text-brand-700">Льгота</button>
+              <button type="button" data-taxes-tree-mode="month" class="rounded-md px-2.5 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-50">Месяцы</button>
+            </div>
+            <div class="flex gap-1 rounded-lg border border-gray-200 p-1">
+              <button type="button" data-taxes-tax-filter="all" class="rounded-md px-2.5 py-1 text-xs font-semibold bg-brand-50 text-brand-700">Все</button>
+              <button type="button" data-taxes-tax-filter="privileged" class="rounded-md px-2.5 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-50">Льготные</button>
+              <button type="button" data-taxes-tax-filter="non_privileged" class="rounded-md px-2.5 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-50">Нельготные</button>
+            </div>
+            <button type="button" data-taxes-tree-expand-all class="rounded-md border border-gray-200 px-2 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-50">Раскрыть всё</button>
+            <button type="button" data-taxes-tree-collapse-all class="rounded-md border border-gray-200 px-2 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-50">Свернуть всё</button>
+          </div>
+        </div>
+      </div>
+      <div class="min-h-0 flex-1 overflow-auto">
+        <table class="min-w-full text-sm">
+          <thead class="sticky top-0 bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
+            <tr>
+              <th class="px-3 py-2">Уровень</th>
+              <th class="px-3 py-2 text-right">Строк</th>
+              <th class="px-3 py-2 text-right">Налог</th>
+            </tr>
+          </thead>
+          <tbody data-taxes-report-tree></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="flex min-h-0 flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+      <div class="shrink-0 border-b border-gray-100 px-4 py-3">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 class="text-sm font-bold text-gray-900">Детализация</h2>
+            <p class="text-xs text-gray-500">Строки налоговой базы НУ</p>
+          </div>
+          <input type="search" placeholder="Поиск…" data-taxes-report-search class="rounded-lg border border-gray-200 px-3 py-1.5 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-200" />
+        </div>
+      </div>
+      <div class="min-h-0 flex-1 overflow-auto">
+        <table class="min-w-full text-sm">
+          <thead class="sticky top-0 bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
+            <tr>
+              {% for column in payload.summary.source_columns %}
+              <th class="px-3 py-2 whitespace-nowrap">{{ column }}</th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody data-taxes-report-body>
+            {% if payload.source_rows %}
+              {% for row in payload.source_rows %}
+              <tr class="border-t border-gray-100 hover:bg-brand-50/40" data-taxes-report-row>
+                {% for column in payload.summary.source_columns %}
+                <td class="px-3 py-2 whitespace-nowrap {% if column == 'Сумма НУ' %}text-right font-medium tabular-nums{% elif column == 'Льгота' and row[column] == 'Льготные проекты' %}text-emerald-700{% elif column == 'Льгота' %}text-rose-700{% endif %}">
+                  {% if column == "Сумма НУ" %}{{ row[column] | money }}{% else %}{{ row[column] }}{% endif %}
+                </td>
+                {% endfor %}
+              </tr>
+              {% endfor %}
+            {% else %}
+              <tr>
+                <td colspan="{{ payload.summary.source_columns | length }}" class="px-4 py-10 text-center text-gray-500">Нет данных. Загрузите файлы.</td>
+              </tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script type="application/json" data-taxes-report-rows-json>{{ payload.rows | tojson }}</script>
+  <script type="application/json" data-taxes-report-source-rows-json>{{ payload.source_rows | tojson }}</script>
+  <script type="application/json" data-taxes-report-columns-json>{{ payload.summary.columns | tojson }}</script>
+  <script type="application/json" data-taxes-report-source-columns-json>{{ payload.summary.source_columns | tojson }}</script>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/dist/report_page.js" defer></script>
+{% endblock %}

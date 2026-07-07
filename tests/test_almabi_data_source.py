@@ -48,10 +48,10 @@ def test_almabi_can_switch_to_template(app_client):
     assert response.status_code == 200
     assert response.json()["source"] == "template"
 
-    dashboard = app_client.get("/dashboard/almabi")
+    dashboard = app_client.get("/dashboard/almabi-test")
     assert dashboard.status_code == 200
-    assert "Шаблон БДР" in dashboard.text
-    assert "П-101" in dashboard.text
+    assert "Тест BI" in dashboard.text
+    assert "Сводная информация" in dashboard.text
 
 
 def test_almabi_upload_accepts_bdr_file(app_client, tmp_path: Path):
@@ -76,6 +76,6 @@ def test_almabi_upload_accepts_bdr_file(app_client, tmp_path: Path):
     assert payload["saved_exports"]["buh"]["original"] == "my_bdr.xlsx"
     assert payload["saved_exports"]["buh"]["validation"]["export_type"] == "buh"
 
-    dashboard = app_client.get("/dashboard/almabi")
+    dashboard = app_client.get("/dashboard/almabi-test")
     assert dashboard.status_code == 200
     assert "my_bdr.xlsx" in dashboard.text

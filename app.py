@@ -16,11 +16,33 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from almabi_data_source import (
     almabi_data_context,
-    resolve_almabi_dashboard_data,
     set_almabi_data_source,
     store_almabi_upload,
     store_almabi_upload_bundle,
 )
+from almabi_cost_report_data import load_cost_report_payload, store_cost_report_upload
+from almabi_operating_profit_report_data import load_operating_profit_report_payload, store_operating_profit_report_upload
+from almabi_profit_before_tax_report_data import load_profit_before_tax_report_payload, store_profit_before_tax_report_upload
+from almabi_taxes_report_data import load_taxes_report_payload, store_taxes_report_upload
+from almabi_net_profit_report_data import load_net_profit_report_payload, store_net_profit_report_upload
+from almabi_management_expense_report_data import load_management_expense_report_payload, store_management_expense_report_upload
+from almabi_commercial_expense_report_data import load_commercial_expense_report_payload, store_commercial_expense_report_upload
+from almabi_other_expense_report_data import load_other_expense_report_payload, store_other_expense_report_upload
+from almabi_other_income_report_data import load_other_income_report_payload, store_other_income_report_upload
+from almabi_revenue_report_data import load_revenue_report_payload, store_revenue_report_upload
+from almabi_test_data import resolve_almabi_test_dashboard_data
+from almabi_test_excel_data import (
+    load_test_excel_buh_payload,
+    load_test_excel_cost_payload,
+    load_test_excel_page_payload,
+    load_test_excel_projects_payload,
+    load_test_excel_revenue_payload,
+    store_test_excel_buh_upload,
+    store_test_excel_cost_upload,
+    store_test_excel_projects_upload,
+    store_test_excel_revenue_upload,
+)
+from branding import ALMABI_NAV_TABS, APP_BRAND
 from dashboard_cache import DashboardPayloadCache
 from dashboard_builder import (
     COST_TYPE_META,
@@ -45,7 +67,7 @@ logger = logging.getLogger("opop_bi.app")
 SESSION_ACTIVE_FILE_KEY = "active_file_id"
 
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
-app = FastAPI(title="AlMaBi BI", docs_url="/api/docs", redoc_url="/api/redoc", openapi_url="/api/openapi.json")
+app = FastAPI(title=APP_BRAND, docs_url="/api/docs", redoc_url="/api/redoc", openapi_url="/api/openapi.json")
 app.add_middleware(SessionMiddleware, secret_key=settings.session_secret, same_site="lax")
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static"), check_dir=False), name="static")
 
@@ -111,7 +133,7 @@ templates.env.filters["money"] = money
 templates.env.filters["pct"] = pct
 templates.env.filters["urlquote"] = urlquote
 
-_URL_QUERY_KEYS = frozenset({"source"})
+_URL_QUERY_KEYS = frozenset({"source", "tab"})
 
 
 def template_url_for(request: Request):
@@ -142,6 +164,8 @@ def templated(request: Request, template_name: str, context: dict[str, Any], sta
         "url_for": template_url_for(request),
         "file_context": files_payload(request),
         "almabi_data_context": almabi_data_context(request, settings),
+        "app_brand": APP_BRAND,
+        "almabi_nav_tabs": ALMABI_NAV_TABS,
         "current_nav_tab": "dashboard",
         **context,
     }
@@ -434,7 +458,7 @@ def api_upload_file(request: Request, file: UploadFile = File(...)) -> JSONRespo
 
 @app.get("/", response_class=HTMLResponse, name="index")
 def index(request: Request):
-    return RedirectResponse(url=template_url_for(request)("almabi_dashboard"), status_code=307)
+    return RedirectResponse(url=template_url_for(request)("almabi_test_dashboard"), status_code=307)
 
 
 def require_debug_enabled() -> None:
@@ -565,6 +589,7 @@ def api_almabi_upload_bundle(
     realization_file: UploadFile | None = File(None),
     cost_file: UploadFile | None = File(None),
     amortization_file: UploadFile | None = File(None),
+    plan_forecast_file: UploadFile | None = File(None),
 ) -> JSONResponse:
     files = {
         "buh": buh_file,
@@ -573,7 +598,12 @@ def api_almabi_upload_bundle(
         "amortization": amortization_file,
     }
     try:
-        payload = store_almabi_upload_bundle(request, settings, files)
+        payload = store_almabi_upload_bundle(
+            request,
+            settings,
+            files,
+            plan_forecast_file=plan_forecast_file,
+        )
         return JSONResponse(
             {
                 **payload,
@@ -585,26 +615,588 @@ def api_almabi_upload_bundle(
         for file in files.values():
             if file is not None:
                 file.file.close()
+        if plan_forecast_file is not None:
+            plan_forecast_file.file.close()
 
 
-@app.get("/dashboard/almabi", response_class=HTMLResponse, name="almabi_dashboard")
+@app.get("/dashboard/almabi", name="almabi_dashboard")
 def almabi_dashboard(request: Request):
+    return RedirectResponse(url=template_url_for(request)("almabi_test_dashboard"), status_code=307)
+
+
+@app.get("/dashboard/almabi-test", response_class=HTMLResponse, name="almabi_test_dashboard")
+def almabi_test_dashboard(request: Request):
     url_fn = template_url_for(request)
     return templated(
         request,
         "almabi_dashboard.html",
         {
-            "dashboard": resolve_almabi_dashboard_data(request, settings),
-            "current_nav_tab": "almabi",
+            "dashboard": resolve_almabi_test_dashboard_data(request, settings),
+            "current_nav_tab": "almabi_test",
+            "dashboard_page_title": "Тест BI",
+            "dashboard_mode": "test",
             "current_level": 1,
             "current_class_name": None,
             "current_service_name": None,
             "current_cost_title": None,
             "current_cost_key": None,
-            "navigation_mode": "almabi",
-            "breadcrumbs": [{"name": "AlMaBi BI", "href": url_fn("almabi_dashboard")}],
+            "navigation_mode": "almabi_test",
+            "breadcrumbs": [{"name": APP_BRAND, "href": url_fn("almabi_test_dashboard")}],
         },
     )
+
+
+@app.get("/dashboard/almabi-revenue-report", response_class=HTMLResponse, name="almabi_revenue_report_page")
+def almabi_revenue_report_page(request: Request):
+    url_fn = template_url_for(request)
+    payload = load_revenue_report_payload(request, settings)
+    return templated(
+        request,
+        "almabi_revenue_report.html",
+        {
+            "payload": payload,
+            "current_nav_tab": "almabi_revenue_report",
+            "current_level": 1,
+            "current_class_name": None,
+            "current_service_name": None,
+            "current_cost_title": None,
+            "current_cost_key": None,
+            "navigation_mode": "almabi_revenue_report",
+            "breadcrumbs": [
+                {"name": APP_BRAND, "href": url_fn("almabi_test_dashboard")},
+                {"name": "Выручка", "href": url_fn("almabi_revenue_report_page")},
+            ],
+        },
+    )
+
+
+@app.post("/api/almabi-revenue-report/upload")
+async def api_almabi_revenue_report_upload(
+    request: Request,
+    buh_file: UploadFile = File(...),
+    cost_file: UploadFile | None = File(default=None),
+    revenue_file: UploadFile | None = File(default=None),
+) -> JSONResponse:
+    payload = await store_revenue_report_upload(
+        request,
+        settings,
+        buh_file=buh_file,
+        cost_file=cost_file,
+        revenue_file=revenue_file,
+    )
+    return JSONResponse(payload, status_code=201)
+
+
+@app.get("/api/almabi-revenue-report/data")
+def api_almabi_revenue_report_data(request: Request) -> JSONResponse:
+    return JSONResponse(load_revenue_report_payload(request, settings))
+
+
+@app.get("/dashboard/almabi-cost-report", response_class=HTMLResponse, name="almabi_cost_report_page")
+def almabi_cost_report_page(request: Request):
+    url_fn = template_url_for(request)
+    payload = load_cost_report_payload(request, settings)
+    return templated(
+        request,
+        "almabi_cost_report.html",
+        {
+            "payload": payload,
+            "current_nav_tab": "almabi_cost_report",
+            "current_level": 1,
+            "current_class_name": None,
+            "current_service_name": None,
+            "current_cost_title": None,
+            "current_cost_key": None,
+            "navigation_mode": "almabi_cost_report",
+            "breadcrumbs": [
+                {"name": APP_BRAND, "href": url_fn("almabi_test_dashboard")},
+                {"name": "Себестоимость", "href": url_fn("almabi_cost_report_page")},
+            ],
+        },
+    )
+
+
+@app.post("/api/almabi-cost-report/upload")
+async def api_almabi_cost_report_upload(
+    request: Request,
+    buh_file: UploadFile = File(...),
+    cost_file: UploadFile | None = File(default=None),
+    revenue_file: UploadFile | None = File(default=None),
+) -> JSONResponse:
+    payload = await store_cost_report_upload(
+        request,
+        settings,
+        buh_file=buh_file,
+        cost_file=cost_file,
+        revenue_file=revenue_file,
+    )
+    return JSONResponse(payload, status_code=201)
+
+
+@app.get("/api/almabi-cost-report/data")
+def api_almabi_cost_report_data(request: Request) -> JSONResponse:
+    return JSONResponse(load_cost_report_payload(request, settings))
+
+
+@app.get("/dashboard/almabi-other-income-report", response_class=HTMLResponse, name="almabi_other_income_report_page")
+def almabi_other_income_report_page(request: Request):
+    url_fn = template_url_for(request)
+    payload = load_other_income_report_payload(request, settings)
+    return templated(
+        request,
+        "almabi_other_income_report.html",
+        {
+            "payload": payload,
+            "current_nav_tab": "almabi_other_income_report",
+            "current_level": 1,
+            "current_class_name": None,
+            "current_service_name": None,
+            "current_cost_title": None,
+            "current_cost_key": None,
+            "navigation_mode": "almabi_other_income_report",
+            "breadcrumbs": [
+                {"name": APP_BRAND, "href": url_fn("almabi_test_dashboard")},
+                {"name": "Прочие доходы", "href": url_fn("almabi_other_income_report_page")},
+            ],
+        },
+    )
+
+
+@app.post("/api/almabi-other-income-report/upload")
+async def api_almabi_other_income_report_upload(
+    request: Request,
+    buh_file: UploadFile = File(...),
+    cost_file: UploadFile | None = File(default=None),
+    revenue_file: UploadFile | None = File(default=None),
+) -> JSONResponse:
+    payload = await store_other_income_report_upload(
+        request,
+        settings,
+        buh_file=buh_file,
+        cost_file=cost_file,
+        revenue_file=revenue_file,
+    )
+    return JSONResponse(payload, status_code=201)
+
+
+@app.get("/api/almabi-other-income-report/data")
+def api_almabi_other_income_report_data(request: Request) -> JSONResponse:
+    return JSONResponse(load_other_income_report_payload(request, settings))
+
+
+@app.get("/dashboard/almabi-other-expense-report", response_class=HTMLResponse, name="almabi_other_expense_report_page")
+def almabi_other_expense_report_page(request: Request):
+    url_fn = template_url_for(request)
+    payload = load_other_expense_report_payload(request, settings)
+    return templated(
+        request,
+        "almabi_other_expense_report.html",
+        {
+            "payload": payload,
+            "current_nav_tab": "almabi_other_expense_report",
+            "current_level": 1,
+            "current_class_name": None,
+            "current_service_name": None,
+            "current_cost_title": None,
+            "current_cost_key": None,
+            "navigation_mode": "almabi_other_expense_report",
+            "breadcrumbs": [
+                {"name": APP_BRAND, "href": url_fn("almabi_test_dashboard")},
+                {"name": "Прочие расходы", "href": url_fn("almabi_other_expense_report_page")},
+            ],
+        },
+    )
+
+
+@app.post("/api/almabi-other-expense-report/upload")
+async def api_almabi_other_expense_report_upload(
+    request: Request,
+    buh_file: UploadFile = File(...),
+    cost_file: UploadFile | None = File(default=None),
+    revenue_file: UploadFile | None = File(default=None),
+) -> JSONResponse:
+    payload = await store_other_expense_report_upload(
+        request,
+        settings,
+        buh_file=buh_file,
+        cost_file=cost_file,
+        revenue_file=revenue_file,
+    )
+    return JSONResponse(payload, status_code=201)
+
+
+@app.get("/api/almabi-other-expense-report/data")
+def api_almabi_other_expense_report_data(request: Request) -> JSONResponse:
+    return JSONResponse(load_other_expense_report_payload(request, settings))
+
+
+@app.get("/dashboard/almabi-commercial-expense-report", response_class=HTMLResponse, name="almabi_commercial_expense_report_page")
+def almabi_commercial_expense_report_page(request: Request):
+    url_fn = template_url_for(request)
+    payload = load_commercial_expense_report_payload(request, settings)
+    return templated(
+        request,
+        "almabi_commercial_expense_report.html",
+        {
+            "payload": payload,
+            "current_nav_tab": "almabi_commercial_expense_report",
+            "current_level": 1,
+            "current_class_name": None,
+            "current_service_name": None,
+            "current_cost_title": None,
+            "current_cost_key": None,
+            "navigation_mode": "almabi_commercial_expense_report",
+            "breadcrumbs": [
+                {"name": APP_BRAND, "href": url_fn("almabi_test_dashboard")},
+                {"name": "Коммерческие расходы", "href": url_fn("almabi_commercial_expense_report_page")},
+            ],
+        },
+    )
+
+
+@app.post("/api/almabi-commercial-expense-report/upload")
+async def api_almabi_commercial_expense_report_upload(
+    request: Request,
+    buh_file: UploadFile = File(...),
+    cost_file: UploadFile | None = File(default=None),
+    revenue_file: UploadFile | None = File(default=None),
+) -> JSONResponse:
+    payload = await store_commercial_expense_report_upload(
+        request,
+        settings,
+        buh_file=buh_file,
+        cost_file=cost_file,
+        revenue_file=revenue_file,
+    )
+    return JSONResponse(payload, status_code=201)
+
+
+@app.get("/api/almabi-commercial-expense-report/data")
+def api_almabi_commercial_expense_report_data(request: Request) -> JSONResponse:
+    return JSONResponse(load_commercial_expense_report_payload(request, settings))
+
+
+@app.get("/dashboard/almabi-management-expense-report", response_class=HTMLResponse, name="almabi_management_expense_report_page")
+def almabi_management_expense_report_page(request: Request):
+    url_fn = template_url_for(request)
+    payload = load_management_expense_report_payload(request, settings)
+    return templated(
+        request,
+        "almabi_management_expense_report.html",
+        {
+            "payload": payload,
+            "current_nav_tab": "almabi_management_expense_report",
+            "current_level": 1,
+            "current_class_name": None,
+            "current_service_name": None,
+            "current_cost_title": None,
+            "current_cost_key": None,
+            "navigation_mode": "almabi_management_expense_report",
+            "breadcrumbs": [
+                {"name": APP_BRAND, "href": url_fn("almabi_test_dashboard")},
+                {"name": "Управленческие расходы", "href": url_fn("almabi_management_expense_report_page")},
+            ],
+        },
+    )
+
+
+@app.post("/api/almabi-management-expense-report/upload")
+async def api_almabi_management_expense_report_upload(
+    request: Request,
+    buh_file: UploadFile = File(...),
+    cost_file: UploadFile | None = File(default=None),
+    revenue_file: UploadFile | None = File(default=None),
+) -> JSONResponse:
+    payload = await store_management_expense_report_upload(
+        request,
+        settings,
+        buh_file=buh_file,
+        cost_file=cost_file,
+        revenue_file=revenue_file,
+    )
+    return JSONResponse(payload, status_code=201)
+
+
+@app.get("/api/almabi-management-expense-report/data")
+def api_almabi_management_expense_report_data(request: Request) -> JSONResponse:
+    return JSONResponse(load_management_expense_report_payload(request, settings))
+
+
+@app.get("/dashboard/almabi-operating-profit-report", response_class=HTMLResponse, name="almabi_operating_profit_report_page")
+def almabi_operating_profit_report_page(request: Request):
+    url_fn = template_url_for(request)
+    payload = load_operating_profit_report_payload(request, settings)
+    return templated(
+        request,
+        "almabi_operating_profit_report.html",
+        {
+            "payload": payload,
+            "current_nav_tab": "almabi_operating_profit_report",
+            "current_level": 1,
+            "current_class_name": None,
+            "current_service_name": None,
+            "current_cost_title": None,
+            "current_cost_key": None,
+            "navigation_mode": "almabi_operating_profit_report",
+            "breadcrumbs": [
+                {"name": APP_BRAND, "href": url_fn("almabi_test_dashboard")},
+                {"name": "Операционная прибыль", "href": url_fn("almabi_operating_profit_report_page")},
+            ],
+        },
+    )
+
+
+@app.post("/api/almabi-operating-profit-report/upload")
+async def api_almabi_operating_profit_report_upload(
+    request: Request,
+    buh_file: UploadFile = File(...),
+    cost_file: UploadFile | None = File(default=None),
+    revenue_file: UploadFile | None = File(default=None),
+) -> JSONResponse:
+    payload = await store_operating_profit_report_upload(
+        request,
+        settings,
+        buh_file=buh_file,
+        cost_file=cost_file,
+        revenue_file=revenue_file,
+    )
+    return JSONResponse(payload, status_code=201)
+
+
+@app.get("/api/almabi-operating-profit-report/data")
+def api_almabi_operating_profit_report_data(request: Request) -> JSONResponse:
+    return JSONResponse(load_operating_profit_report_payload(request, settings))
+
+
+@app.get("/dashboard/almabi-profit-before-tax-report", response_class=HTMLResponse, name="almabi_profit_before_tax_report_page")
+def almabi_profit_before_tax_report_page(request: Request):
+    url_fn = template_url_for(request)
+    payload = load_profit_before_tax_report_payload(request, settings)
+    return templated(
+        request,
+        "almabi_profit_before_tax_report.html",
+        {
+            "payload": payload,
+            "current_nav_tab": "almabi_profit_before_tax_report",
+            "current_level": 1,
+            "current_class_name": None,
+            "current_service_name": None,
+            "current_cost_title": None,
+            "current_cost_key": None,
+            "navigation_mode": "almabi_profit_before_tax_report",
+            "breadcrumbs": [
+                {"name": APP_BRAND, "href": url_fn("almabi_test_dashboard")},
+                {"name": "Прибыль/убыток до налогообложения", "href": url_fn("almabi_profit_before_tax_report_page")},
+            ],
+        },
+    )
+
+
+@app.post("/api/almabi-profit-before-tax-report/upload")
+async def api_almabi_profit_before_tax_report_upload(
+    request: Request,
+    buh_file: UploadFile = File(...),
+    cost_file: UploadFile | None = File(default=None),
+    revenue_file: UploadFile | None = File(default=None),
+) -> JSONResponse:
+    payload = await store_profit_before_tax_report_upload(
+        request,
+        settings,
+        buh_file=buh_file,
+        cost_file=cost_file,
+        revenue_file=revenue_file,
+    )
+    return JSONResponse(payload, status_code=201)
+
+
+@app.get("/api/almabi-profit-before-tax-report/data")
+def api_almabi_profit_before_tax_report_data(request: Request) -> JSONResponse:
+    return JSONResponse(load_profit_before_tax_report_payload(request, settings))
+
+
+@app.get("/dashboard/almabi-taxes-report", response_class=HTMLResponse, name="almabi_taxes_report_page")
+def almabi_taxes_report_page(request: Request):
+    url_fn = template_url_for(request)
+    payload = load_taxes_report_payload(request, settings)
+    return templated(
+        request,
+        "almabi_taxes_report.html",
+        {
+            "payload": payload,
+            "current_nav_tab": "almabi_taxes_report",
+            "current_level": 1,
+            "current_class_name": None,
+            "current_service_name": None,
+            "current_cost_title": None,
+            "current_cost_key": None,
+            "navigation_mode": "almabi_taxes_report",
+            "breadcrumbs": [
+                {"name": APP_BRAND, "href": url_fn("almabi_test_dashboard")},
+                {"name": "Налоги", "href": url_fn("almabi_taxes_report_page")},
+            ],
+        },
+    )
+
+
+@app.post("/api/almabi-taxes-report/upload")
+async def api_almabi_taxes_report_upload(
+    request: Request,
+    buh_file: UploadFile = File(...),
+    cost_file: UploadFile | None = File(default=None),
+    revenue_file: UploadFile | None = File(default=None),
+) -> JSONResponse:
+    payload = await store_taxes_report_upload(
+        request,
+        settings,
+        buh_file=buh_file,
+        cost_file=cost_file,
+        revenue_file=revenue_file,
+    )
+    return JSONResponse(payload, status_code=201)
+
+
+@app.get("/api/almabi-taxes-report/data")
+def api_almabi_taxes_report_data(request: Request) -> JSONResponse:
+    return JSONResponse(load_taxes_report_payload(request, settings))
+
+
+@app.get("/dashboard/almabi-net-profit-report", response_class=HTMLResponse, name="almabi_net_profit_report_page")
+def almabi_net_profit_report_page(request: Request):
+    url_fn = template_url_for(request)
+    payload = load_net_profit_report_payload(request, settings)
+    return templated(
+        request,
+        "almabi_net_profit_report.html",
+        {
+            "payload": payload,
+            "current_nav_tab": "almabi_net_profit_report",
+            "current_level": 1,
+            "current_class_name": None,
+            "current_service_name": None,
+            "current_cost_title": None,
+            "current_cost_key": None,
+            "navigation_mode": "almabi_net_profit_report",
+            "breadcrumbs": [
+                {"name": APP_BRAND, "href": url_fn("almabi_test_dashboard")},
+                {"name": "Чистая прибыль", "href": url_fn("almabi_net_profit_report_page")},
+            ],
+        },
+    )
+
+
+@app.post("/api/almabi-net-profit-report/upload")
+async def api_almabi_net_profit_report_upload(
+    request: Request,
+    buh_file: UploadFile = File(...),
+    cost_file: UploadFile | None = File(default=None),
+    revenue_file: UploadFile | None = File(default=None),
+) -> JSONResponse:
+    payload = await store_net_profit_report_upload(
+        request,
+        settings,
+        buh_file=buh_file,
+        cost_file=cost_file,
+        revenue_file=revenue_file,
+    )
+    return JSONResponse(payload, status_code=201)
+
+
+@app.get("/api/almabi-net-profit-report/data")
+def api_almabi_net_profit_report_data(request: Request) -> JSONResponse:
+    return JSONResponse(load_net_profit_report_payload(request, settings))
+
+
+@app.get("/dashboard/almabi-test-excel", response_class=HTMLResponse, name="almabi_test_excel_page")
+def almabi_test_excel_page(request: Request):
+    url_fn = template_url_for(request)
+    page = load_test_excel_page_payload(request, settings)
+    return templated(
+        request,
+        "almabi_test_excel.html",
+        {
+            "page": page,
+            "revenue": page["revenue"],
+            "cost": page["cost"],
+            "projects": page["projects"],
+            "buh": page["buh"],
+            "active_tab": page["active_tab"],
+            "current_nav_tab": "almabi_test_excel",
+            "current_level": 1,
+            "current_class_name": None,
+            "current_service_name": None,
+            "current_cost_title": None,
+            "current_cost_key": None,
+            "navigation_mode": "almabi_test_excel",
+            "breadcrumbs": [
+                {"name": APP_BRAND, "href": url_fn("almabi_test_dashboard")},
+                {"name": "Тест Excel", "href": url_fn("almabi_test_excel_page")},
+            ],
+        },
+    )
+
+
+@app.post("/api/almabi-test-excel/revenue/upload")
+async def api_almabi_test_excel_revenue_upload(request: Request, file: UploadFile = File(...)) -> JSONResponse:
+    payload = await store_test_excel_revenue_upload(request, settings, file)
+    return JSONResponse(payload, status_code=201)
+
+
+@app.post("/api/almabi-test-excel/cost/upload")
+async def api_almabi_test_excel_cost_upload(
+    request: Request,
+    cost_file: UploadFile = File(...),
+    projects_file: UploadFile | None = File(default=None),
+) -> JSONResponse:
+    payload = await store_test_excel_cost_upload(
+        request,
+        settings,
+        cost_file=cost_file,
+        projects_file=projects_file,
+    )
+    return JSONResponse(payload, status_code=201)
+
+
+@app.post("/api/almabi-test-excel/buh/upload")
+async def api_almabi_test_excel_buh_upload(
+    request: Request,
+    buh_file: UploadFile = File(...),
+    cost_file: UploadFile | None = File(default=None),
+    revenue_file: UploadFile | None = File(default=None),
+) -> JSONResponse:
+    payload = await store_test_excel_buh_upload(
+        request,
+        settings,
+        buh_file=buh_file,
+        cost_file=cost_file,
+        revenue_file=revenue_file,
+    )
+    return JSONResponse(payload, status_code=201)
+
+
+@app.post("/api/almabi-test-excel/projects/upload")
+async def api_almabi_test_excel_projects_upload(request: Request, file: UploadFile = File(...)) -> JSONResponse:
+    payload = await store_test_excel_projects_upload(request, settings, file)
+    return JSONResponse(payload, status_code=201)
+
+
+@app.get("/api/almabi-test-excel/revenue/data")
+def api_almabi_test_excel_revenue_data(request: Request) -> JSONResponse:
+    return JSONResponse(load_test_excel_revenue_payload(request, settings))
+
+
+@app.get("/api/almabi-test-excel/cost/data")
+def api_almabi_test_excel_cost_data(request: Request) -> JSONResponse:
+    return JSONResponse(load_test_excel_cost_payload(request, settings))
+
+
+@app.get("/api/almabi-test-excel/projects/data")
+def api_almabi_test_excel_projects_data(request: Request) -> JSONResponse:
+    return JSONResponse(load_test_excel_projects_payload(request, settings))
+
+
+@app.get("/api/almabi-test-excel/buh/data")
+def api_almabi_test_excel_buh_data(request: Request) -> JSONResponse:
+    return JSONResponse(load_test_excel_buh_payload(request, settings))
 
 
 @app.get("/dashboard/excel", response_class=HTMLResponse, name="dashboard_excel_editor")

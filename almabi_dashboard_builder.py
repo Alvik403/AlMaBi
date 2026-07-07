@@ -26,10 +26,77 @@ CALCULATED_KPIS = [
     ("Налоги", []),
     ("Чистая прибыль", ["Прибыль/убыток до налогообложения", "Налоги"]),
 ]
-REVENUE_PATH = ["direction", "project_group", "project", "contract", "nomenclature"]
-COST_PATH = ["cost_section", "direction", "project_group", "project", "nomenclature"]
-ORG_PATH = ["direction", "project_group", "project"]
+# Уровни как в «Уровни для дашборда»: L1 — KPI, далее вложенность до L5.
+REVENUE_PATH = ["direction", "project_group", "project", "contract"]
+COST_PATH = ["cost_section", "direction", "project_group", "project"]
 
+COST_STRUCTURE_SECTIONS = (
+    "Амортизация",
+    "Аренда (прямые)",
+    "Материальные затраты",
+    "Общепроизводственные затраты",
+    "Прочие производственные расходы",
+    "ФОТ",
+)
+
+_COST_STRUCTURE_ALIASES = {
+    "Аренда": "Аренда (прямые)",
+    "ОПЗ": "Общепроизводственные затраты",
+}
+
+
+def _normalize_cost_structure_section(section: str) -> str | None:
+    text = (section or "").strip()
+    if not text:
+        return None
+    text = _COST_STRUCTURE_ALIASES.get(text, text)
+    if text in COST_STRUCTURE_SECTIONS:
+        return text
+    return None
+ORG_PATH = ["direction", "project_group", "project"]
+BENEFIT_PATH = ["contract"]
+BENEFIT_ARTICLE_PATH = ["expense_article", "contract"]
+PRIVILEGED_BUCKET = "Льготные проекты"
+NON_PRIVILEGED_BUCKET = "Нельготные проекты"
+
+
+def _empty_drill_bucket() -> dict[str, float]:
+    return {"buh": 0.0, "nu": 0.0}
+
+
+def _build_drill_data(items: list[Fact]) -> dict[str, Any]:
+    """Детализация ячейки: статьи с разбивкой льгота / нельгота."""
+
+    def _payload(facts_subset: list[Fact]) -> dict[str, Any]:
+        grouped: dict[str, dict[str, dict[str, float]]] = defaultdict(
+            lambda: {
+                PRIVILEGED_BUCKET: _empty_drill_bucket(),
+                NON_PRIVILEGED_BUCKET: _empty_drill_bucket(),
+            }
+        )
+        for fact in facts_subset:
+            article = (fact.expense_article or "").strip() or (fact.contract or "").strip() or "Прочее"
+            bucket = tax_bucket(fact.tax_type)
+            grouped[article][bucket]["buh"] += fact.amount_buh
+            grouped[article][bucket]["nu"] += fact.amount_nu
+        articles = [
+            {
+                "name": name,
+                PRIVILEGED_BUCKET: buckets[PRIVILEGED_BUCKET],
+                NON_PRIVILEGED_BUCKET: buckets[NON_PRIVILEGED_BUCKET],
+            }
+            for name, buckets in sorted(grouped.items())
+        ]
+        return {"articles": articles}
+
+    return {
+        "total": _payload(items),
+        "months": {month: _payload([fact for fact in items if fact.month == month]) for month in MONTHS},
+    }
+
+
+def _attach_drill(node: dict[str, Any], items: list[Fact]) -> None:
+    node["drill"] = _build_drill_data(items)
 
 def _next_id(prefix: str) -> str:
     global _id_seq
@@ -37,21 +104,46 @@ def _next_id(prefix: str) -> str:
     return f"{prefix}-{_id_seq}"
 
 
-def _month_values(month_amounts: dict[str, dict[str, float]], *, revenue_aligned: bool = False) -> dict[str, dict[str, int]]:
-    result: dict[str, dict[str, int]] = {}
+def _scenario_amounts(items: list[Fact] | None, *, always_nu: bool = False) -> dict[str, float] | None:
+    if not items:
+        return None
+    aggregated = _aggregate_months(items)
+    return {
+        month: float(aggregated[month]["nu"] if always_nu else aggregated[month]["buh"])
+        for month in MONTHS
+    }
+
+
+def _month_values(
+    month_amounts: dict[str, dict[str, float]],
+    *,
+    always_nu: bool = False,
+    plan_amounts: dict[str, float] | None = None,
+    forecast_amounts: dict[str, float] | None = None,
+    from_file: bool = False,
+) -> dict[str, dict[str, float]]:
+    result: dict[str, dict[str, float]] = {}
     for scenario in SCENARIOS:
-        scenario_map: dict[str, int] = {}
+        scenario_map: dict[str, float] = {}
         for month in MONTHS:
-            buh = int(round(month_amounts.get(month, {}).get("buh", 0)))
-            nu = int(round(month_amounts.get(month, {}).get("nu", 0)))
-            if scenario == "Факт БУХ":
-                scenario_map[month] = buh
+            buh = float(month_amounts.get(month, {}).get("buh", 0) or 0)
+            nu = float(month_amounts.get(month, {}).get("nu", 0) or 0)
+            fact_buh = nu if always_nu else buh
+            fact_nu = nu
+            if scenario == "Факт БУ":
+                scenario_map[month] = fact_buh
             elif scenario == "Факт НУ":
-                scenario_map[month] = nu if not revenue_aligned else buh
+                scenario_map[month] = fact_nu
             elif scenario == "План":
-                scenario_map[month] = round(buh * 1.08)
+                if from_file or plan_amounts is not None:
+                    scenario_map[month] = float((plan_amounts or {}).get(month, 0) or 0)
+                else:
+                    scenario_map[month] = fact_buh * 1.08
             else:
-                scenario_map[month] = round(buh * 1.12)
+                if from_file or forecast_amounts is not None:
+                    scenario_map[month] = float((forecast_amounts or {}).get(month, 0) or 0)
+                else:
+                    scenario_map[month] = fact_buh * 1.12
         result[scenario] = scenario_map
     return result
 
@@ -62,13 +154,17 @@ def _attach_metrics(node: dict[str, Any]) -> dict[str, Any]:
         for child in children:
             _attach_metrics(child)
         for scenario in SCENARIOS:
-            totals = {month: 0 for month in MONTHS}
+            totals = {month: 0.0 for month in MONTHS}
             for child in children:
                 for month in MONTHS:
-                    totals[month] += int(child["values"][scenario].get(month, 0))
+                    totals[month] += float(child["values"][scenario].get(month, 0) or 0)
+            if scenario in {"План", "Прогноз"} and node.get("plan_forecast_from_file"):
+                continue
+            if scenario in {"План", "Прогноз"} and not any(totals.values()):
+                continue
             node["values"][scenario] = totals
 
-    fact = node["values"]["Факт БУХ"]
+    fact = node["values"]["Факт БУ"]
     plan = node["values"]["План"]
     total_fact = sum(fact.values())
     total_plan = sum(plan.values())
@@ -99,11 +195,24 @@ def _dimension_value(fact: Fact, key: str) -> str:
         "project": fact.project or "Без проекта",
         "contract": fact.contract or "Без договора",
         "nomenclature": fact.nomenclature or "Без номенклатуры",
-        "cost_section": fact.cost_section or "Прочие затраты",
+        "cost_section": fact.cost_section or "Общепроизводственные затраты",
         "tax_bucket": tax_bucket(fact.tax_type),
         "expense_article": fact.expense_article or "Прочее",
     }
     return mapping[key]
+
+
+def _filter_group_facts(items: list[Fact] | None, key: str, name: str) -> list[Fact]:
+    if not items:
+        return []
+    return [fact for fact in items if _dimension_value(fact, key) == name]
+
+
+def _group_facts_by_dimension(items: list[Fact] | None, key: str) -> dict[str, list[Fact]]:
+    grouped: dict[str, list[Fact]] = defaultdict(list)
+    for fact in items or []:
+        grouped[_dimension_value(fact, key)].append(fact)
+    return grouped
 
 
 def _build_group_tree(
@@ -111,75 +220,202 @@ def _build_group_tree(
     path: list[str],
     *,
     level: int,
-    revenue_aligned: bool = False,
+    always_nu: bool = False,
+    plan_items: list[Fact] | None = None,
+    forecast_items: list[Fact] | None = None,
+    plan_forecast_from_file: bool = False,
 ) -> list[dict[str, Any]]:
     if not path:
         return []
 
     current_key = path[0]
-    grouped: dict[str, list[Fact]] = defaultdict(list)
-    for fact in items:
-        grouped[_dimension_value(fact, current_key)].append(fact)
+    fact_grouped = _group_facts_by_dimension(items, current_key)
+    if plan_forecast_from_file:
+        plan_grouped = _group_facts_by_dimension(plan_items, current_key)
+        forecast_grouped = _group_facts_by_dimension(forecast_items, current_key)
+        names = sorted(set(fact_grouped) | set(plan_grouped) | set(forecast_grouped))
+    else:
+        plan_grouped = {}
+        forecast_grouped = {}
+        names = sorted(fact_grouped)
 
     nodes: list[dict[str, Any]] = []
-    for name in sorted(grouped):
-        group_items = grouped[name]
+    for name in names:
+        group_items = fact_grouped.get(name, [])
+        plan_group = plan_grouped.get(name, [])
+        forecast_group = forecast_grouped.get(name, [])
         children = _build_group_tree(
             group_items,
             path[1:],
             level=level + 1,
-            revenue_aligned=revenue_aligned,
+            always_nu=always_nu,
+            plan_items=plan_group,
+            forecast_items=forecast_group,
+            plan_forecast_from_file=plan_forecast_from_file,
         )
-        nodes.append(
-            _attach_metrics(
-                {
-                    "id": _next_id(f"node-{current_key}"),
-                    "name": name,
-                    "level": level,
-                    "values": _month_values(_aggregate_months(group_items), revenue_aligned=revenue_aligned),
-                    "children": children,
-                }
-            )
+        node = _attach_metrics(
+            {
+                "id": _next_id(f"node-{current_key}"),
+                "name": name,
+                "level": level,
+                "plan_forecast_from_file": plan_forecast_from_file,
+                "values": _month_values(
+                    _aggregate_months(group_items),
+                    always_nu=always_nu,
+                    plan_amounts=_scenario_amounts(plan_group, always_nu=always_nu),
+                    forecast_amounts=_scenario_amounts(forecast_group, always_nu=always_nu),
+                    from_file=plan_forecast_from_file,
+                ),
+                "children": children,
+            }
         )
+        _attach_drill(node, group_items)
+        nodes.append(node)
     return nodes
 
 
-def _build_benefit_children(items: list[Fact], *, with_articles: bool) -> list[dict[str, Any]]:
+def _scale_facts(items: list[Fact], sign: int) -> list[Fact]:
+    if sign == 1:
+        return items
+    return [
+        Fact(
+            kpi_l1=fact.kpi_l1,
+            month=fact.month,
+            amount_buh=fact.amount_buh * sign,
+            amount_nu=fact.amount_nu * sign,
+            direction=fact.direction,
+            project_group=fact.project_group,
+            project=fact.project,
+            contract=fact.contract,
+            nomenclature=fact.nomenclature,
+            cost_section=fact.cost_section,
+            expense_article=fact.expense_article,
+            tax_type=fact.tax_type,
+            contractor=fact.contractor,
+        )
+        for fact in items
+    ]
+
+
+def _merge_signed_fact_groups(groups: list[tuple[list[Fact], int]]) -> list[Fact]:
+    merged: list[Fact] = []
+    for items, sign in groups:
+        merged.extend(_scale_facts(items, sign))
+    return merged
+
+
+def _build_benefit_children(
+    items: list[Fact],
+    *,
+    with_articles: bool,
+    plan_items: list[Fact] | None = None,
+    forecast_items: list[Fact] | None = None,
+    plan_forecast_from_file: bool = False,
+) -> list[dict[str, Any]]:
     grouped: dict[str, list[Fact]] = defaultdict(list)
     for fact in items:
         grouped[_dimension_value(fact, "tax_bucket")].append(fact)
 
+    plan_grouped: dict[str, list[Fact]] = defaultdict(list)
+    for fact in plan_items or []:
+        plan_grouped[_dimension_value(fact, "tax_bucket")].append(fact)
+    forecast_grouped: dict[str, list[Fact]] = defaultdict(list)
+    for fact in forecast_items or []:
+        forecast_grouped[_dimension_value(fact, "tax_bucket")].append(fact)
+
     nodes: list[dict[str, Any]] = []
     for benefit_name in ("Льготные проекты", "Нельготные проекты"):
         benefit_items = grouped.get(benefit_name, [])
+        plan_for_benefit = plan_grouped.get(benefit_name, [])
+        forecast_for_benefit = forecast_grouped.get(benefit_name, [])
         children: list[dict[str, Any]] = []
-        if with_articles and benefit_items:
-            children = _build_group_tree(benefit_items, ["expense_article"], level=3)
-        nodes.append(
-            _attach_metrics(
-                {
-                    "id": _next_id("benefit"),
-                    "name": benefit_name,
-                    "level": 2,
-                    "values": _month_values(_aggregate_months(benefit_items)),
-                    "children": children,
-                }
+        if benefit_items or (
+            plan_forecast_from_file and (plan_for_benefit or forecast_for_benefit)
+        ):
+            path = BENEFIT_ARTICLE_PATH if with_articles else BENEFIT_PATH
+            children = _build_group_tree(
+                benefit_items,
+                path,
+                level=3,
+                plan_items=plan_for_benefit,
+                forecast_items=forecast_for_benefit,
+                plan_forecast_from_file=plan_forecast_from_file,
             )
+        node = _attach_metrics(
+            {
+                "id": _next_id("benefit"),
+                "name": benefit_name,
+                "level": 2,
+                "plan_forecast_from_file": plan_forecast_from_file,
+                "values": _month_values(
+                    _aggregate_months(benefit_items),
+                    plan_amounts=_scenario_amounts(plan_grouped.get(benefit_name, [])),
+                    forecast_amounts=_scenario_amounts(forecast_grouped.get(benefit_name, [])),
+                    from_file=plan_forecast_from_file,
+                ),
+                "children": children,
+            }
         )
+        _attach_drill(node, benefit_items)
+        nodes.append(node)
     return nodes
 
 
-def _build_section_children(kpi_l1: str, items: list[Fact]) -> list[dict[str, Any]]:
+def _build_section_children(
+    kpi_l1: str,
+    items: list[Fact],
+    *,
+    plan_items: list[Fact] | None = None,
+    forecast_items: list[Fact] | None = None,
+    plan_forecast_from_file: bool = False,
+) -> list[dict[str, Any]]:
     if kpi_l1 == "Выручка":
-        return _build_group_tree(items, REVENUE_PATH, level=2, revenue_aligned=True)
+        return _build_group_tree(
+            items,
+            REVENUE_PATH,
+            level=2,
+            always_nu=True,
+            plan_items=plan_items,
+            forecast_items=forecast_items,
+            plan_forecast_from_file=plan_forecast_from_file,
+        )
     if kpi_l1 == "Себестоимость":
-        return _build_group_tree(items, COST_PATH, level=2)
+        return _build_group_tree(
+            items,
+            COST_PATH,
+            level=2,
+            plan_items=plan_items,
+            forecast_items=forecast_items,
+            plan_forecast_from_file=plan_forecast_from_file,
+        )
     if kpi_l1 in BENEFIT_SECTIONS:
-        return _build_benefit_children(items, with_articles=kpi_l1 in ARTICLE_SECTIONS)
-    return _build_group_tree(items, ORG_PATH, level=2)
+        return _build_benefit_children(
+            items,
+            with_articles=kpi_l1 in ARTICLE_SECTIONS,
+            plan_items=plan_items,
+            forecast_items=forecast_items,
+            plan_forecast_from_file=plan_forecast_from_file,
+        )
+    return _build_group_tree(
+        items,
+        ORG_PATH,
+        level=2,
+        plan_items=plan_items,
+        forecast_items=forecast_items,
+        plan_forecast_from_file=plan_forecast_from_file,
+    )
 
 
-def _build_kpi_node(name: str, items: list[Fact], *, sign: int = 1, revenue_aligned: bool = False) -> dict[str, Any]:
+def _build_kpi_node(
+    name: str,
+    items: list[Fact],
+    *,
+    sign: int = 1,
+    always_nu: bool = False,
+    plan_items: list[Fact] | None = None,
+    forecast_items: list[Fact] | None = None,
+    plan_forecast_from_file: bool = False,
+) -> dict[str, Any]:
     scaled_items = [
         Fact(
             kpi_l1=fact.kpi_l1,
@@ -198,26 +434,43 @@ def _build_kpi_node(name: str, items: list[Fact], *, sign: int = 1, revenue_alig
         )
         for fact in items
     ]
-    return _attach_metrics(
+    scaled_plan = _scale_facts(plan_items or [], sign)
+    scaled_forecast = _scale_facts(forecast_items or [], sign)
+    node = _attach_metrics(
         {
             "id": _next_id(f"kpi-{name}"),
             "name": name,
             "level": 1,
-            "values": _month_values(_aggregate_months(scaled_items), revenue_aligned=revenue_aligned),
-            "children": _build_section_children(name, scaled_items),
+            "plan_forecast_from_file": plan_forecast_from_file,
+            "values": _month_values(
+                _aggregate_months(scaled_items),
+                always_nu=always_nu,
+                plan_amounts=_scenario_amounts(scaled_plan, always_nu=always_nu),
+                forecast_amounts=_scenario_amounts(scaled_forecast, always_nu=always_nu),
+                from_file=plan_forecast_from_file,
+            ),
+            "children": _build_section_children(
+                name,
+                scaled_items,
+                plan_items=scaled_plan,
+                forecast_items=scaled_forecast,
+                plan_forecast_from_file=plan_forecast_from_file,
+            ),
         }
     )
+    _attach_drill(node, scaled_items)
+    return node
 
 
-def _sum_nodes_by_name(nodes: list[dict[str, Any]], names: list[str], scenario: str) -> dict[str, int]:
-    totals = {month: 0 for month in MONTHS}
+def _sum_nodes_by_name(nodes: list[dict[str, Any]], names: list[str], scenario: str) -> dict[str, float]:
+    totals = {month: 0.0 for month in MONTHS}
     lookup = {node["name"]: node for node in nodes}
     for name in names:
         node = lookup.get(name)
         if not node:
             continue
         for month in MONTHS:
-            totals[month] += int(node["values"][scenario].get(month, 0))
+            totals[month] += float(node["values"][scenario].get(month, 0) or 0)
     return totals
 
 
@@ -234,8 +487,8 @@ def _build_tax_facts(component_nodes: list[dict[str, Any]], source_facts: list[F
                 Fact(
                     kpi_l1="Налоги",
                     month=month,
-                    amount_buh=-round(abs(base) * 0.25),
-                    amount_nu=-round(abs(base) * 0.25),
+                    amount_buh=-abs(base) * 0.25,
+                    amount_nu=-abs(base) * 0.25,
                     tax_type="Общие условия налогообложения",
                 )
             )
@@ -250,7 +503,7 @@ def _build_tax_facts(component_nodes: list[dict[str, Any]], source_facts: list[F
         if not amount:
             continue
         rate = 0.02 if "льгот" in tax_type.casefold() else 0.25
-        tax_value = -round(abs(amount) * rate)
+        tax_value = -abs(amount) * rate
         tax_facts.append(
             Fact(
                 kpi_l1="Налоги",
@@ -263,75 +516,191 @@ def _build_tax_facts(component_nodes: list[dict[str, Any]], source_facts: list[F
     return tax_facts
 
 
-def _build_calculated_node(name: str, month_totals: dict[str, dict[str, float]], children: list[dict[str, Any]] | None = None) -> dict[str, Any]:
-    return _attach_metrics(
+def _build_calculated_node(
+    name: str,
+    month_totals: dict[str, dict[str, float]],
+    *,
+    children: list[dict[str, Any]] | None = None,
+    benefit_facts: list[Fact] | None = None,
+    plan_forecast_from_file: bool = False,
+) -> dict[str, Any]:
+    benefit_children = children
+    if benefit_children is None and benefit_facts is not None:
+        benefit_children = _build_benefit_children(
+            benefit_facts,
+            with_articles=False,
+            plan_forecast_from_file=plan_forecast_from_file,
+        )
+    plan_amounts = {month: float(month_totals[month].get("plan", 0) or 0) for month in MONTHS}
+    forecast_amounts = {month: float(month_totals[month].get("forecast", 0) or 0) for month in MONTHS}
+    node = _attach_metrics(
         {
             "id": _next_id(f"calc-{name}"),
             "name": name,
             "level": 1,
-            "values": _month_values(month_totals),
-            "children": children or [],
+            "plan_forecast_from_file": plan_forecast_from_file,
+            "values": _month_values(
+                month_totals,
+                plan_amounts=plan_amounts if plan_forecast_from_file or any(plan_amounts.values()) else None,
+                forecast_amounts=forecast_amounts if plan_forecast_from_file or any(forecast_amounts.values()) else None,
+                from_file=plan_forecast_from_file,
+            ),
+            "children": benefit_children or [],
         }
     )
+    if benefit_facts:
+        _attach_drill(node, benefit_facts)
+    return node
 
 
 def _month_totals_from_nodes(nodes: list[dict[str, Any]], names: list[str]) -> dict[str, dict[str, float]]:
-    totals: dict[str, dict[str, float]] = defaultdict(lambda: {"buh": 0.0, "nu": 0.0})
+    totals: dict[str, dict[str, float]] = defaultdict(lambda: {"buh": 0.0, "nu": 0.0, "plan": 0.0, "forecast": 0.0})
     lookup = {node["name"]: node for node in nodes}
     for name in names:
         node = lookup.get(name)
         if not node:
             continue
         for month in MONTHS:
-            totals[month]["buh"] += float(node["values"]["Факт БУХ"].get(month, 0))
+            totals[month]["buh"] += float(node["values"]["Факт БУ"].get(month, 0))
             totals[month]["nu"] += float(node["values"]["Факт НУ"].get(month, 0))
+            totals[month]["plan"] += float(node["values"]["План"].get(month, 0))
+            totals[month]["forecast"] += float(node["values"]["Прогноз"].get(month, 0))
     return totals
 
 
-def _build_summary_rows(facts: list[Fact]) -> list[dict[str, Any]]:
+def _build_summary_rows(
+    facts: list[Fact],
+    *,
+    plan_facts: list[Fact] | None = None,
+    forecast_facts: list[Fact] | None = None,
+) -> list[dict[str, Any]]:
     global _id_seq
     _id_seq = 0
 
+    plan_facts = plan_facts or []
+    forecast_facts = forecast_facts or []
+    plan_forecast_from_file = bool(plan_facts or forecast_facts)
+
     base_kpis = [
         ("Выручка", 1, True),
-        ("Себестоимость", -1, False),
-        ("Коммерческие расходы", -1, False),
-        ("Управленческие расходы", -1, False),
+        ("Себестоимость", 1, False),
+        ("Коммерческие расходы", 1, False),
+        ("Управленческие расходы", 1, False),
     ]
     nodes: list[dict[str, Any]] = []
-    for name, sign, revenue_aligned in base_kpis:
-        nodes.append(_build_kpi_node(name, _group_facts(facts, kpi_l1=name), sign=sign, revenue_aligned=revenue_aligned))
+    for name, sign, always_nu in base_kpis:
+        nodes.append(
+            _build_kpi_node(
+                name,
+                _group_facts(facts, kpi_l1=name),
+                sign=sign,
+                always_nu=always_nu,
+                plan_items=_group_facts(plan_facts, kpi_l1=name),
+                forecast_items=_group_facts(forecast_facts, kpi_l1=name),
+                plan_forecast_from_file=plan_forecast_from_file,
+            )
+        )
 
     operating_totals = _month_totals_from_nodes(
         nodes,
         ["Выручка", "Себестоимость", "Коммерческие расходы", "Управленческие расходы"],
     )
-    nodes.append(_build_calculated_node("Операционная прибыль", operating_totals))
+    operating_facts = _merge_signed_fact_groups(
+        [
+            (_group_facts(facts, kpi_l1="Выручка"), 1),
+            (_group_facts(facts, kpi_l1="Себестоимость"), 1),
+            (_group_facts(facts, kpi_l1="Коммерческие расходы"), 1),
+            (_group_facts(facts, kpi_l1="Управленческие расходы"), 1),
+        ]
+    )
+    nodes.append(
+        _build_calculated_node(
+            "Операционная прибыль",
+            operating_totals,
+            benefit_facts=operating_facts,
+            plan_forecast_from_file=plan_forecast_from_file,
+        )
+    )
 
-    for name, sign, revenue_aligned in (("Прочие доходы", 1, False), ("Прочие расходы", -1, False)):
-        nodes.append(_build_kpi_node(name, _group_facts(facts, kpi_l1=name), sign=sign, revenue_aligned=revenue_aligned))
+    for name, sign, always_nu in (("Прочие доходы", 1, False), ("Прочие расходы", 1, False)):
+        nodes.append(
+            _build_kpi_node(
+                name,
+                _group_facts(facts, kpi_l1=name),
+                sign=sign,
+                always_nu=always_nu,
+                plan_items=_group_facts(plan_facts, kpi_l1=name),
+                forecast_items=_group_facts(forecast_facts, kpi_l1=name),
+                plan_forecast_from_file=plan_forecast_from_file,
+            )
+        )
 
     pbt_totals = _month_totals_from_nodes(
         nodes,
         ["Операционная прибыль", "Прочие доходы", "Прочие расходы"],
     )
-    nodes.append(_build_calculated_node("Прибыль/убыток до налогообложения", pbt_totals))
+    pbt_facts = _merge_signed_fact_groups(
+        [
+            (operating_facts, 1),
+            (_group_facts(facts, kpi_l1="Прочие доходы"), 1),
+            (_group_facts(facts, kpi_l1="Прочие расходы"), 1),
+        ]
+    )
+    nodes.append(
+        _build_calculated_node(
+            "Прибыль/убыток до налогообложения",
+            pbt_totals,
+            benefit_facts=pbt_facts,
+            plan_forecast_from_file=plan_forecast_from_file,
+        )
+    )
 
     tax_facts = _build_tax_facts(nodes, facts)
-    nodes.append(_build_kpi_node("Налоги", tax_facts, sign=1))
+    nodes.append(
+        _build_kpi_node(
+            "Налоги",
+            tax_facts,
+            sign=1,
+            plan_items=_group_facts(plan_facts, kpi_l1="Налоги"),
+            forecast_items=_group_facts(forecast_facts, kpi_l1="Налоги"),
+            plan_forecast_from_file=plan_forecast_from_file,
+        )
+    )
 
     net_totals = _month_totals_from_nodes(nodes, ["Прибыль/убыток до налогообложения", "Налоги"])
-    nodes.append(_build_calculated_node("Чистая прибыль", net_totals))
+    net_facts = _merge_signed_fact_groups(
+        [
+            (pbt_facts, 1),
+            (tax_facts, 1),
+        ]
+    )
+    nodes.append(
+        _build_calculated_node(
+            "Чистая прибыль",
+            net_totals,
+            benefit_facts=net_facts,
+            plan_forecast_from_file=plan_forecast_from_file,
+        )
+    )
 
     return nodes
 
 
-def _collect_filter_values(facts: list[Fact]) -> dict[str, list[str]]:
-    directions = sorted({fact.direction for fact in facts if fact.direction})
-    groups = sorted({fact.project_group for fact in facts if fact.project_group})
-    projects = sorted({fact.project for fact in facts if fact.project})
-    contracts = sorted({fact.contract for fact in facts if fact.contract})
-    contractors = sorted({fact.contractor for fact in facts if fact.contractor})
+def _collect_filter_values(
+    facts: list[Fact],
+    *,
+    plan_facts: list[Fact] | None = None,
+    forecast_facts: list[Fact] | None = None,
+) -> dict[str, list[str]]:
+    dimension_facts = list(facts)
+    if plan_facts or forecast_facts:
+        dimension_facts.extend(plan_facts or [])
+        dimension_facts.extend(forecast_facts or [])
+    directions = sorted({fact.direction for fact in dimension_facts if fact.direction})
+    groups = sorted({fact.project_group for fact in dimension_facts if fact.project_group})
+    projects = sorted({fact.project for fact in dimension_facts if fact.project})
+    contracts = sorted({fact.contract for fact in dimension_facts if fact.contract})
+    contractors = sorted({fact.contractor for fact in dimension_facts if fact.contractor})
     return {
         "taxType": ["Все виды", "Льготные проекты", "Нельготные проекты"],
         "direction": ["Все направления", *directions],
@@ -351,27 +720,88 @@ def _chart_series(facts: list[Fact], kpi_l1: str) -> list[dict[str, Any]]:
             continue
         totals[fact.month] += abs(fact.amount_buh)
     return [
-        {"month": short, "value": round(totals[full])}
+        {"month": short, "value": totals[full]}
         for full, short in zip(MONTHS, _MONTHS_SHORT, strict=True)
     ]
 
 
-def build_dashboard_from_pipeline(result: PipelineResult, *, upload_names: dict[str, str]) -> dict[str, Any]:
-    summary_rows = _build_summary_rows(result.facts)
+def _chart_cost_structure(facts: list[Fact]) -> dict[str, Any]:
+    """Себестоимость: только стандартные статьи затрат (как в дереве P&L)."""
+
+    monthly_sections: dict[str, dict[str, float]] = {
+        month: {section: 0.0 for section in COST_STRUCTURE_SECTIONS} for month in MONTHS
+    }
+
+    for fact in facts:
+        if fact.kpi_l1 != "Себестоимость":
+            continue
+        section = _normalize_cost_structure_section(fact.cost_section)
+        if not section:
+            continue
+        monthly_sections[fact.month][section] += abs(fact.amount_buh)
+
+    by_month: list[dict[str, Any]] = []
+    for full, short in zip(MONTHS, _MONTHS_SHORT, strict=True):
+        section_values = {
+            name: float(monthly_sections[full].get(name, 0) or 0) for name in COST_STRUCTURE_SECTIONS
+        }
+        by_month.append(
+            {
+                "month": short,
+                "total": sum(section_values.values()),
+                "sections": section_values,
+            }
+        )
+
+    return {
+        "sections": list(COST_STRUCTURE_SECTIONS),
+        "by_month": by_month,
+    }
+
+
+def _empty_cost_structure() -> dict[str, Any]:
+    empty_sections = {section: 0.0 for section in COST_STRUCTURE_SECTIONS}
+    return {
+        "sections": list(COST_STRUCTURE_SECTIONS),
+        "by_month": [
+            {"month": short, "total": 0.0, "sections": dict(empty_sections)}
+            for short in _MONTHS_SHORT
+        ],
+    }
+
+
+def build_dashboard_from_pipeline(
+    result: PipelineResult,
+    *,
+    upload_names: dict[str, str],
+    plan_facts: list[Fact] | None = None,
+    forecast_facts: list[Fact] | None = None,
+) -> dict[str, Any]:
+    summary_rows = _build_summary_rows(
+        result.facts,
+        plan_facts=plan_facts,
+        forecast_facts=forecast_facts,
+    )
     contractor_details = build_contractor_details(result.facts)
     contractor_cards = build_contractor_cards(contractor_details)
     revenue_chart = _chart_series(result.facts, "Выручка")
     cost_chart = _chart_series(result.facts, "Себестоимость")
+    cost_structure = _chart_cost_structure(result.facts)
     return {
         "months": MONTHS,
         "scenarios": SCENARIOS,
         "units": UNITS,
-        "filters": _collect_filter_values(result.facts),
+        "filters": _collect_filter_values(
+            result.facts,
+            plan_facts=plan_facts,
+            forecast_facts=forecast_facts,
+        ),
         "summary_rows": summary_rows,
         "contractor_details": contractor_details,
         "contractor_cards": contractor_cards,
         "revenue_by_month": revenue_chart,
         "cost_by_month": cost_chart,
+        "cost_structure_by_month": cost_structure,
         "cost_structure_total": sum(item["value"] for item in cost_chart),
         "meta": {
             "source": "upload",
@@ -383,8 +813,23 @@ def build_dashboard_from_pipeline(result: PipelineResult, *, upload_names: dict[
     }
 
 
-def load_almabi_dashboard_from_exports(paths: dict[str, Path], *, upload_names: dict[str, str]) -> dict[str, Any]:
+def load_almabi_dashboard_from_exports(
+    paths: dict[str, Path],
+    *,
+    upload_names: dict[str, str],
+    plan_forecast_path: Path | None = None,
+) -> dict[str, Any]:
     result = run_pipeline(paths)
+    plan_facts: list[Fact] = []
+    forecast_facts: list[Fact] = []
+    plan_warnings: list[str] = []
+    if plan_forecast_path and plan_forecast_path.exists():
+        from almabi_plan_forecast_parser import parse_plan_forecast_workbook
+
+        parsed = parse_plan_forecast_workbook(plan_forecast_path)
+        plan_facts = parsed.plan_facts
+        forecast_facts = parsed.forecast_facts
+        plan_warnings = parsed.warnings
     if not result.facts:
         from almabi_template_data import get_almabi_template_dashboard_data
 
@@ -398,4 +843,14 @@ def load_almabi_dashboard_from_exports(paths: dict[str, Path], *, upload_names: 
             "message": "Файлы загружены, но не удалось собрать суммы по месяцам. Показан шаблон.",
         }
         return data
-    return build_dashboard_from_pipeline(result, upload_names=upload_names)
+    dashboard = build_dashboard_from_pipeline(
+        result,
+        upload_names=upload_names,
+        plan_facts=plan_facts,
+        forecast_facts=forecast_facts,
+    )
+    if plan_warnings:
+        dashboard.setdefault("meta", {})["plan_forecast_warnings"] = plan_warnings
+    if plan_forecast_path:
+        dashboard.setdefault("meta", {})["plan_forecast_loaded"] = bool(plan_facts or forecast_facts)
+    return dashboard

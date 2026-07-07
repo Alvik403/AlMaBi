@@ -98,6 +98,7 @@ class RealizationRow:
     direction: str
     revenue: float
     month: str | None
+    contract: str = ""
 
 
 @dataclass(frozen=True)
@@ -113,6 +114,7 @@ class CostRow:
     direction: str = "Без направления"
     project_group: str = "Без группы"
     project: str = "Без проекта"
+    contract: str = ""
 
 
 @dataclass(frozen=True)
@@ -162,6 +164,23 @@ def classify_cost_section(calc_article: str, account: str) -> str:
     return "Общепроизводственные затраты"
 
 
+def classify_cost_section_pq(calc_article: str, account: str) -> str:
+    """Раздел себестоимости как в Power Query «Свод_нов» (счёт 20 + статья калькуляции)."""
+    article = (calc_article or "Сырье и материалы").strip()
+    account_value = (account or "20").strip()
+    if account_value != "20":
+        return "Прочие производственные расходы"
+    pq_map = {
+        "Сырье и материалы": "Материальные затраты",
+        "Прочие производственные расходы": "Материальные затраты",
+        "Оплата труда": "ФОТ",
+        "Страховые взносы": "ФОТ",
+        "Аренда": "Аренда (прямые)",
+        "Амортизация": "Амортизация",
+    }
+    return pq_map.get(article, "Прочие производственные расходы")
+
+
 def classify_amort_section(expense_article: str) -> str:
     if "ноу-хау" in expense_article.casefold():
         return "08 Амортизация НМА"
@@ -169,10 +188,14 @@ def classify_amort_section(expense_article: str) -> str:
 
 
 def _extract_tax_type(column_map: dict[str, int], row: tuple[object, ...]) -> str:
-    for side in ("дт", "кт"):
-        value = find_subconto_value(column_map, row, side=side, kind_marker="налогооблож")
-        if value:
-            return value
+    """Как в PQ: субконто2 Дт → субконто3 Кт → субконто3 Дт → субконто1 Дт, иначе общие условия."""
+    checks = (("дт", 2), ("кт", 3), ("дт", 3), ("дт", 1), ("кт", 1), ("кт", 2))
+    for side, level in checks:
+        kind = normalize_text(cell_value(row, column_map, f"вид субконто{level} {side}"))
+        if "налогооблож" in kind.casefold():
+            value = normalize_text(cell_value(row, column_map, f"субконто{level} {side}"))
+            if value:
+                return value
     return "Общие условия налогообложения"
 
 
@@ -268,6 +291,7 @@ def _map_realization_headers(headers: list[str]) -> dict[str, int]:
         "номенклатура": ("номенклатура", "sku", "продукция"),
         "выручка": ("выручка", "revenue"),
         "дата": ("регистратор.дата", "дата", "date"),
+        "договор": ("договор", "договоры", "договор контрагента", "contract"),
         **PROJECT_ALIASES,
     }
     return resolve_column_map(headers, aliases)
@@ -297,6 +321,7 @@ def parse_realization(path: Path) -> list[RealizationRow]:
                 direction=direction,
                 revenue=revenue,
                 month=_resolve_month(document, cell_value(row, column_map, "дата")),
+                contract=normalize_text(cell_value(row, column_map, "договор", "contract")),
             )
         )
     return parsed
@@ -318,6 +343,7 @@ def _map_cost_headers(headers: list[str]) -> dict[str, int]:
             "sum",
         ),
         "дата": ("дата", "date", "регистратор.дата", "дата записи"),
+        "договор": ("договор", "договоры", "договор контрагента", "contract"),
         **PROJECT_ALIASES,
     }
     return resolve_column_map(headers, aliases)
@@ -349,6 +375,7 @@ def parse_cost(path: Path) -> list[CostRow]:
                 direction=direction,
                 project_group=project_group,
                 project=project,
+                contract=normalize_text(cell_value(row, column_map, "договор", "contract")),
             )
         )
     return parsed

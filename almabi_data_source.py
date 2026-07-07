@@ -21,6 +21,7 @@ from settings import BASE_DIR, Settings
 
 SESSION_ALMABI_DATA_SOURCE = "almabi_data_source"
 SESSION_ALMABI_UPLOAD_SET = "almabi_upload_set"
+SESSION_ALMABI_PLAN_FORECAST = "almabi_plan_forecast"
 
 ALMABI_SOURCES = {
     "mock": {
@@ -86,13 +87,25 @@ def get_almabi_upload_paths(request: Request, settings: Settings) -> dict[str, P
     return paths
 
 
-def _upload_status(upload_set: dict[str, dict[str, str]]) -> dict[str, Any]:
+def get_almabi_plan_forecast_path(request: Request, settings: Settings) -> Path | None:
+    stored = request.session.get(SESSION_ALMABI_PLAN_FORECAST)
+    if not isinstance(stored, dict):
+        return None
+    stored_name = stored.get("stored")
+    if not stored_name:
+        return None
+    path = settings.resolved_uploads_dir / "almabi" / stored_name
+    return path if path.exists() else None
+
+
+def _upload_status(upload_set: dict[str, dict[str, str]], *, plan_forecast: dict[str, str] | None = None) -> dict[str, Any]:
     loaded = {export_type: upload_set[export_type].get("original") for export_type in EXPORT_TYPES if export_type in upload_set}
     missing_required = [export_type for export_type in REQUIRED_EXPORT_TYPES if export_type not in loaded]
     return {
         "loaded_exports": loaded,
         "missing_required": missing_required,
         "is_complete": not missing_required,
+        "plan_forecast_file": (plan_forecast or {}).get("original"),
     }
 
 
@@ -100,7 +113,10 @@ def almabi_data_context(request: Request, settings: Settings) -> dict[str, Any]:
     source = get_almabi_data_source(request)
     meta = ALMABI_SOURCES[source]
     upload_set = get_almabi_upload_set(request)
-    upload_status = _upload_status(upload_set)
+    plan_forecast = request.session.get(SESSION_ALMABI_PLAN_FORECAST)
+    if not isinstance(plan_forecast, dict):
+        plan_forecast = None
+    upload_status = _upload_status(upload_set, plan_forecast=plan_forecast)
     return {
         "source": source,
         "title": meta["title"],
@@ -108,6 +124,7 @@ def almabi_data_context(request: Request, settings: Settings) -> dict[str, Any]:
         "sources": list(ALMABI_SOURCES.values()),
         "upload_file_name": None,
         "upload_files": upload_status["loaded_exports"],
+        "plan_forecast_file": upload_status["plan_forecast_file"],
         "missing_exports": upload_status["missing_required"],
         "has_upload_file": upload_status["is_complete"],
         "fixtures": {
@@ -151,7 +168,31 @@ def resolve_almabi_dashboard_data(request: Request, settings: Settings) -> dict[
         }
         return data
 
-    return load_almabi_dashboard_from_exports(upload_paths, upload_names=upload_names)
+    return load_almabi_dashboard_from_exports(
+        upload_paths,
+        upload_names=upload_names,
+        plan_forecast_path=get_almabi_plan_forecast_path(request, settings),
+    )
+
+
+def resolve_almabi_article_breakdown(request: Request, settings: Settings, *, pipeline: str = "test") -> list[dict[str, Any]]:
+    from almabi_dashboard_builder import build_article_breakdown
+
+    upload_paths = get_almabi_upload_paths(request, settings)
+    missing_required = [export_type for export_type in REQUIRED_EXPORT_TYPES if export_type not in upload_paths]
+    if missing_required:
+        return []
+
+    if pipeline == "test":
+        from almabi_test_pipeline import run_test_pipeline
+
+        facts = run_test_pipeline(upload_paths).result.facts
+    else:
+        from almabi_pipeline import run_pipeline
+
+        facts = run_pipeline(upload_paths).facts
+
+    return build_article_breakdown(facts)
 
 
 def _save_upload_file(settings: Settings, file: UploadFile) -> dict[str, Any]:
@@ -199,10 +240,50 @@ def _save_upload_file(settings: Settings, file: UploadFile) -> dict[str, Any]:
         raise ValueError(str(exc)) from exc
 
 
-def store_almabi_upload_bundle(request: Request, settings: Settings, files: dict[str, UploadFile | None]) -> dict[str, Any]:
+def _save_plan_forecast_file(settings: Settings, file: UploadFile) -> dict[str, str]:
+    from almabi_plan_forecast_parser import validate_plan_forecast_workbook
+
+    original_name = Path(file.filename or "").name
+    if not original_name:
+        raise ValueError("Имя файла не передано")
+    if Path(original_name).suffix.casefold() != ".xlsx":
+        raise ValueError("Поддерживаются только файлы .xlsx")
+
+    upload_dir = settings.resolved_uploads_dir / "almabi"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    incoming_dir = upload_dir / ".incoming"
+    incoming_dir.mkdir(parents=True, exist_ok=True)
+    temp_path = incoming_dir / f"plan-forecast-{uuid4().hex}.xlsx"
+
+    try:
+        with temp_path.open("wb") as output:
+            while chunk := file.file.read(1024 * 1024):
+                output.write(chunk)
+        if temp_path.stat().st_size == 0:
+            raise ValueError(f"Файл «{original_name}» пустой")
+        validate_plan_forecast_workbook(temp_path)
+        stored_name = f"plan-forecast-{uuid4().hex}.xlsx"
+        final_path = upload_dir / stored_name
+        temp_path.replace(final_path)
+        return {"original": original_name, "stored": stored_name}
+    except ValueError:
+        temp_path.unlink(missing_ok=True)
+        raise
+    except Exception as exc:
+        temp_path.unlink(missing_ok=True)
+        raise ValueError(str(exc)) from exc
+
+
+def store_almabi_upload_bundle(
+    request: Request,
+    settings: Settings,
+    files: dict[str, UploadFile | None],
+    *,
+    plan_forecast_file: UploadFile | None = None,
+) -> dict[str, Any]:
     incoming = [(slot, file) for slot, file in files.items() if file is not None]
-    if not incoming:
-        raise HTTPException(status_code=400, detail="Передайте хотя бы один файл выгрузки")
+    if not incoming and plan_forecast_file is None:
+        raise HTTPException(status_code=400, detail="Передайте хотя бы один файл выгрузки или форму план/прогноз")
 
     upload_set = dict(get_almabi_upload_set(request))
     saved: dict[str, Any] = {}
@@ -232,11 +313,19 @@ def store_almabi_upload_bundle(request: Request, settings: Settings, files: dict
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    plan_forecast_meta: dict[str, str] | None = None
+    if plan_forecast_file is not None:
+        try:
+            plan_forecast_meta = _save_plan_forecast_file(settings, plan_forecast_file)
+            request.session[SESSION_ALMABI_PLAN_FORECAST] = plan_forecast_meta
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     request.session[SESSION_ALMABI_DATA_SOURCE] = "upload"
     request.session[SESSION_ALMABI_UPLOAD_SET] = upload_set
 
-    status = _upload_status(upload_set)
-    return {
+    status = _upload_status(upload_set, plan_forecast=plan_forecast_meta or request.session.get(SESSION_ALMABI_PLAN_FORECAST))
+    result = {
         "source": "upload",
         "saved_exports": saved,
         "upload_files": status["loaded_exports"],
@@ -244,6 +333,9 @@ def store_almabi_upload_bundle(request: Request, settings: Settings, files: dict
         "is_complete": status["is_complete"],
         "warnings": warnings,
     }
+    if plan_forecast_meta:
+        result["plan_forecast_file"] = plan_forecast_meta["original"]
+    return result
 
 
 def store_almabi_upload(request: Request, settings: Settings, file: UploadFile) -> dict[str, Any]:

@@ -35,7 +35,7 @@ _MONTHS_SHORT = [
     "Ноя.",
     "Дек.",
 ]
-SCENARIOS = ["Факт БУХ", "Факт НУ", "План", "Прогноз"]
+SCENARIOS = ["Факт БУ", "Факт НУ", "План", "Прогноз"]
 QUARTERS = ["Q1", "Q2", "Q3", "Q4"]
 QUARTER_MONTHS = {
     "Q1": ["Январь", "Февраль", "Март"],
@@ -56,7 +56,16 @@ _NOMENCLATURE = [
     ("Техническая поддержка", 0.25),
 ]
 
-_BENEFIT_SECTIONS = {"Прочие доходы", "Прочие расходы", "Налоги"}
+_BENEFIT_SECTIONS = {
+    "Коммерческие расходы",
+    "Управленческие расходы",
+    "Прочие доходы",
+    "Прочие расходы",
+    "Налоги",
+    "Операционная прибыль",
+    "Прибыль/убыток до налогообложения",
+    "Чистая прибыль",
+}
 
 _ORG = {
     "directions": [
@@ -130,14 +139,16 @@ def _month_values(
     values: list[int],
     plan_multiplier: float = 1.08,
     *,
-    revenue_aligned: bool = False,
+    always_nu: bool = False,
 ) -> dict[str, dict[str, int]]:
     fact_buh = dict(zip(MONTHS, values, strict=True))
+    fact_nu = dict(zip(MONTHS, [round(value * 0.96) for value in values], strict=True))
+    display_buh = fact_nu if always_nu else fact_buh
     return {
-        "Факт БУХ": fact_buh,
-        "Факт НУ": fact_buh if revenue_aligned else dict(zip(MONTHS, [round(value * 0.96) for value in values], strict=True)),
-        "План": dict(zip(MONTHS, [round(value * plan_multiplier) for value in values], strict=True)),
-        "Прогноз": dict(zip(MONTHS, [round(value * 1.12) for value in values], strict=True)),
+        "Факт БУ": display_buh,
+        "Факт НУ": fact_nu,
+        "План": dict(zip(MONTHS, [round(value * plan_multiplier) for value in (fact_nu.values() if always_nu else values)], strict=True)),
+        "Прогноз": dict(zip(MONTHS, [round(value * 1.12) for value in (fact_nu.values() if always_nu else values)], strict=True)),
     }
 
 
@@ -162,7 +173,7 @@ def _attach_metrics(node: dict[str, Any]) -> dict[str, Any]:
         for scenario in SCENARIOS:
             node["values"][scenario] = _sum_months(children, scenario)
 
-    fact = node["values"]["Факт БУХ"]
+    fact = node["values"]["Факт БУ"]
     plan = node["values"]["План"]
     total_fact = sum(fact.values())
     total_plan = sum(plan.values())
@@ -180,13 +191,13 @@ def _leaf(
     *,
     sign: int = 1,
     id_prefix: str = "leaf",
-    revenue_aligned: bool = False,
+    always_nu: bool = False,
 ) -> dict[str, Any]:
     return {
         "id": _next_id(id_prefix),
         "name": name,
         "level": level,
-        "values": _month_values(_scale_months(month_values, 1, sign=sign), revenue_aligned=revenue_aligned),
+        "values": _month_values(_scale_months(month_values, 1, sign=sign), always_nu=always_nu),
         "children": [],
     }
 
@@ -198,7 +209,7 @@ def _split_values(
     *,
     sign: int = 1,
     id_prefix: str = "split",
-    revenue_aligned: bool = False,
+    always_nu: bool = False,
     merge_duplicates: bool = False,
 ) -> list[dict[str, Any]]:
     merged: dict[str, float] = {}
@@ -217,7 +228,7 @@ def _split_values(
             _scale_months(month_values, weight),
             sign=sign,
             id_prefix=id_prefix,
-            revenue_aligned=revenue_aligned,
+            always_nu=always_nu,
         )
         for name, weight in items
     ]
@@ -230,7 +241,7 @@ def _build_org_tree(
     sign: int = 1,
     include_contract: bool,
     include_nomenclature: bool = False,
-    revenue_aligned: bool = False,
+    always_nu: bool = False,
 ) -> list[dict[str, Any]]:
     nodes: list[dict[str, Any]] = []
     for direction, direction_weight in _ORG["directions"]:
@@ -253,7 +264,7 @@ def _build_org_tree(
                                 start_level + 5,
                                 sign=sign,
                                 id_prefix="nomenclature",
-                                revenue_aligned=revenue_aligned,
+                                always_nu=always_nu,
                             )
                         contract_children.append(
                             {
@@ -262,7 +273,7 @@ def _build_org_tree(
                                 "level": start_level + 4,
                                 "values": _month_values(
                                     _scale_months(project_values, contract_weight, sign=sign),
-                                    revenue_aligned=revenue_aligned,
+                                    always_nu=always_nu,
                                 ),
                                 "children": nomenclature_children,
                             }
@@ -274,7 +285,7 @@ def _build_org_tree(
                         "level": start_level + 3,
                         "values": _month_values(
                             _scale_months(group_values, project_weight, sign=sign),
-                            revenue_aligned=revenue_aligned,
+                            always_nu=always_nu,
                         ),
                         "children": contract_children,
                     }
@@ -286,7 +297,7 @@ def _build_org_tree(
                     "level": start_level + 2,
                     "values": _month_values(
                         _scale_months(direction_values, group_weight, sign=sign),
-                        revenue_aligned=revenue_aligned,
+                        always_nu=always_nu,
                     ),
                     "children": project_children,
                 }
@@ -298,7 +309,7 @@ def _build_org_tree(
                 "level": start_level + 1,
                 "values": _month_values(
                     _scale_months(month_values, direction_weight, sign=sign),
-                    revenue_aligned=revenue_aligned,
+                    always_nu=always_nu,
                 ),
                 "children": group_children,
             }
@@ -306,51 +317,17 @@ def _build_org_tree(
     return nodes
 
 
-def _build_cost_branch(month_values: list[int], revenue_values: list[int], *, sign: int = -1) -> list[dict[str, Any]]:
+def _build_cost_branch(month_values: list[int], *, sign: int = -1) -> list[dict[str, Any]]:
     branches: list[dict[str, Any]] = []
-    revenue_node = {
-        "id": _next_id("cost-revenue"),
-        "name": "Выручка",
-        "level": 2,
-        "values": _month_values(_scale_months(revenue_values, 1, sign=1), revenue_aligned=True),
-        "children": _build_org_tree(
-            revenue_values,
+    for cost_name, weight, _drill_mode in _COST_TYPES:
+        branch_values = _scale_months(month_values, weight)
+        children = _build_org_tree(
+            branch_values,
             start_level=3,
-            sign=1,
+            sign=sign,
             include_contract=False,
             include_nomenclature=False,
-            revenue_aligned=True,
-        ),
-    }
-    branches.append(revenue_node)
-
-    for cost_name, weight, drill_mode in _COST_TYPES:
-        branch_values = _scale_months(month_values, weight)
-        if drill_mode == "org_short":
-            children = _build_org_tree(
-                branch_values,
-                start_level=3,
-                sign=sign,
-                include_contract=False,
-                include_nomenclature=True,
-            )
-        else:
-            children = [
-                {
-                    "id": _next_id(f"cost-dir-{cost_name}"),
-                    "name": name,
-                    "level": 3,
-                    "values": _month_values(_scale_months(branch_values, sub_weight, sign=sign)),
-                    "children": _build_org_tree(
-                        _scale_months(branch_values, sub_weight),
-                        start_level=4,
-                        sign=sign,
-                        include_contract=False,
-                        include_nomenclature=True,
-                    ),
-                }
-                for name, sub_weight in _ORG["directions"]
-            ]
+        )
         branches.append(
             {
                 "id": _next_id(f"cost-{cost_name}"),
@@ -404,15 +381,15 @@ def _section_children(
             sign=sign,
             with_articles=section_name in {"Прочие доходы", "Прочие расходы"},
         )
-    if section_name == "Себестоимость" and revenue_values is not None:
-        return _build_cost_branch(month_values, revenue_values, sign=sign)
+    if section_name == "Себестоимость":
+        return _build_cost_branch(month_values, sign=sign)
     if section_name == "Выручка":
         return _build_org_tree(
             month_values,
             start_level=2,
             include_contract=True,
-            include_nomenclature=True,
-            revenue_aligned=True,
+            include_nomenclature=False,
+            always_nu=True,
         )
     return _build_org_tree(month_values, start_level=2, sign=sign, include_contract=False)
 
@@ -425,13 +402,13 @@ def _kpi_node(
     children: list[dict[str, Any]] | None = None,
     revenue_values: list[int] | None = None,
 ) -> dict[str, Any]:
-    revenue_aligned = name == "Выручка"
+    always_nu = name == "Выручка"
     return _attach_metrics(
         {
             "id": _next_id(f"kpi-{name}"),
             "name": name,
             "level": 1,
-            "values": _month_values(_scale_months(month_values, 1, sign=sign), revenue_aligned=revenue_aligned),
+            "values": _month_values(_scale_months(month_values, 1, sign=sign), always_nu=always_nu),
             "children": children if children is not None else _section_children(name, month_values, sign=sign, revenue_values=revenue_values),
         }
     )
@@ -453,7 +430,7 @@ def build_summary_rows() -> list[dict[str, Any]]:
 
     return [
         _kpi_node("Выручка", revenue),
-        _kpi_node("Себестоимость", cost, sign=-1, revenue_values=revenue),
+        _kpi_node("Себестоимость", cost, sign=-1),
         _kpi_node("Коммерческие расходы", commercial, sign=-1),
         _kpi_node("Управленческие расходы", admin, sign=-1),
         _kpi_node("Операционная прибыль", operating),

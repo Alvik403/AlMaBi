@@ -256,8 +256,10 @@ function initAlmabiDataSourceMenu() {
   const dropZone = root.querySelector("[data-almabi-drop-zone]");
   const dropMessage = root.querySelector("[data-almabi-drop-message]");
   const exportInputs = Array.from(root.querySelectorAll("[data-almabi-export-input]"));
+  const planForecastInput = root.querySelector("[data-almabi-plan-forecast-input]");
   const selectedName = root.querySelector("[data-almabi-selected-name]");
   const selectedFiles = Object.fromEntries(ALMABI_EXPORT_ORDER.map((key) => [key, null]));
+  let selectedPlanForecastFile = null;
 
   const showStatus = (message, variant = "neutral") => {
     if (!uploadStatus) return;
@@ -281,6 +283,9 @@ function initAlmabiDataSourceMenu() {
     const lines = ALMABI_EXPORT_ORDER.filter((key) => selectedFiles[key]).map(
       (key) => `${ALMABI_EXPORT_LABELS[key]}: ${selectedFiles[key].name}`,
     );
+    if (selectedPlanForecastFile) {
+      lines.push(`План / прогноз: ${selectedPlanForecastFile.name}`);
+    }
     if (selectedName) {
       if (!lines.length) {
         selectedName.classList.add("hidden");
@@ -370,6 +375,18 @@ function initAlmabiDataSourceMenu() {
     });
   });
 
+  planForecastInput?.addEventListener("change", () => {
+    const file = planForecastInput.files?.[0];
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith(".xlsx")) {
+      showStatus("Форма план/прогноз — нужен файл .xlsx", "error");
+      return;
+    }
+    selectedPlanForecastFile = file;
+    renderSelectedFiles();
+    showStatus("Готов к загрузке. Нажмите «Загрузить и собрать дашборд».", "neutral");
+  });
+
   dropZone?.addEventListener("dragover", (event) => {
     event.preventDefault();
     dropZone.classList.add("border-brand-400", "bg-brand-50");
@@ -399,11 +416,16 @@ function initAlmabiDataSourceMenu() {
   uploadForm?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const missingRequired = ALMABI_REQUIRED_EXPORTS.filter((key) => !selectedFiles[key]);
-    if (missingRequired.length) {
+    const hasExports = ALMABI_EXPORT_ORDER.some((key) => selectedFiles[key]);
+    if (missingRequired.length && hasExports) {
       showStatus(
         `Загрузите обязательные файлы: ${missingRequired.map((key) => ALMABI_EXPORT_LABELS[key]).join(", ")}`,
         "error",
       );
+      return;
+    }
+    if (!hasExports && !selectedPlanForecastFile) {
+      showStatus("Выберите выгрузки 1С или форму план/прогноз", "error");
       return;
     }
 
@@ -413,6 +435,9 @@ function initAlmabiDataSourceMenu() {
         formData.append(`${key}_file`, selectedFiles[key]);
       }
     });
+    if (selectedPlanForecastFile) {
+      formData.append("plan_forecast_file", selectedPlanForecastFile);
+    }
     setUploading(true);
     showStatus("Файлы отправлены. Проверяем структуру и собираем дашборд...", "progress");
     try {
@@ -453,8 +478,6 @@ function initFileMenuOpeners() {
 
   const openMenu = () => {
     panel.classList.remove("hidden");
-    panel.classList.remove("absolute", "right-0", "mt-3");
-    panel.classList.add("fixed", "right-4", "top-[4.5rem]", "z-50");
   };
 
   const toggleMenu = (event) => {

@@ -27,7 +27,7 @@ def build_contractor_details(facts: list[Fact]) -> list[dict[str, Any]]:
                 "project": fact.project,
                 "contract": fact.contract,
                 "month": fact.month,
-                "amount": round(abs(fact.amount_buh)),
+                "amount": abs(fact.amount_buh),
             }
         )
     return details
@@ -51,7 +51,7 @@ def build_contractor_cards(details: list[dict[str, Any]]) -> list[dict[str, Any]
         rows = [
             {
                 "name": contractor,
-                "value": round(amount),
+                "value": amount,
                 "color": "green" if accent == "blue" else "rose",
             }
             for contractor, amount in sorted(grouped.items(), key=lambda pair: pair[1], reverse=True)
@@ -81,7 +81,7 @@ def contractor_details_from_cards(cards: list[dict[str, Any]]) -> list[dict[str,
                     "project": "",
                     "contract": "",
                     "month": "",
-                    "amount": int(row["value"]),
+                    "amount": float(row["value"]),
                 }
             )
     return details

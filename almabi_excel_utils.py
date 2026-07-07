@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from datetime import date, datetime
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
@@ -145,10 +146,33 @@ def analytics_value(value: object, *, default: str) -> str:
     return text
 
 
-def document_match_keys(value: str) -> set[str]:
+@lru_cache(maxsize=4096)
+def contract_match_keys(value: str) -> frozenset[str]:
     text = normalize_text(value)
     if not text:
-        return set()
+        return frozenset()
+
+    keys = {text.casefold()}
+    compact = re.sub(r"\s+", " ", text.casefold())
+    keys.add(compact)
+
+    for pattern in (
+        r"[a-zа-я]{2,}-\d+/\d+",
+        r"д-\d+",
+        r"договор\s*№?\s*([a-zа-я0-9\-/]+)",
+        r"\(([^)]+)\)",
+    ):
+        match = re.search(pattern, compact, flags=re.IGNORECASE)
+        if match:
+            keys.add(match.group(1 if match.lastindex else 0).casefold())
+    return frozenset(keys)
+
+
+@lru_cache(maxsize=8192)
+def document_match_keys(value: str) -> frozenset[str]:
+    text = normalize_text(value)
+    if not text:
+        return frozenset()
 
     keys = {text.casefold()}
     compact = re.sub(r"\s+", " ", text.casefold())
@@ -163,7 +187,30 @@ def document_match_keys(value: str) -> set[str]:
         match = re.search(pattern, compact, flags=re.IGNORECASE)
         if match:
             keys.add(match.group(1 if match.lastindex else 0).casefold())
-    return keys
+    return frozenset(keys)
+
+
+def build_document_value_index(values_by_document: dict[str, str]) -> dict[str, str]:
+    index: dict[str, str] = {}
+    for document, value in values_by_document.items():
+        if not value:
+            continue
+        for key in document_match_keys(document):
+            index.setdefault(key, value)
+    return index
+
+
+def lookup_document_value(document: str, index: dict[str, str]) -> str:
+    text = normalize_text(document)
+    if not text:
+        return ""
+    direct = text.casefold()
+    if direct in index:
+        return index[direct]
+    for key in document_match_keys(document):
+        if key in index:
+            return index[key]
+    return ""
 
 
 def read_workbook_rows(path: Path) -> list[tuple[object, ...]]:
@@ -225,6 +272,16 @@ def tax_bucket(tax_type: str) -> str:
     normalized = tax_type.casefold()
     if not tax_type or "общие условия" in normalized:
         return "Нельготные проекты"
-    if any(marker in normalized for marker in ("льгот", "льготиру", "пониженн", "ставка 0")):
+    if any(
+        marker in normalized
+        for marker in (
+            "льгот",
+            "льготиру",
+            "пониженн",
+            "ставка 0",
+            "экономической зоны",
+            "свободной) экономической",
+        )
+    ):
         return "Льготные проекты"
     return "Нельготные проекты"

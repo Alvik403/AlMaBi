@@ -1,0 +1,96 @@
+{% extends "dashboard_shell.html" %}
+
+{% block title %}Тест Excel{% endblock %}
+
+{% block main_class %}flex-1 min-h-0 overflow-hidden{% endblock %}
+{% block content_wrapper_class %}flex h-full min-h-0 flex-col px-4 py-4 sm:px-6 lg:px-8 max-w-[1600px]{% endblock %}
+
+{% block content %}
+<section class="flex h-full min-h-0 flex-col gap-4">
+  <div class="shrink-0">
+    <h1 class="text-xl font-bold text-gray-900">Тест Excel</h1>
+    <p class="mt-1 text-sm text-gray-500">Проверка формирования запросов Power Query: «Выручка», «Проекты», «Себестоимость», «Бух.регистр».</p>
+  </div>
+
+  <div class="shrink-0 flex flex-wrap gap-2 border-b border-gray-200">
+    <a
+      href="{{ url_for('almabi_test_excel_page', tab='revenue') }}"
+      class="rounded-t-lg px-4 py-2 text-sm font-semibold {% if active_tab == 'revenue' %}border border-b-0 border-gray-200 bg-white text-brand-700{% else %}text-gray-600 hover:text-gray-900{% endif %}"
+    >
+      Выручка
+    </a>
+    <a
+      href="{{ url_for('almabi_test_excel_page', tab='projects') }}"
+      class="rounded-t-lg px-4 py-2 text-sm font-semibold {% if active_tab == 'projects' %}border border-b-0 border-gray-200 bg-white text-brand-700{% else %}text-gray-600 hover:text-gray-900{% endif %}"
+    >
+      Проекты
+    </a>
+    <a
+      href="{{ url_for('almabi_test_excel_page', tab='cost') }}"
+      class="rounded-t-lg px-4 py-2 text-sm font-semibold {% if active_tab == 'cost' %}border border-b-0 border-gray-200 bg-white text-brand-700{% else %}text-gray-600 hover:text-gray-900{% endif %}"
+    >
+      Себестоимость
+    </a>
+    <a
+      href="{{ url_for('almabi_test_excel_page', tab='buh') }}"
+      class="rounded-t-lg px-4 py-2 text-sm font-semibold {% if active_tab == 'buh' %}border border-b-0 border-gray-200 bg-white text-brand-700{% else %}text-gray-600 hover:text-gray-900{% endif %}"
+    >
+      Бух.регистр
+    </a>
+  </div>
+
+  {% if active_tab == 'buh' %}
+  <div class="min-h-0 flex-1" data-test-excel-panel="buh">
+    {% set payload = buh %}
+    {% set upload_url = '/api/almabi-test-excel/buh/upload' %}
+    {% set panel_title = 'Бух.регистр' %}
+    {% set file_label = 'Файл бух.регистра (.xlsx)' %}
+    {% set empty_hint = 'Загрузите «Выгрузка — бух.регистр.xlsx». Для join приложите себестоимость и/или реализацию или используйте файлы с других вкладок.' %}
+    {% set show_projects_upload = false %}
+    {% set show_buh_join_uploads = true %}
+    {% set upload_file_name = 'buh_file' %}
+    {% include "partials/test_excel_panel.html" %}
+  </div>
+  {% elif active_tab == 'cost' %}
+  <div class="min-h-0 flex-1" data-test-excel-panel="cost">
+    {% set payload = cost %}
+    {% set upload_url = '/api/almabi-test-excel/cost/upload' %}
+    {% set panel_title = 'Себестоимость' %}
+    {% set file_label = 'Файл себестоимости (.xlsx)' %}
+    {% set empty_hint = 'Загрузите «Выгрузка — Себестоимость.xlsx». Для join с «Проекты» можно приложить реализацию или использовать уже загруженную на вкладках «Выручка» / «Проекты».' %}
+    {% set show_projects_upload = true %}
+    {% set show_buh_join_uploads = false %}
+    {% set upload_file_name = 'cost_file' %}
+    {% include "partials/test_excel_panel.html" %}
+  </div>
+  {% elif active_tab == 'projects' %}
+  <div class="min-h-0 flex-1" data-test-excel-panel="projects">
+    {% set payload = projects %}
+    {% set upload_url = '/api/almabi-test-excel/projects/upload' %}
+    {% set panel_title = 'Проекты' %}
+    {% set file_label = 'Файл реализации (.xlsx)' %}
+    {% set empty_hint = 'Загрузите «Выгрузка — Реализации проекты.xlsx». Все строки с Раздел = «Выручка» (без группировки, как в PQ).' %}
+    {% set show_projects_upload = false %}
+    {% set show_buh_join_uploads = false %}
+    {% set upload_file_name = 'file' %}
+    {% include "partials/test_excel_panel.html" %}
+  </div>
+  {% else %}
+  <div class="min-h-0 flex-1" data-test-excel-panel="revenue">
+    {% set payload = revenue %}
+    {% set upload_url = '/api/almabi-test-excel/revenue/upload' %}
+    {% set panel_title = 'Выручка' %}
+    {% set file_label = 'Файл реализации (.xlsx)' %}
+    {% set empty_hint = 'Загрузите «Выгрузка — Реализации проекты.xlsx».' %}
+    {% set show_projects_upload = false %}
+    {% set show_buh_join_uploads = false %}
+    {% set upload_file_name = 'file' %}
+    {% include "partials/test_excel_panel.html" %}
+  </div>
+  {% endif %}
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/dist/test_excel_panel.js" defer></script>
+{% endblock %}
