@@ -447,18 +447,6 @@
   const PRIVILEGED_BUCKET = "Льготные проекты";
   const NON_PRIVILEGED_BUCKET = "Нельготные проекты";
 
-  const EXPENSE_DISPLAY_KPIS = new Set([
-    "Себестоимость",
-    "Коммерческие расходы",
-    "Управленческие расходы",
-    "Прочие расходы",
-  ]);
-  const CALCULATED_DISPLAY_KPIS = new Set([
-    "Операционная прибыль",
-    "Прибыль/убыток до налогообложения",
-    "Чистая прибыль",
-  ]);
-
   const numberFormatter = new Intl.NumberFormat("ru-RU", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
@@ -480,35 +468,32 @@
     return numberFormatter.format(scaled(Math.abs(Number(value || 0))));
   }
 
-  function isExpenseStyleRow(rowName, value) {
-    if (EXPENSE_DISPLAY_KPIS.has(rowName)) return true;
-    const num = Number(value || 0);
-    return num < 0 && !CALCULATED_DISPLAY_KPIS.has(rowName) && rowName !== "Налоги";
+  function formatPlAmount(_rowName, value) {
+    return `<span class="pl-amount">${formatMoneyAbs(value)}</span>`;
   }
 
-  function formatPlAmount(rowName, value) {
-    const num = Number(value || 0);
-    if (rowName === "Налоги" && num !== 0) {
-      return `
-        <span class="pl-cell">
-          <span class="pl-sign pl-sign--empty" aria-hidden="true">−</span>
-          <span class="pl-amount">${formatMoneyAbs(num)}</span>
-        </span>`;
-    }
-    if (isExpenseStyleRow(rowName, num)) {
-      const tone = num < 0 ? " pl-amount--expense" : "";
-      return `
-        <span class="pl-cell">
-          <span class="pl-sign" aria-hidden="true">−</span>
-          <span class="pl-amount${tone}">${formatMoneyAbs(num)}</span>
-        </span>`;
-    }
-    const tone = num < 0 ? " pl-amount--negative" : "";
+  function isBuhNuPair(scenarios) {
+    return scenarios.length === 2 && scenarios.includes("Факт БУ") && scenarios.includes("Факт НУ");
+  }
+
+  function renderScenarioDuo(label, value) {
     return `
-      <span class="pl-cell">
-        <span class="pl-sign pl-sign--empty" aria-hidden="true">−</span>
-        <span class="pl-amount${tone}">${formatMoney(num)}</span>
-      </span>`;
+      <div class="cell-scenario-duo__row">
+        <span class="cell-scenario-duo__label">${label}</span>
+        <span class="pl-amount">${formatMoneyAbs(value)}</span>
+      </div>`;
+  }
+
+  function renderBuhNuCell(valuesByMonth, months) {
+    const buh = sumScenarioValues(valuesByMonth, months, "Факт БУ");
+    const nu = sumScenarioValues(valuesByMonth, months, "Факт НУ");
+    return `
+      <div class="cell-plan-fact cell-plan-fact--duo">
+        <div class="cell-scenario-duo">
+          ${renderScenarioDuo("БУ", buh)}
+          ${renderScenarioDuo("НУ", nu)}
+        </div>
+      </div>`;
   }
 
   function isDefaultFilter(key) {
@@ -600,6 +585,9 @@
   function scenarioHeaderTitle(columnTitle) {
     const selected = orderedSelectedScenarios();
     if (!selected.length) return columnTitle;
+    if (isBuhNuPair(selected)) {
+      return `${columnTitle} — БУ / НУ`;
+    }
     if (
       selected.length === 2
       && primaryDisplayFactScenario(selected)
@@ -613,8 +601,32 @@
     return `${columnTitle} — ${selected.join(" · ")}`;
   }
 
+  function scenarioTableLayout() {
+    const selected = orderedSelectedScenarios();
+    if (isBuhNuPair(selected)) return "buh-nu";
+    if (
+      selected.length === 2
+      && primaryDisplayFactScenario(selected)
+      && selected.some(isPlanLikeScenario)
+    ) {
+      return "plan-fact";
+    }
+    if (selected.length === 1) return "single";
+    return "multi";
+  }
+
+  function syncScenarioTableLayout() {
+    const layout = scenarioTableLayout();
+    document.querySelectorAll("[data-summary-table-viewport], [data-consolidated-table-viewport]").forEach((node) => {
+      node.dataset.scenarioLayout = layout;
+    });
+  }
+
   function tableTotalHeaderTitle() {
     const selected = orderedSelectedScenarios();
+    if (isBuhNuPair(selected)) {
+      return "Итого (БУ / НУ)";
+    }
     if (
       selected.length === 2
       && primaryDisplayFactScenario(selected)
@@ -1082,6 +1094,10 @@
   function renderScenarioCell(valuesByMonth, months, rowName = "") {
     const scenarios = orderedSelectedScenarios();
 
+    if (isBuhNuPair(scenarios)) {
+      return renderBuhNuCell(valuesByMonth, months);
+    }
+
     if (scenarios.length === 1) {
       const value = sumScenarioValues(valuesByMonth, months, scenarios[0]);
       return `
@@ -1101,27 +1117,27 @@
       const ratio = plan ? (fact / plan) * 100 : 0;
       const tone = varianceClass(ratio);
       return `
-        <div class="cell-plan-fact">
-          <span class="values">
-            <span class="plan-value">${formatPlAmount(rowName, plan)}</span>
+        <div class="cell-plan-fact cell-plan-fact--duo">
+          <div class="cell-scenario-duo cell-scenario-duo--inline">
+            ${renderScenarioDuo("План", plan)}
             <span class="cell-plan-fact__divider">/</span>
-            ${formatPlAmount(rowName, fact)}
-          </span>
+            ${renderScenarioDuo("Факт", fact)}
+          </div>
           <span class="pct ${tone}">${percentFormatter.format(ratio)}%</span>
         </div>
       `;
     }
 
     return `
-      <div class="cell-plan-fact">
+      <div class="cell-plan-fact cell-plan-fact--stack">
         ${scenarios
           .map((scenario) => {
             const value = sumScenarioValues(valuesByMonth, months, scenario);
             return `
-          <span class="values">
-            <span class="plan-value">${scenario}</span>
+          <div class="cell-scenario-duo__row cell-scenario-duo__row--labeled">
+            <span class="cell-scenario-duo__label">${scenario}</span>
             ${formatPlAmount(rowName, value)}
-          </span>`;
+          </div>`;
           })
           .join("")}
       </div>
@@ -1164,6 +1180,7 @@
     const rows = getConsolidatedRows();
     const columns = getTablePeriodColumns();
     renderConsolidatedHead();
+    syncScenarioTableLayout();
 
     tbody.innerHTML = rows
       .map((row) => {
@@ -1221,6 +1238,7 @@
     let rowIndex = 0;
 
     renderSummaryHead();
+    syncScenarioTableLayout();
 
     tbody.innerHTML = visibleRows
       .map(({ row, depth }) => {

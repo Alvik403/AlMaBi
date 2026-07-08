@@ -489,7 +489,7 @@ def _tax_rate_for_type(tax_type: str) -> float:
 
 
 def _build_tax_facts(component_nodes: list[dict[str, Any]], source_facts: list[Fact]) -> list[Fact]:
-    """Налог = ставка × |PBT по НУ| в разрезе месяца и вида НО (все компоненты PBT)."""
+    """Налог по льготным/нельготным базам НУ: ставка × база, только если база > 0."""
     grouped: dict[tuple[str, str], float] = defaultdict(float)
     for fact in source_facts:
         if fact.kpi_l1 not in PBT_TAX_BASE_KPIS:
@@ -501,9 +501,9 @@ def _build_tax_facts(component_nodes: list[dict[str, Any]], source_facts: list[F
         tax_facts: list[Fact] = []
         for month in MONTHS:
             base = pbt.get(month, 0)
-            if not base:
+            if base <= 0:
                 continue
-            tax_value = -abs(base) * 0.25
+            tax_value = -base * 0.25
             tax_facts.append(
                 Fact(
                     kpi_l1="Налоги",
@@ -517,9 +517,9 @@ def _build_tax_facts(component_nodes: list[dict[str, Any]], source_facts: list[F
 
     tax_facts: list[Fact] = []
     for (month, tax_type), amount in grouped.items():
-        if not amount:
+        if amount <= 0:
             continue
-        tax_value = -abs(amount) * _tax_rate_for_type(tax_type)
+        tax_value = -amount * _tax_rate_for_type(tax_type)
         tax_facts.append(
             Fact(
                 kpi_l1="Налоги",

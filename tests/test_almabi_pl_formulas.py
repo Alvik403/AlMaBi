@@ -40,3 +40,14 @@ def test_expense_kpis_stored_negative_in_summary():
     ]
     rows = _rows_by_name(facts)
     assert rows["Себестоимость"]["total_fact"] == -100.0
+
+
+def test_taxes_are_zero_when_pbt_base_is_not_positive():
+    facts = [
+        Fact(kpi_l1="Выручка", month="Январь", amount_buh=100.0, amount_nu=100.0),
+        Fact(kpi_l1="Себестоимость", month="Январь", amount_buh=-500.0, amount_nu=-500.0),
+    ]
+    rows = _rows_by_name(facts)
+    assert rows["Прибыль/убыток до налогообложения"]["total_fact"] == -400.0
+    assert rows["Налоги"]["total_fact"] == 0.0
+    assert rows["Чистая прибыль"]["total_fact"] == -400.0

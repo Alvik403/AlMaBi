@@ -47,8 +47,8 @@ def test_build_taxes_report_from_fixture_exports(tmp_path: Path):
     taxes = report["summary"]["component_totals"]
     assert report["summary"]["row_count"] >= 3
     assert bases[TAX_BUCKET_PRIVILEGED] == 1_000_000
-    assert bases[TAX_BUCKET_NON_PRIVILEGED] == 300_000
+    assert bases[TAX_BUCKET_NON_PRIVILEGED] == 400_000
     assert taxes[TAX_BUCKET_PRIVILEGED] == -20_000
-    assert taxes[TAX_BUCKET_NON_PRIVILEGED] == -125_000
-    assert report["summary"]["total_amount"] == -145_000
+    assert taxes[TAX_BUCKET_NON_PRIVILEGED] == -100_000
+    assert report["summary"]["total_amount"] == -120_000
     assert len(report["tree"]) == 2

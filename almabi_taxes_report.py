@@ -194,7 +194,7 @@ def _tax_calculation_rows(source_rows: list[dict[str, object]], *, fallback: boo
         for row in source_rows:
             by_month[_field_value(row, "Месяц")] += float(row.get("Сумма НУ") or 0)
         for month, base in by_month.items():
-            if not base:
+            if base <= 0:
                 continue
             bucket = TAX_BUCKET_NON_PRIVILEGED
             grouped[(month, bucket)] = base
@@ -206,10 +206,10 @@ def _tax_calculation_rows(source_rows: list[dict[str, object]], *, fallback: boo
         key=lambda item: (MONTH_ORDER.get(item[0], 99), bucket_order.get(item[1], 2)),
     ):
         base = grouped[(month, bucket)]
-        if not base:
+        if base <= 0:
             continue
         rate = _tax_rate_for_bucket(bucket) if not fallback else TAX_RATE_BY_BUCKET[TAX_BUCKET_NON_PRIVILEGED]
-        tax = -abs(base) * rate
+        tax = -base * rate
         rows.append(
             {
                 "Месяц": month,

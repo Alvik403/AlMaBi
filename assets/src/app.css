@@ -692,6 +692,24 @@ body.almabi-toolbar-collapsed > header {
   cursor: pointer;
 }
 
+.almabi-table-viewport[data-scenario-layout="buh-nu"] {
+  --almabi-frozen-total: 8.25rem;
+}
+
+.almabi-table-viewport[data-scenario-layout="buh-nu"] .almabi-table thead th.col-total,
+.almabi-table-viewport[data-scenario-layout="buh-nu"] .almabi-table tbody td.col-total {
+  min-width: var(--almabi-frozen-total);
+}
+
+.almabi-table-viewport[data-scenario-layout="buh-nu"] .almabi-table thead th.col-month,
+.almabi-table-viewport[data-scenario-layout="buh-nu"] .almabi-table tbody td.col-month {
+  min-width: 7.25rem;
+}
+
+.almabi-table-viewport[data-scenario-layout="buh-nu"] .cell-scenario-duo__row {
+  width: 100%;
+}
+
 .almabi-table .cell-plan-fact {
   display: flex;
   flex-direction: column;
@@ -751,38 +769,66 @@ body.almabi-toolbar-collapsed > header {
   background: #fff1f2;
 }
 
-.almabi-table .pl-cell {
-  display: inline-grid;
-  grid-template-columns: 0.85rem minmax(4.5rem, 1fr);
-  column-gap: 0.2rem;
-  align-items: baseline;
-  justify-content: end;
-  width: 100%;
-  max-width: 100%;
-}
-
-.almabi-table .pl-sign {
-  justify-self: center;
-  color: #64748b;
-  font-weight: 600;
-  font-size: 0.75rem;
-  line-height: 1;
-}
-
-.almabi-table .pl-sign--empty {
-  visibility: hidden;
-}
-
 .almabi-table .pl-amount {
-  justify-self: end;
+  display: inline-block;
   font-variant-numeric: tabular-nums;
   font-weight: 600;
   color: #1e293b;
   white-space: nowrap;
 }
 
-.almabi-table .pl-amount--negative {
-  color: #e11d48;
+.almabi-table .cell-plan-fact--fact-only .pl-amount {
+  font-size: 0.8125rem;
+}
+
+.almabi-table td.col-month .pl-amount {
+  font-size: 0.6875rem;
+}
+
+.almabi-table .cell-scenario-duo {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.15rem;
+  width: 100%;
+}
+
+.almabi-table .cell-scenario-duo--inline {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.25rem;
+}
+
+.almabi-table .cell-scenario-duo__row {
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.almabi-table .cell-scenario-duo__row--labeled {
+  width: 100%;
+}
+
+.almabi-table .cell-scenario-duo__label {
+  flex-shrink: 0;
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.almabi-table .cell-plan-fact--duo .cell-scenario-duo__label {
+  min-width: 1.75rem;
+  text-align: right;
+}
+
+.almabi-table .cell-plan-fact--stack {
+  gap: 0.15rem;
 }
 
 .almabi-table .cell-plan-fact .plan-value .pl-amount {
@@ -791,8 +837,9 @@ body.almabi-toolbar-collapsed > header {
 }
 
 .almabi-table .cell-plan-fact__divider {
-  margin: 0 0.15rem;
+  margin: 0 0.1rem;
   color: #94a3b8;
+  font-size: 0.75rem;
 }
 
 .almabi-table .row-label {

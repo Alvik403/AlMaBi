@@ -357,9 +357,9 @@ def test_almabi_taxes_report_upload_api(app_client, tmp_path):
 
     assert response.status_code == 201
     payload = response.json()
-    assert payload["summary"]["total_amount"] == -145_000
+    assert payload["summary"]["total_amount"] == -120_000
     assert payload["summary"]["component_totals"]["Льготные проекты"] == -20_000
-    assert payload["summary"]["component_totals"]["Нельготные проекты"] == -125_000
+    assert payload["summary"]["component_totals"]["Нельготные проекты"] == -100_000
     assert len(payload["tree"]) == 2
 
 
@@ -398,9 +398,9 @@ def test_almabi_net_profit_report_upload_api(app_client, tmp_path):
 
     assert response.status_code == 201
     payload = response.json()
-    assert payload["summary"]["total_amount"] == 755_000
+    assert payload["summary"]["total_amount"] == 780_000
     assert payload["summary"]["component_totals"]["Прибыль/убыток до налогообложения"] == 900_000
-    assert payload["summary"]["component_totals"]["Налоги"] == -145_000
+    assert payload["summary"]["component_totals"]["Налоги"] == -120_000
     assert len(payload["tree"]) == 2
 
 
