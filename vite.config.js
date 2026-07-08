@@ -10,8 +10,9 @@ export default defineConfig({
     rollupOptions: {
       input: {
         app: "assets/src/app.js",
-        excel: "assets/src/excel.js",
+        charts_page: "assets/src/charts_page.js",
         report_page: "assets/src/report_page.js",
+        test_excel_panel: "assets/src/test_excel_panel.js",
       },
       output: {
         entryFileNames: "[name].js",

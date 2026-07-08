@@ -468,6 +468,7 @@ def run_test_pipeline(
     paths: dict[str, Path],
     *,
     logs_dir: Path | None = None,
+    write_audit: bool = True,
 ) -> TestPipelineResult:
     audit = PipelineAuditLog()
     exports = parse_exports(paths)
@@ -477,5 +478,5 @@ def run_test_pipeline(
         cost_path=paths.get("cost"),
         projects_path=paths.get("realization"),
     )
-    audit_path = audit.write_report(logs_dir) if logs_dir else None
+    audit_path = audit.write_report(logs_dir) if logs_dir and write_audit else None
     return TestPipelineResult(result=result, audit=audit, audit_path=audit_path)

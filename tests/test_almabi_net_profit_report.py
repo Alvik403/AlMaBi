@@ -44,6 +44,6 @@ def test_build_net_profit_report_from_fixture_exports(tmp_path: Path):
     components = report["summary"]["component_totals"]
     assert report["summary"]["row_count"] >= 5
     assert components["Прибыль/убыток до налогообложения"] == 900_000
-    assert components["Налоги"] == -132_500
-    assert report["summary"]["total_amount"] == 767_500
+    assert components["Налоги"] == -145_000
+    assert report["summary"]["total_amount"] == 755_000
     assert len(report["tree"]) == 2

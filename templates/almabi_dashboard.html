@@ -32,18 +32,6 @@
   <button type="button" class="rounded-md px-3 py-1.5 text-xs font-semibold text-slate-500 hover:text-slate-700" data-tax-bucket="Нельготные проекты">Нельготные</button>
 </div>
 {% endif %}
-<button
-  type="button"
-  data-file-menu-open
-  class="inline-flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 shadow-sm hover:border-brand-300 hover:text-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
-  title="Загрузка данных"
-  aria-label="Загрузка данных"
->
-  <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.607 2.296.07 2.572-1.065z" />
-    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-  </svg>
-</button>
 {% endblock %}
 
 {% block content %}
@@ -98,7 +86,7 @@
       {% if dashboard.meta.upload_files %}
       <span class="block mt-1 text-sky-700">
         {% for export_key, export_name in dashboard.meta.upload_files.items() %}
-        {% if export_key == 'buh' %}Бух.регистр{% elif export_key == 'realization' %}Реализация{% elif export_key == 'cost' %}Себестоимость{% elif export_key == 'amortization' %}Амортизация{% else %}{{ export_key }}{% endif %}: {{ export_name }}{% if not loop.last %} · {% endif %}
+        {% if export_key == 'buh' %}Бух.регистр{% elif export_key == 'realization' %}Реализация{% elif export_key == 'cost' %}Себестоимость{% else %}{{ export_key }}{% endif %}: {{ export_name }}{% if not loop.last %} · {% endif %}
         {% endfor %}
       </span>
       {% elif dashboard.meta.upload_file_name %}
@@ -459,6 +447,18 @@
   const PRIVILEGED_BUCKET = "Льготные проекты";
   const NON_PRIVILEGED_BUCKET = "Нельготные проекты";
 
+  const EXPENSE_DISPLAY_KPIS = new Set([
+    "Себестоимость",
+    "Коммерческие расходы",
+    "Управленческие расходы",
+    "Прочие расходы",
+  ]);
+  const CALCULATED_DISPLAY_KPIS = new Set([
+    "Операционная прибыль",
+    "Прибыль/убыток до налогообложения",
+    "Чистая прибыль",
+  ]);
+
   const numberFormatter = new Intl.NumberFormat("ru-RU", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
@@ -474,6 +474,41 @@
 
   function formatMoney(value) {
     return numberFormatter.format(scaled(value));
+  }
+
+  function formatMoneyAbs(value) {
+    return numberFormatter.format(scaled(Math.abs(Number(value || 0))));
+  }
+
+  function isExpenseStyleRow(rowName, value) {
+    if (EXPENSE_DISPLAY_KPIS.has(rowName)) return true;
+    const num = Number(value || 0);
+    return num < 0 && !CALCULATED_DISPLAY_KPIS.has(rowName) && rowName !== "Налоги";
+  }
+
+  function formatPlAmount(rowName, value) {
+    const num = Number(value || 0);
+    if (rowName === "Налоги" && num !== 0) {
+      return `
+        <span class="pl-cell">
+          <span class="pl-sign pl-sign--empty" aria-hidden="true">−</span>
+          <span class="pl-amount">${formatMoneyAbs(num)}</span>
+        </span>`;
+    }
+    if (isExpenseStyleRow(rowName, num)) {
+      const tone = num < 0 ? " pl-amount--expense" : "";
+      return `
+        <span class="pl-cell">
+          <span class="pl-sign" aria-hidden="true">−</span>
+          <span class="pl-amount${tone}">${formatMoneyAbs(num)}</span>
+        </span>`;
+    }
+    const tone = num < 0 ? " pl-amount--negative" : "";
+    return `
+      <span class="pl-cell">
+        <span class="pl-sign pl-sign--empty" aria-hidden="true">−</span>
+        <span class="pl-amount${tone}">${formatMoney(num)}</span>
+      </span>`;
   }
 
   function isDefaultFilter(key) {
@@ -711,9 +746,9 @@
       nonPrivilegedSum += totals.nonPrivileged;
     });
 
-    modal.querySelector("[data-cell-drill-privileged]").textContent = formatMoney(privilegedSum);
-    modal.querySelector("[data-cell-drill-non-privileged]").textContent = formatMoney(nonPrivilegedSum);
-    modal.querySelector("[data-cell-drill-total]").textContent = formatMoney(privilegedSum + nonPrivilegedSum);
+    modal.querySelector("[data-cell-drill-privileged]").innerHTML = formatPlAmount(row.name, privilegedSum);
+    modal.querySelector("[data-cell-drill-non-privileged]").innerHTML = formatPlAmount(row.name, nonPrivilegedSum);
+    modal.querySelector("[data-cell-drill-total]").innerHTML = formatPlAmount(row.name, privilegedSum + nonPrivilegedSum);
 
     const tbody = modal.querySelector("[data-cell-drill-rows]");
     const empty = modal.querySelector("[data-cell-drill-empty]");
@@ -725,13 +760,12 @@
       tbody.innerHTML = articles
         .map((article) => {
           const totals = articleDrillTotals(article);
-          const totalClass = totals.total < 0 ? "text-rose-600" : "";
           return `
             <tr class="border-b border-slate-100 last:border-0">
               <td class="py-3 pr-4 font-medium text-slate-700">${article.name}</td>
-              <td class="py-3 pr-4 text-right tabular-nums text-sky-800">${formatMoney(totals.privileged)}</td>
-              <td class="py-3 pr-4 text-right tabular-nums text-rose-700">${formatMoney(totals.nonPrivileged)}</td>
-              <td class="py-3 text-right tabular-nums font-semibold ${totalClass}">${formatMoney(totals.total)}</td>
+              <td class="py-3 pr-4 text-right tabular-nums text-sky-800">${formatPlAmount(row.name, totals.privileged)}</td>
+              <td class="py-3 pr-4 text-right tabular-nums text-rose-700">${formatPlAmount(row.name, totals.nonPrivileged)}</td>
+              <td class="py-3 text-right tabular-nums font-semibold">${formatPlAmount(row.name, totals.total)}</td>
             </tr>
           `;
         })
@@ -1045,15 +1079,14 @@
     return null;
   }
 
-  function renderScenarioCell(valuesByMonth, months) {
+  function renderScenarioCell(valuesByMonth, months, rowName = "") {
     const scenarios = orderedSelectedScenarios();
 
     if (scenarios.length === 1) {
       const value = sumScenarioValues(valuesByMonth, months, scenarios[0]);
-      const factClass = value < 0 ? "text-rose-600" : "";
       return `
         <div class="cell-plan-fact cell-plan-fact--fact-only">
-          <strong class="values ${factClass}">${formatMoney(value)}</strong>
+          ${formatPlAmount(rowName, value)}
         </div>
       `;
     }
@@ -1067,11 +1100,12 @@
       const fact = sumScenarioValues(valuesByMonth, months, factScenario);
       const ratio = plan ? (fact / plan) * 100 : 0;
       const tone = varianceClass(ratio);
-      const factClass = fact < 0 ? "text-rose-600" : "";
       return `
         <div class="cell-plan-fact">
           <span class="values">
-            <span class="plan-value">${formatMoney(plan)}</span> / <strong class="${factClass}">${formatMoney(fact)}</strong>
+            <span class="plan-value">${formatPlAmount(rowName, plan)}</span>
+            <span class="cell-plan-fact__divider">/</span>
+            ${formatPlAmount(rowName, fact)}
           </span>
           <span class="pct ${tone}">${percentFormatter.format(ratio)}%</span>
         </div>
@@ -1083,10 +1117,10 @@
         ${scenarios
           .map((scenario) => {
             const value = sumScenarioValues(valuesByMonth, months, scenario);
-            const factClass = value < 0 ? "text-rose-600" : "";
             return `
           <span class="values">
-            <span class="plan-value">${scenario}</span> / <strong class="${factClass}">${formatMoney(value)}</strong>
+            <span class="plan-value">${scenario}</span>
+            ${formatPlAmount(rowName, value)}
           </span>`;
           })
           .join("")}
@@ -1135,7 +1169,7 @@
       .map((row) => {
         const sourceRow = state.rowByName[row.name];
         const monthCells = columns
-          .map((column) => `<td class="text-right col-month${drillCellClass(sourceRow)}"${renderDrillCell(column.key, sourceRow)}>${renderScenarioCell(row.values, column.months)}</td>`)
+          .map((column) => `<td class="text-right col-month${drillCellClass(sourceRow)}"${renderDrillCell(column.key, sourceRow)}>${renderScenarioCell(row.values, column.months, row.name)}</td>`)
           .join("");
         const rowClass = row.is_calculated ? "is-level-1 font-semibold bg-violet-50/50" : "is-level-1";
 
@@ -1144,7 +1178,7 @@
             <td class="col-indicator">
               <span class="row-name">${row.name}</span>
             </td>
-            <td class="text-right col-total${drillCellClass(sourceRow)}"${renderDrillCell("total", sourceRow)}>${renderScenarioCell(row.values, almabiData.months)}</td>
+            <td class="text-right col-total${drillCellClass(sourceRow)}"${renderDrillCell("total", sourceRow)}>${renderScenarioCell(row.values, almabiData.months, row.name)}</td>
             ${monthCells}
           </tr>
         `;
@@ -1199,7 +1233,7 @@
           ? `<span class="row-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor">${chevronIcon}</svg></span>`
           : `<span class="row-chevron is-placeholder" aria-hidden="true"></span>`;
         const monthCells = columns
-          .map((column) => `<td class="text-right col-month${drillCellClass(row)}"${renderDrillCell(column.key, row)}>${renderScenarioCell(row.values, column.months)}</td>`)
+          .map((column) => `<td class="text-right col-month${drillCellClass(row)}"${renderDrillCell(column.key, row)}>${renderScenarioCell(row.values, column.months, row.name)}</td>`)
           .join("");
         const depthClass = `is-depth-${Math.min(depth, 6)}`;
         const levelClass = row.level === 1 ? "is-level-1" : "is-child";
@@ -1218,7 +1252,7 @@
                 <span class="row-name">${row.name}</span>
               </div>
             </td>
-            <td class="text-right col-total${drillCellClass(row)}"${renderDrillCell("total", row)}>${renderScenarioCell(row.values, almabiData.months)}</td>
+            <td class="text-right col-total${drillCellClass(row)}"${renderDrillCell("total", row)}>${renderScenarioCell(row.values, almabiData.months, row.name)}</td>
             ${monthCells}
           </tr>
         `;

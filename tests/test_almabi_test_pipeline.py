@@ -191,8 +191,8 @@ def test_cost_join_expands_like_power_query(tmp_path: Path):
     assert test_cost_total == pq_cost_total == -400_000
 
 
-def test_cost_without_join_matches_pq_sign(tmp_path: Path):
-    """Строки бухрегистра без join к себестоимости: «Сумма БУ» положительная, как в PQ."""
+def test_cost_without_join_is_negative_for_pl(tmp_path: Path):
+    """Строки бухрегистра без join к себестоимости: «Сумма БУ» отрицательная для P&L."""
     from openpyxl import Workbook
 
     from almabi_pq_buh_register import build_pq_buh_register_table
@@ -235,4 +235,4 @@ def test_cost_without_join_matches_pq_sign(tmp_path: Path):
         if fact.kpi_l1 == "Себестоимость"
     )
 
-    assert pq_total == test_total == 500_000
+    assert pq_total == test_total == -500_000

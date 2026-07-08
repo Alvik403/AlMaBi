@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from almabi_charts_builder import build_analytics_charts
 from almabi_contractor_builder import build_contractor_cards, build_contractor_details
 from almabi_test_dashboard_builder import build_test_summary_rows_from_facts
 from almabi_mock_data import MONTHS, SCENARIOS, UNITS
@@ -135,6 +136,11 @@ def build_test_dashboard_from_pipeline(
         "consolidated_by_tax": consolidated_by_tax,
         "consolidated_kpi_order": list(CONSOLIDATED_KPI_ORDER),
         "charts_by_tax": charts_by_tax,
+        "analytics_charts": build_analytics_charts(
+            result.facts,
+            summary_rows,
+            plan_facts=plan_facts,
+        ),
         "tax_bucket_options": ["all", *TAX_BUCKET_OPTIONS],
         "contractor_details": contractor_details,
         "contractor_cards": contractor_cards,
@@ -243,6 +249,15 @@ def build_empty_test_dashboard() -> dict[str, Any]:
         "cost_by_month": empty_chart_series(),
         "cost_structure_by_month": _empty_cost_structure(),
         "cost_structure_total": 0,
+        "analytics_charts": {
+            "revenue_by_direction": [],
+            "gross_profit_by_direction": [],
+            "expense_kpis": [],
+            "expenses_by_month": [
+                {"month": short, "fact": 0.0, "plan": 0.0}
+                for short in ["Янв.", "Фев.", "Мар.", "Апр.", "Май", "Июн.", "Июл.", "Авг.", "Сен.", "Окт.", "Ноя.", "Дек."]
+            ],
+        },
         "meta": {
             "source": "test",
             "mode": "test",

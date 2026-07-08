@@ -6,7 +6,6 @@ from uuid import uuid4
 
 from fastapi import HTTPException, Request, UploadFile
 
-from almabi_dashboard_builder import load_almabi_dashboard_from_exports
 from almabi_file_validation import (
     EXPORT_TYPES,
     REQUIRED_EXPORT_TYPES,
@@ -14,52 +13,17 @@ from almabi_file_validation import (
     guess_export_type_from_filename,
     validate_almabi_export,
 )
-from almabi_mock_data import get_almabi_dashboard_data
-from almabi_template_data import get_almabi_template_dashboard_data
-from settings import BASE_DIR, Settings
+from settings import Settings
 
 
-SESSION_ALMABI_DATA_SOURCE = "almabi_data_source"
 SESSION_ALMABI_UPLOAD_SET = "almabi_upload_set"
 SESSION_ALMABI_PLAN_FORECAST = "almabi_plan_forecast"
-
-ALMABI_SOURCES = {
-    "mock": {
-        "key": "mock",
-        "title": "Демо-данные",
-        "description": "Текущий набор тестовых показателей AlMaBi.",
-    },
-    "template": {
-        "key": "template",
-        "title": "Шаблон БДР",
-        "description": "Заполненный тестовый шаблон «Универсальный отчёт для БДР».",
-    },
-    "upload": {
-        "key": "upload",
-        "title": "Мои выгрузки",
-        "description": "Четыре .xlsx выгрузки 1С: бухрегистр, реализация, себестоимость, амортизация.",
-    },
-}
 
 _EXPORT_FIELD_NAMES = {
     "buh": "buh_file",
     "realization": "realization_file",
     "cost": "cost_file",
-    "amortization": "amortization_file",
 }
-
-
-def get_almabi_data_source(request: Request) -> str:
-    source = request.session.get(SESSION_ALMABI_DATA_SOURCE, "mock")
-    if source not in ALMABI_SOURCES:
-        return "mock"
-    return source
-
-
-def set_almabi_data_source(request: Request, source: str) -> None:
-    if source not in ALMABI_SOURCES:
-        raise HTTPException(status_code=400, detail=f"Неизвестный источник данных: {source}")
-    request.session[SESSION_ALMABI_DATA_SOURCE] = source
 
 
 def get_almabi_upload_set(request: Request) -> dict[str, dict[str, str]]:
@@ -110,89 +74,23 @@ def _upload_status(upload_set: dict[str, dict[str, str]], *, plan_forecast: dict
 
 
 def almabi_data_context(request: Request, settings: Settings) -> dict[str, Any]:
-    source = get_almabi_data_source(request)
-    meta = ALMABI_SOURCES[source]
     upload_set = get_almabi_upload_set(request)
     plan_forecast = request.session.get(SESSION_ALMABI_PLAN_FORECAST)
     if not isinstance(plan_forecast, dict):
         plan_forecast = None
     upload_status = _upload_status(upload_set, plan_forecast=plan_forecast)
     return {
-        "source": source,
-        "title": meta["title"],
-        "description": meta["description"],
-        "sources": list(ALMABI_SOURCES.values()),
+        "source": "upload",
+        "title": "Выгрузки AlMaBi",
+        "description": "Выгрузки 1С: бухрегистр, реализация, себестоимость и план/прогноз.",
+        "sources": [],
         "upload_file_name": None,
         "upload_files": upload_status["loaded_exports"],
         "plan_forecast_file": upload_status["plan_forecast_file"],
         "missing_exports": upload_status["missing_required"],
         "has_upload_file": upload_status["is_complete"],
-        "fixtures": {
-            "bdr_template": str(BASE_DIR / "fixtures" / "bdr_template_empty.xlsx"),
-            "field_mapping": str(BASE_DIR / "fixtures" / "bi_field_names.xlsx"),
-        },
+        "fixtures": {},
     }
-
-
-def resolve_almabi_dashboard_data(request: Request, settings: Settings) -> dict[str, Any]:
-    source = get_almabi_data_source(request)
-    if source == "mock":
-        data = get_almabi_dashboard_data()
-        data["meta"] = {
-            "source": "mock",
-            "title": ALMABI_SOURCES["mock"]["title"],
-            "description": ALMABI_SOURCES["mock"]["description"],
-        }
-        return data
-
-    if source == "template":
-        return get_almabi_template_dashboard_data()
-
-    upload_paths = get_almabi_upload_paths(request, settings)
-    upload_set = get_almabi_upload_set(request)
-    upload_names = {
-        export_type: meta.get("original", f"{export_type}.xlsx")
-        for export_type, meta in upload_set.items()
-    }
-    missing_required = [export_type for export_type in REQUIRED_EXPORT_TYPES if export_type not in upload_paths]
-    if missing_required:
-        data = get_almabi_template_dashboard_data()
-        data["meta"] = {
-            **data.get("meta", {}),
-            "source": "upload",
-            "title": ALMABI_SOURCES["upload"]["title"],
-            "upload_files": upload_names,
-            "parsed": False,
-            "missing_exports": missing_required,
-            "message": "Загрузите обязательные выгрузки: бухрегистр, реализация и себестоимость.",
-        }
-        return data
-
-    return load_almabi_dashboard_from_exports(
-        upload_paths,
-        upload_names=upload_names,
-        plan_forecast_path=get_almabi_plan_forecast_path(request, settings),
-    )
-
-
-def resolve_almabi_article_breakdown(request: Request, settings: Settings, *, pipeline: str = "test") -> list[dict[str, Any]]:
-    from almabi_dashboard_builder import build_article_breakdown
-
-    upload_paths = get_almabi_upload_paths(request, settings)
-    missing_required = [export_type for export_type in REQUIRED_EXPORT_TYPES if export_type not in upload_paths]
-    if missing_required:
-        return []
-
-    if pipeline == "test":
-        from almabi_test_pipeline import run_test_pipeline
-
-        facts = run_test_pipeline(upload_paths).result.facts
-    else:
-        from almabi_pipeline import run_pipeline
-
-        facts = run_pipeline(upload_paths).facts
-
-    return build_article_breakdown(facts)
 
 
 def _save_upload_file(settings: Settings, file: UploadFile) -> dict[str, Any]:
@@ -321,7 +219,6 @@ def store_almabi_upload_bundle(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    request.session[SESSION_ALMABI_DATA_SOURCE] = "upload"
     request.session[SESSION_ALMABI_UPLOAD_SET] = upload_set
 
     status = _upload_status(upload_set, plan_forecast=plan_forecast_meta or request.session.get(SESSION_ALMABI_PLAN_FORECAST))
@@ -367,7 +264,6 @@ def store_almabi_upload(request: Request, settings: Settings, file: UploadFile) 
 
     upload_set = dict(get_almabi_upload_set(request))
     upload_set[export_type] = {"original": original_name, "stored": stored_name}
-    request.session[SESSION_ALMABI_DATA_SOURCE] = "upload"
     request.session[SESSION_ALMABI_UPLOAD_SET] = upload_set
     status = _upload_status(upload_set)
     return {

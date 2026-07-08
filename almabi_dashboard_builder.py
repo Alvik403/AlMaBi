@@ -26,6 +26,16 @@ CALCULATED_KPIS = [
     ("Налоги", []),
     ("Чистая прибыль", ["Прибыль/убыток до налогообложения", "Налоги"]),
 ]
+PBT_TAX_BASE_KPIS = frozenset(
+    {
+        "Выручка",
+        "Себестоимость",
+        "Коммерческие расходы",
+        "Управленческие расходы",
+        "Прочие доходы",
+        "Прочие расходы",
+    }
+)
 # Уровни как в «Уровни для дашборда»: L1 — KPI, далее вложенность до L5.
 REVENUE_PATH = ["direction", "project_group", "project", "contract"]
 COST_PATH = ["cost_section", "direction", "project_group", "project"]
@@ -474,36 +484,42 @@ def _sum_nodes_by_name(nodes: list[dict[str, Any]], names: list[str], scenario: 
     return totals
 
 
+def _tax_rate_for_type(tax_type: str) -> float:
+    return 0.02 if "льгот" in tax_type.casefold() else 0.25
+
+
 def _build_tax_facts(component_nodes: list[dict[str, Any]], source_facts: list[Fact]) -> list[Fact]:
-    taxable = [fact for fact in source_facts if fact.kpi_l1 in {"Выручка", "Прочие доходы", "Прочие расходы", "Себестоимость"}]
-    if not taxable:
+    """Налог = ставка × |PBT по НУ| в разрезе месяца и вида НО (все компоненты PBT)."""
+    grouped: dict[tuple[str, str], float] = defaultdict(float)
+    for fact in source_facts:
+        if fact.kpi_l1 not in PBT_TAX_BASE_KPIS:
+            continue
+        grouped[(fact.month, fact.tax_type)] += fact.amount_nu
+
+    if not grouped:
         pbt = _sum_nodes_by_name(component_nodes, ["Прибыль/убыток до налогообложения"], "Факт НУ")
         tax_facts: list[Fact] = []
         for month in MONTHS:
             base = pbt.get(month, 0)
             if not base:
                 continue
+            tax_value = -abs(base) * 0.25
             tax_facts.append(
                 Fact(
                     kpi_l1="Налоги",
                     month=month,
-                    amount_buh=-abs(base) * 0.25,
-                    amount_nu=-abs(base) * 0.25,
+                    amount_buh=tax_value,
+                    amount_nu=tax_value,
                     tax_type="Общие условия налогообложения",
                 )
             )
         return tax_facts
 
-    grouped: dict[tuple[str, str], float] = defaultdict(float)
-    for fact in taxable:
-        grouped[(fact.month, fact.tax_type)] += fact.amount_nu
-
     tax_facts: list[Fact] = []
     for (month, tax_type), amount in grouped.items():
         if not amount:
             continue
-        rate = 0.02 if "льгот" in tax_type.casefold() else 0.25
-        tax_value = -abs(amount) * rate
+        tax_value = -abs(amount) * _tax_rate_for_type(tax_type)
         tax_facts.append(
             Fact(
                 kpi_l1="Налоги",

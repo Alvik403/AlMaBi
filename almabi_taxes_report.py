@@ -12,8 +12,6 @@ TAX_BUCKET_PRIVILEGED = "Льготные проекты"
 TAX_BUCKET_NON_PRIVILEGED = "Нельготные проекты"
 TAX_BUCKETS = (TAX_BUCKET_PRIVILEGED, TAX_BUCKET_NON_PRIVILEGED)
 
-TAXABLE_SECTIONS = frozenset({"Выручка", "Себестоимость", "Прочие доходы", "Прочие расходы"})
-
 PBT_SECTIONS = frozenset(
     {
         "Выручка",
@@ -24,6 +22,7 @@ PBT_SECTIONS = frozenset(
         "Прочие расходы",
     }
 )
+TAXABLE_SECTIONS = PBT_SECTIONS
 
 TAX_RATE_BY_BUCKET: dict[str, float] = {
     TAX_BUCKET_PRIVILEGED: 0.02,

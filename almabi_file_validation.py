@@ -8,14 +8,13 @@ from openpyxl import load_workbook
 from almabi_excel_utils import normalize_header
 
 
-EXPORT_TYPES = ("buh", "realization", "cost", "amortization")
+EXPORT_TYPES = ("buh", "realization", "cost")
 REQUIRED_EXPORT_TYPES = ("buh", "realization", "cost")
 
 EXPORT_LABELS = {
     "buh": "Бух.регистр",
     "realization": "Реализация",
     "cost": "Себестоимость",
-    "amortization": "Амортизация",
 }
 
 
@@ -55,8 +54,6 @@ def _joined_headers(cells: list[str]) -> str:
 
 def guess_export_type_from_filename(filename: str) -> str | None:
     normalized = Path(filename).name.casefold()
-    if any(token in normalized for token in ("аморт", "amort")):
-        return "amortization"
     if any(token in normalized for token in ("себест", "cost", "себестоим")):
         return "cost"
     if any(token in normalized for token in ("реализ", "realiz", "выручк")):
@@ -72,10 +69,6 @@ def _detect_export_type(cells: list[str]) -> str | None:
         "себестоимость (бухг" in joined or "себестоимость (регл" in joined or "себестоимость полная" in joined
     ):
         return "cost"
-    if "статья расходов" in joined and "направление деятельности" in joined:
-        return "amortization"
-    if "статья расходов" in joined and "регистратор" in joined and "документ отгрузки" not in joined:
-        return "amortization"
     if "выручка" in joined and ("номенклатура" in joined or "группа проектов" in joined or "заказ клиента" in joined):
         return "realization"
     if all(marker in joined for marker in ("документ", "сумма", "счет дт")):
@@ -130,7 +123,7 @@ def validate_almabi_export(path: Path, *, expected_type: str | None = None) -> A
         )
     raise ValueError(
         "Файл не похож на одну из выгрузок БДР. "
-        "Ожидаются колонки бухрегистра, реализации, себестоимости или амортизации."
+        "Ожидаются колонки бухрегистра, реализации или себестоимости."
     )
 
 

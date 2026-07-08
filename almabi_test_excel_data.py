@@ -274,12 +274,27 @@ def load_test_excel_buh_payload(request: Request, settings: Settings) -> dict[st
 
 
 def load_test_excel_page_payload(request: Request, settings: Settings) -> dict[str, object]:
+    loaders = {
+        "revenue": load_test_excel_revenue_payload,
+        "cost": load_test_excel_cost_payload,
+        "projects": load_test_excel_projects_payload,
+        "buh": load_test_excel_buh_payload,
+    }
+    empty_payloads = {
+        "revenue": lambda: {**_empty_payload(filter_columns=REVENUE_FILTER_COLUMNS), "summary": revenue_table_summary([])},
+        "cost": lambda: {**_empty_payload(filter_columns=COST_FILTER_COLUMNS), "summary": cost_table_summary([])},
+        "projects": lambda: {**_empty_payload(filter_columns=PROJECTS_FILTER_COLUMNS), "summary": projects_table_summary([])},
+        "buh": lambda: {**_empty_payload(filter_columns=BUH_FILTER_COLUMNS), "summary": buh_table_summary([])},
+    }
+    active_tab = request.query_params.get("tab", "revenue")
+    if active_tab not in loaders:
+        active_tab = "revenue"
+
+    payload = {key: empty_factory() for key, empty_factory in empty_payloads.items()}
+    payload[active_tab] = loaders[active_tab](request, settings)
     return {
-        "revenue": load_test_excel_revenue_payload(request, settings),
-        "cost": load_test_excel_cost_payload(request, settings),
-        "projects": load_test_excel_projects_payload(request, settings),
-        "buh": load_test_excel_buh_payload(request, settings),
-        "active_tab": request.query_params.get("tab", "revenue"),
+        **payload,
+        "active_tab": active_tab,
     }
 
 

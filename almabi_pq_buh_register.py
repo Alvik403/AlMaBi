@@ -151,8 +151,10 @@ def _amount_buh(
     cost_section: object,
     cost_amount: float | None,
 ) -> float:
-    if section == "Себестоимость" and cost_section not in (None, ""):
-        return float(cost_amount or 0) * -1
+    if section == "Себестоимость":
+        if cost_section not in (None, ""):
+            return float(cost_amount or 0) * -1
+        return amount * -1
     if section == "Прочие расходы":
         return amount * -1
     if section == "Прочие доходы":

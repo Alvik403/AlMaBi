@@ -96,8 +96,7 @@ def _amount_buh_for_section(section: str, row: BuhRow, cost_match: CostRow | Non
     if section == "Себестоимость":
         if cost_match is not None:
             return -cost_match.amount if cost_match.amount else 0.0
-        # Как в PQ «Бух.регистр»: без join к файлу себестоимости — «Сумма» без инверсии.
-        return row.amount_buh if row.amount_buh else 0.0
+        return -row.amount_buh if row.amount_buh else 0.0
     if section in {"Прочие расходы", "Коммерческие расходы", "Управленческие расходы"}:
         return -row.amount_buh if row.amount_buh else 0.0
     return row.amount_buh if row.amount_buh else 0.0

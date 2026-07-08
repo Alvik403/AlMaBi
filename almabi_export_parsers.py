@@ -53,17 +53,6 @@ def _is_cost_header(headers: list[str]) -> bool:
     )
 
 
-def _is_amort_header(headers: list[str]) -> bool:
-    joined = _joined(headers)
-    if "документ отгрузки" in joined or "себестоимость (бухг" in joined:
-        return False
-    return "статья расходов" in joined and (
-        "направление деятельности" in joined
-        or "стоимость (регл.) приход" in joined
-        or "регистратор" in joined
-    )
-
-
 def _read_project_fields(row: tuple[object, ...], column_map: dict[str, int]) -> tuple[str, str, str]:
     return (
         analytics_value(cell_value(row, column_map, "направление"), default="Без направления"),
@@ -117,21 +106,11 @@ class CostRow:
     contract: str = ""
 
 
-@dataclass(frozen=True)
-class AmortRow:
-    month: str | None
-    expense_article: str
-    subdivision: str
-    amount_nu: float
-    amort_section: str
-
-
 @dataclass
 class ParsedExports:
     buh: list[BuhRow] = field(default_factory=list)
     realization: list[RealizationRow] = field(default_factory=list)
     cost: list[CostRow] = field(default_factory=list)
-    amortization: list[AmortRow] = field(default_factory=list)
 
 
 def classify_buh_section(account_dt: str, account_kt: str) -> str | None:
@@ -179,12 +158,6 @@ def classify_cost_section_pq(calc_article: str, account: str) -> str:
         "Амортизация": "Амортизация",
     }
     return pq_map.get(article, "Прочие производственные расходы")
-
-
-def classify_amort_section(expense_article: str) -> str:
-    if "ноу-хау" in expense_article.casefold():
-        return "08 Амортизация НМА"
-    return "08 Амортизация ОС"
 
 
 def _extract_tax_type(column_map: dict[str, int], row: tuple[object, ...]) -> str:
@@ -381,50 +354,9 @@ def parse_cost(path: Path) -> list[CostRow]:
     return parsed
 
 
-def _map_amort_headers(headers: list[str]) -> dict[str, int]:
-    aliases = {
-        "дата": ("дата записи", "регистратор.дата", "регистратор", "дата", "date"),
-        "статья расходов": ("статья расходов", "expense article"),
-        "сумма ну": (
-            "стоимость (регл.) приход",
-            "стоимость запасов",
-            "стоимость",
-            "сумма ну",
-            "amount",
-        ),
-        "подразделение": ("подразделение", "subdivision"),
-        "направление": ("направление деятельности", "направление", "direction"),
-    }
-    return resolve_column_map(headers, aliases)
-
-
-def parse_amortization(path: Path) -> list[AmortRow]:
-    headers, rows = read_sheet_rows(path, skip_rows=8, remove_last=1, header_matcher=_is_amort_header)
-    column_map = _map_amort_headers(headers)
-    parsed: list[AmortRow] = []
-
-    for row in rows:
-        amount_nu = parse_amount(cell_value(row, column_map, "сумма ну"))
-        if not amount_nu:
-            continue
-        expense_article = normalize_text(cell_value(row, column_map, "статья расходов")) or "Амортизация"
-        date_value = cell_value(row, column_map, "дата")
-        parsed.append(
-            AmortRow(
-                month=month_name(parse_date(date_value)) or month_name(parse_date_from_text(date_value)),
-                expense_article=expense_article,
-                subdivision=normalize_text(cell_value(row, column_map, "подразделение")),
-                amount_nu=amount_nu,
-                amort_section=classify_amort_section(expense_article),
-            )
-        )
-    return parsed
-
-
 def parse_exports(paths: dict[str, Path]) -> ParsedExports:
     return ParsedExports(
         buh=parse_buh_register(paths["buh"]) if "buh" in paths else [],
         realization=parse_realization(paths["realization"]) if "realization" in paths else [],
         cost=parse_cost(paths["cost"]) if "cost" in paths else [],
-        amortization=parse_amortization(paths["amortization"]) if "amortization" in paths else [],
     )

@@ -751,6 +751,50 @@ body.almabi-toolbar-collapsed > header {
   background: #fff1f2;
 }
 
+.almabi-table .pl-cell {
+  display: inline-grid;
+  grid-template-columns: 0.85rem minmax(4.5rem, 1fr);
+  column-gap: 0.2rem;
+  align-items: baseline;
+  justify-content: end;
+  width: 100%;
+  max-width: 100%;
+}
+
+.almabi-table .pl-sign {
+  justify-self: center;
+  color: #64748b;
+  font-weight: 600;
+  font-size: 0.75rem;
+  line-height: 1;
+}
+
+.almabi-table .pl-sign--empty {
+  visibility: hidden;
+}
+
+.almabi-table .pl-amount {
+  justify-self: end;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: #1e293b;
+  white-space: nowrap;
+}
+
+.almabi-table .pl-amount--negative {
+  color: #e11d48;
+}
+
+.almabi-table .cell-plan-fact .plan-value .pl-amount {
+  font-weight: 500;
+  color: #94a3b8;
+}
+
+.almabi-table .cell-plan-fact__divider {
+  margin: 0 0.15rem;
+  color: #94a3b8;
+}
+
 .almabi-table .row-label {
   display: flex;
   align-items: center;

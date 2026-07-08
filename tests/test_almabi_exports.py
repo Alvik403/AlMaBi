@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from openpyxl import Workbook
 
 from almabi_dashboard_builder import load_almabi_dashboard_from_exports
@@ -431,17 +432,14 @@ def test_validate_export_types(tmp_path: Path):
         "buh": tmp_path / "buh.xlsx",
         "realization": tmp_path / "realization.xlsx",
         "cost": tmp_path / "cost.xlsx",
-        "amortization": tmp_path / "amort.xlsx",
     }
     create_buh_workbook(paths["buh"])
     create_realization_workbook(paths["realization"])
     create_cost_workbook(paths["cost"])
-    create_amort_workbook(paths["amortization"])
 
     assert validate_almabi_export(paths["buh"]).export_type == "buh"
     assert validate_almabi_export(paths["realization"]).export_type == "realization"
     assert validate_almabi_export(paths["cost"]).export_type == "cost"
-    assert validate_almabi_export(paths["amortization"]).export_type == "amortization"
 
 
 def test_realization_projects_columns_are_parsed(tmp_path: Path):
@@ -550,7 +548,7 @@ def test_cost_is_not_duplicated_when_buh_line_has_no_cost_join(tmp_path: Path):
     cost_facts = [fact for fact in result.facts if fact.kpi_l1 == "Себестоимость"]
 
     assert len(cost_facts) == 1
-    assert cost_facts[0].amount_buh == 542_000_000
+    assert cost_facts[0].amount_buh == -542_000_000
 
 
 def _max_tree_level(node: dict) -> int:
@@ -619,26 +617,28 @@ def test_dashboard_builder_from_exports(tmp_path: Path):
     assert privileged["rows"][0]["name"] == "ООО Тест Клиент"
 
 
-def test_amortization_is_not_detected_as_cost(tmp_path: Path):
+def test_amortization_workbook_is_not_accepted(tmp_path: Path):
     path = tmp_path / "amort.xlsx"
     create_amort_workbook(path)
-    result = validate_almabi_export(path)
-    assert result.export_type == "amortization"
+    with pytest.raises(ValueError, match="не похож"):
+        validate_almabi_export(path)
 
 
 def test_upload_bundle_accepts_misplaced_export_file(app_client, tmp_path: Path):
     files = {
         "buh_file": ("buh.xlsx", _workbook_bytes(create_buh_workbook, tmp_path / "buh.xlsx")),
-        "realization_file": ("realization.xlsx", _workbook_bytes(create_realization_workbook, tmp_path / "realization.xlsx")),
-        "amortization_file": ("cost.xlsx", _workbook_bytes(create_cost_workbook, tmp_path / "cost.xlsx")),
+        "realization_file": ("cost.xlsx", _workbook_bytes(create_cost_workbook, tmp_path / "cost.xlsx")),
+        "cost_file": ("realization.xlsx", _workbook_bytes(create_realization_workbook, tmp_path / "realization.xlsx")),
     }
 
     response = app_client.post("/api/almabi/files/upload-set", files=files)
     assert response.status_code == 201
     payload = response.json()
     assert payload["saved_exports"]["cost"]["original"] == "cost.xlsx"
-    assert payload["saved_exports"]["cost"]["selected_slot"] == "amortization"
-    assert any("определён как" in warning for warning in payload.get("warnings", []))
+    assert payload["saved_exports"]["cost"]["selected_slot"] == "realization"
+    assert payload["saved_exports"]["realization"]["original"] == "realization.xlsx"
+    assert payload["saved_exports"]["realization"]["selected_slot"] == "cost"
+    assert len(payload.get("warnings", [])) >= 2
 
 
 def test_upload_bundle_builds_dashboard(app_client, tmp_path: Path):

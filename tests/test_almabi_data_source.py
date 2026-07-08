@@ -33,25 +33,20 @@ def _create_bdr_workbook(path: Path) -> None:
     workbook.save(path)
 
 
-def test_almabi_data_source_defaults_to_mock(app_client):
+def test_almabi_data_source_is_upload_only(app_client):
     response = app_client.get("/api/almabi/data-source")
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["source"] == "mock"
-    assert payload["title"] == "Демо-данные"
+    assert payload["source"] == "upload"
+    assert payload["title"] == "Выгрузки AlMaBi"
+    assert payload["sources"] == []
 
 
-def test_almabi_can_switch_to_template(app_client):
+def test_almabi_data_source_switch_route_removed(app_client):
     response = app_client.post("/api/almabi/data-source/template")
 
-    assert response.status_code == 200
-    assert response.json()["source"] == "template"
-
-    dashboard = app_client.get("/dashboard/almabi-test")
-    assert dashboard.status_code == 200
-    assert "Тест BI" in dashboard.text
-    assert "Сводная информация" in dashboard.text
+    assert response.status_code == 404
 
 
 def test_almabi_upload_accepts_bdr_file(app_client, tmp_path: Path):

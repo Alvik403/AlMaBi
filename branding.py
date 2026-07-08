@@ -3,6 +3,7 @@ APP_BRAND = "Al Ma BI"
 ALMABI_NAV_TABS = frozenset(
     {
         "almabi_test",
+        "almabi_charts",
         "almabi_test_excel",
         "almabi_revenue_report",
         "almabi_cost_report",

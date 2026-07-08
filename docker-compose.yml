@@ -1,4 +1,4 @@
-name: dashboard-opiop
+name: almabi
 
 services:
   web:
@@ -11,12 +11,10 @@ services:
     environment:
       DEBUG: "true"
       APP_PORT: "8000"
-      DATA_DIR: /app/data
       UPLOADS_DIR: /app/uploads
-      DATABASE_PATH: /app/runtime/dashboard.sqlite3
+      RUNTIME_DIR: /app/runtime
       LOGS_DIR: /app/logs
     volumes:
-      - ./data:/app/data
       - ./uploads:/app/uploads
       - ./runtime:/app/runtime
       - ./logs:/app/logs

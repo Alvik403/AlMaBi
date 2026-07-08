@@ -1,0 +1,182 @@
+{% extends "dashboard_shell.html" %}
+
+{% block title %}Графики БДР{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="/static/dist/charts_page.css">
+{% endblock %}
+
+{% block main_class %}flex min-h-0 flex-1 flex-col overflow-hidden{% endblock %}
+{% block content_wrapper_class %}flex h-full min-h-0 flex-1 flex-col p-0 max-w-none{% endblock %}
+
+{% block breadcrumbs %}{% endblock %}
+
+{% block content %}
+<section class="charts-page flex min-h-0 flex-1 flex-col" data-charts-page>
+  {% if dashboard.meta.message and not dashboard.meta.parsed %}
+  <div class="charts-empty-banner">
+    <p>{{ dashboard.meta.message }}</p>
+  </div>
+  {% endif %}
+
+  <div class="charts-page__layout">
+    <aside class="charts-sidebar">
+      <div class="charts-sidebar__section">
+        <div class="charts-sidebar__head">
+          <span class="charts-sidebar__title">Год</span>
+          <span class="charts-sidebar__actions">
+            <button type="button" class="charts-sidebar__icon-btn" data-filter-select-all="year" title="Выбрать все" aria-label="Выбрать все">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+            </button>
+            <button type="button" class="charts-sidebar__icon-btn" data-filter-clear-group="year" title="Сбросить" aria-label="Сбросить">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            </button>
+          </span>
+        </div>
+        <div class="charts-sidebar__list">
+          <button type="button" class="charts-sidebar__item is-active" data-filter-year data-filter-value="2025">2025</button>
+          <button type="button" class="charts-sidebar__item" data-filter-year data-filter-value="2024">2024</button>
+        </div>
+      </div>
+
+      <div class="charts-sidebar__section">
+        <div class="charts-sidebar__head">
+          <span class="charts-sidebar__title">Квартал</span>
+          <span class="charts-sidebar__actions">
+            <button type="button" class="charts-sidebar__icon-btn" data-filter-select-all="quarter" title="Выбрать все" aria-label="Выбрать все">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+            </button>
+            <button type="button" class="charts-sidebar__icon-btn" data-filter-clear-group="quarter" title="Сбросить" aria-label="Сбросить">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            </button>
+          </span>
+        </div>
+        <div class="charts-sidebar__grid charts-sidebar__grid--2">
+          {% for quarter, label in [("Q1", "Кв-л1"), ("Q2", "Кв-л2"), ("Q3", "Кв-л3"), ("Q4", "Кв-л4")] %}
+          <button type="button" class="charts-sidebar__item" data-filter-quarter data-filter-value="{{ quarter }}">{{ label }}</button>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="charts-sidebar__section">
+        <div class="charts-sidebar__head">
+          <span class="charts-sidebar__title">Месяц</span>
+          <span class="charts-sidebar__actions">
+            <button type="button" class="charts-sidebar__icon-btn" data-filter-select-all="month" title="Выбрать все" aria-label="Выбрать все">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+            </button>
+            <button type="button" class="charts-sidebar__icon-btn" data-filter-clear-group="month" title="Сбросить" aria-label="Сбросить">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            </button>
+          </span>
+        </div>
+        <div class="charts-sidebar__grid charts-sidebar__grid--2">
+          {% for month in dashboard.months %}
+          <button type="button" class="charts-sidebar__item" data-filter-month data-filter-value="{{ month }}">{{ month[:3] | lower }}.</button>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="charts-sidebar__section charts-sidebar__section--divider">
+        <div class="charts-sidebar__head">
+          <span class="charts-sidebar__title">Сравнение</span>
+        </div>
+        <div class="charts-sidebar__grid charts-sidebar__grid--2">
+          <button type="button" class="charts-sidebar__item is-active" data-filter-scenario data-filter-scenario="План">План</button>
+          <button type="button" class="charts-sidebar__item" data-filter-scenario data-filter-scenario="Прогноз">Прогноз</button>
+        </div>
+      </div>
+
+      <div class="charts-sidebar__section">
+        <div class="charts-sidebar__head">
+          <span class="charts-sidebar__title">Льгота</span>
+        </div>
+        <div class="charts-sidebar__list">
+          <button type="button" class="charts-sidebar__item is-active" data-filter-tax data-filter-tax="all">Все</button>
+          <button type="button" class="charts-sidebar__item" data-filter-tax data-filter-tax="Льготные проекты">Льготные</button>
+          <button type="button" class="charts-sidebar__item" data-filter-tax data-filter-tax="Нельготные проекты">Нельготные</button>
+        </div>
+      </div>
+
+      <div class="charts-sidebar__section">
+        <div class="charts-sidebar__head">
+          <span class="charts-sidebar__title">Единицы</span>
+        </div>
+        <div class="charts-sidebar__grid charts-sidebar__grid--2">
+          {% for unit in dashboard.units %}
+          <button
+            type="button"
+            class="charts-sidebar__item {% if unit.key == 'thousands' %}is-active{% endif %}"
+            data-filter-unit
+            data-filter-unit="{{ unit.divisor }}"
+          >{{ unit.label }}</button>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="charts-sidebar__section charts-sidebar__section--divider">
+        <div class="charts-sidebar__head">
+          <span class="charts-sidebar__title">Графики</span>
+        </div>
+        <div class="charts-config-list" data-charts-config-list></div>
+      </div>
+    </aside>
+
+    <div class="charts-workspace">
+      <header class="charts-workspace__header">
+        <h1 class="charts-workspace__title">Доходы и расходы БДР</h1>
+      </header>
+
+      <div class="charts-board">
+        <div class="charts-kpi-row" data-chart-panel="kpi-cards">
+          <div class="charts-kpi-grid" data-charts-kpi-grid></div>
+        </div>
+
+        <article class="charts-panel charts-panel--line" data-chart-panel="revenue-profit-line">
+          <h2 class="charts-panel__title">Выручка и прибыль</h2>
+          <div class="charts-panel__canvas">
+            <canvas id="chartRevenueProfit"></canvas>
+          </div>
+        </article>
+
+        <article class="charts-panel charts-panel--line" data-chart-panel="revenue-plan-fact">
+          <h2 class="charts-panel__title">Выручка</h2>
+          <div class="charts-panel__canvas">
+            <canvas id="chartRevenuePlanFact"></canvas>
+          </div>
+        </article>
+
+        <article class="charts-panel charts-panel--tall" data-chart-panel="expense-structure">
+          <h2 class="charts-panel__title">Структура расходов</h2>
+          <p class="charts-panel__subtitle">Статьи себестоимости и блоки OPEX · план vs факт за выбранный период</p>
+          <div class="charts-panel__canvas charts-panel__canvas--tall" data-structure-canvas-wrap>
+            <canvas id="chartExpenseStructure"></canvas>
+          </div>
+          <p class="charts-panel__footnote" data-structure-footnote></p>
+        </article>
+
+        <article class="charts-panel charts-panel--bar-h" data-chart-panel="gross-by-direction">
+          <h2 class="charts-panel__title">Валовая прибыль</h2>
+          <div class="charts-panel__canvas">
+            <canvas id="chartGrossDirection"></canvas>
+          </div>
+        </article>
+
+        <article class="charts-panel charts-panel--bar-v" data-chart-panel="expenses-monthly">
+          <h2 class="charts-panel__title">Расходы</h2>
+          <div class="charts-panel__canvas">
+            <canvas id="chartExpensesMonthly"></canvas>
+          </div>
+        </article>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script type="application/json" id="almabiChartsData">{{ dashboard | tojson }}</script>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<script src="/static/dist/charts_page.js" defer></script>
+{% endblock %}
