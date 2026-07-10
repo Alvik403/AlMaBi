@@ -777,6 +777,19 @@ body.almabi-toolbar-collapsed > header {
   white-space: nowrap;
 }
 
+.almabi-table .pl-cell {
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 0.15rem;
+}
+
+.almabi-table .pl-sign {
+  flex-shrink: 0;
+  font-weight: 600;
+  color: #64748b;
+}
+
 .almabi-table .cell-plan-fact--fact-only .pl-amount {
   font-size: 0.8125rem;
 }

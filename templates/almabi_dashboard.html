@@ -468,30 +468,45 @@
     return numberFormatter.format(scaled(Math.abs(Number(value || 0))));
   }
 
-  function formatPlAmount(_rowName, value) {
-    return `<span class="pl-amount">${formatMoneyAbs(value)}</span>`;
+  const SIGNED_PROFIT_KPIS = new Set([
+    "Операционная прибыль",
+    "Прибыль/убыток до налогообложения",
+    "Чистая прибыль",
+  ]);
+
+  function isSignedProfitRow(rowName) {
+    return SIGNED_PROFIT_KPIS.has(rowName);
+  }
+
+  function formatPlAmount(rowName, value) {
+    const num = Number(value || 0);
+    const amount = `<span class="pl-amount">${formatMoneyAbs(num)}</span>`;
+    if (isSignedProfitRow(rowName) && num < 0) {
+      return `<span class="pl-cell"><span class="pl-sign" aria-hidden="true">−</span>${amount}</span>`;
+    }
+    return amount;
   }
 
   function isBuhNuPair(scenarios) {
     return scenarios.length === 2 && scenarios.includes("Факт БУ") && scenarios.includes("Факт НУ");
   }
 
-  function renderScenarioDuo(label, value) {
+  function renderScenarioDuo(label, value, rowName = "") {
     return `
       <div class="cell-scenario-duo__row">
         <span class="cell-scenario-duo__label">${label}</span>
-        <span class="pl-amount">${formatMoneyAbs(value)}</span>
+        ${formatPlAmount(rowName, value)}
       </div>`;
   }
 
-  function renderBuhNuCell(valuesByMonth, months) {
+  function renderBuhNuCell(valuesByMonth, months, rowName = "") {
     const buh = sumScenarioValues(valuesByMonth, months, "Факт БУ");
     const nu = sumScenarioValues(valuesByMonth, months, "Факт НУ");
     return `
       <div class="cell-plan-fact cell-plan-fact--duo">
         <div class="cell-scenario-duo">
-          ${renderScenarioDuo("БУ", buh)}
-          ${renderScenarioDuo("НУ", nu)}
+          ${renderScenarioDuo("БУ", buh, rowName)}
+          ${renderScenarioDuo("НУ", nu, rowName)}
         </div>
       </div>`;
   }
@@ -1095,7 +1110,7 @@
     const scenarios = orderedSelectedScenarios();
 
     if (isBuhNuPair(scenarios)) {
-      return renderBuhNuCell(valuesByMonth, months);
+      return renderBuhNuCell(valuesByMonth, months, rowName);
     }
 
     if (scenarios.length === 1) {
@@ -1119,9 +1134,9 @@
       return `
         <div class="cell-plan-fact cell-plan-fact--duo">
           <div class="cell-scenario-duo cell-scenario-duo--inline">
-            ${renderScenarioDuo("План", plan)}
+            ${renderScenarioDuo("План", plan, rowName)}
             <span class="cell-plan-fact__divider">/</span>
-            ${renderScenarioDuo("Факт", fact)}
+            ${renderScenarioDuo("Факт", fact, rowName)}
           </div>
           <span class="pct ${tone}">${percentFormatter.format(ratio)}%</span>
         </div>
