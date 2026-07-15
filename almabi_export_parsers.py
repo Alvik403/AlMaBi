@@ -173,10 +173,32 @@ def _extract_tax_type(column_map: dict[str, int], row: tuple[object, ...]) -> st
 
 
 def _extract_expense_article(column_map: dict[str, int], row: tuple[object, ...]) -> str:
-    for side in ("дт", "кт"):
-        value = find_subconto_value(column_map, row, side=side, kind_marker="статьи затрат")
+    """Статья затрат / прочих доходов-расходов из субконто бухрегистра.
+
+    Для 91.01 / 91.02 берём субконто1 по счёту (как в PQ), иначе ищем по виду субконто.
+    """
+    account_dt = normalize_text(cell_value(row, column_map, "счет дт", "account dt"))
+    account_kt = normalize_text(cell_value(row, column_map, "счет кт", "account kt"))
+
+    if account_dt.startswith("91.02"):
+        value = normalize_text(cell_value(row, column_map, "субконто1 дт"))
         if value:
             return value
+    if account_kt.startswith("91.01"):
+        value = normalize_text(cell_value(row, column_map, "субконто1 кт"))
+        if value:
+            return value
+
+    for kind_marker in (
+        "прочие доходы и расходы",
+        "статьи доходов и расходов",
+        "статьи прочих",
+        "статьи затрат",
+    ):
+        for side in ("дт", "кт"):
+            value = find_subconto_value(column_map, row, side=side, kind_marker=kind_marker)
+            if value:
+                return value
     return ""
 
 

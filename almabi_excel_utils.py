@@ -263,7 +263,7 @@ def find_subconto_value(
     marker = kind_marker.casefold()
     for level in (1, 2, 3):
         kind = normalize_text(cell_value(row, column_map, f"вид субконто{level} {side}"))
-        if marker in kind:
+        if marker in kind.casefold():
             return normalize_text(cell_value(row, column_map, f"субконто{level} {side}"))
     return ""
 

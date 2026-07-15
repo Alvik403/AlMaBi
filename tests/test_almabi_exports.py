@@ -427,6 +427,105 @@ def create_amort_workbook(path: Path) -> None:
     workbook.save(path)
 
 
+def test_buh_other_income_expense_articles_are_parsed(tmp_path: Path):
+    from almabi_export_parsers import parse_buh_register
+
+    income_path = tmp_path / "income.xlsx"
+    expense_path = tmp_path / "expense.xlsx"
+    create_other_income_buh_workbook(income_path)
+    create_other_expense_buh_workbook(expense_path)
+
+    income = parse_buh_register(income_path)[0]
+    expense = parse_buh_register(expense_path)[0]
+    assert income.expense_article == "Проценты полученные"
+    assert expense.expense_article == "Штрафы"
+
+
+def test_other_pnl_drill_distributes_by_article(tmp_path: Path):
+    paths = {
+        "buh": tmp_path / "buh.xlsx",
+        "realization": tmp_path / "realization.xlsx",
+        "cost": tmp_path / "cost.xlsx",
+    }
+    from openpyxl import Workbook
+
+    workbook = Workbook()
+    sheet = workbook.active
+    _pad_rows(sheet, 8)
+    sheet.append(
+        [
+            "Документ",
+            "Счет Дт",
+            "Вид субконто1 Дт",
+            "Субконто1 Дт",
+            "Счет Кт",
+            "Вид субконто1 Кт",
+            "Субконто1 Кт",
+            "Дата",
+            "Сумма",
+            "Сумма НУ Дт",
+            "Сумма НУ Кт",
+        ]
+    )
+    sheet.append(
+        [
+            "Операция 0001 от 15.03.2026",
+            "76.09",
+            "",
+            "",
+            "91.01",
+            "Прочие доходы и расходы",
+            "Проценты полученные",
+            "15.03.2026",
+            400_000,
+            0,
+            400_000,
+        ]
+    )
+    sheet.append(
+        [
+            "Операция штраф от 20.04.2026",
+            "91.02",
+            "Прочие доходы и расходы",
+            "Штрафы",
+            "76.09",
+            "",
+            "",
+            "20.04.2026",
+            50_000,
+            50_000,
+            0,
+        ]
+    )
+    sheet.append(["Итого"])
+    workbook.save(paths["buh"])
+    create_realization_workbook(paths["realization"], document="Другой документ")
+    create_cost_workbook(paths["cost"], document="Другой документ")
+
+    dashboard = load_almabi_dashboard_from_exports(
+        paths,
+        upload_names={key: path.name for key, path in paths.items()},
+    )
+    rows = {row["name"]: row for row in dashboard["summary_rows"]}
+    income = rows["Прочие доходы"]
+    assert income["drill"]["type"] == "other_pnl"
+
+    sections = {section["name"]: section["articles"] for section in income["drill"]["total"]["sections"]}
+    income_articles = [item["name"] for item in sections["Прочие доходы"]]
+    expense_articles = [item["name"] for item in sections["Прочие расходы"]]
+    assert income_articles == ["Проценты полученные"]
+    assert expense_articles == ["Штрафы"]
+
+
+def test_commercial_expense_article_from_cost_kind(tmp_path: Path):
+    from almabi_export_parsers import parse_buh_register
+
+    path = tmp_path / "buh.xlsx"
+    create_buh_workbook(path)
+    commercial = next(row for row in parse_buh_register(path) if row.account_dt.startswith("90.07"))
+    assert commercial.expense_article == "Реклама"
+
+
 def test_validate_export_types(tmp_path: Path):
     paths = {
         "buh": tmp_path / "buh.xlsx",
