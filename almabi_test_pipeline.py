@@ -372,6 +372,7 @@ def build_test_facts(
                 ),
                 tax_type=row.tax_type,
                 contractor=contractor,
+                quantity=float(getattr(cost_match, "quantity", 0) or 0) if cost_match else 0.0,
             )
             audit_log.record_fact(facts[-1])
 
@@ -428,6 +429,7 @@ def build_test_facts(
                 expense_article=row.calc_article,
                 tax_type=doc_tax.get(row.document, "Общие условия налогообложения"),
                 contractor=_lookup_contractor(row.document, doc_contractor),
+                quantity=float(row.quantity or 0),
             )
             audit_log.record_fact(facts[-1])
             audit_log.log_fallback_line(

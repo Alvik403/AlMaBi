@@ -25,13 +25,19 @@
 {% endblock %}
 
 {% block top_actions %}
-{% if dashboard_mode == 'test' %}
-<div class="flex rounded-lg border border-violet-200 bg-white p-1 shadow-sm" data-tax-bucket-group role="group" aria-label="Вид налогообложения">
-  <button type="button" class="rounded-md px-3 py-1.5 text-xs font-semibold bg-violet-100 text-violet-900 ring-1 ring-violet-200" data-tax-bucket="all">Все</button>
-  <button type="button" class="rounded-md px-3 py-1.5 text-xs font-semibold text-slate-500 hover:text-slate-700" data-tax-bucket="Льготные проекты">Льготные</button>
-  <button type="button" class="rounded-md px-3 py-1.5 text-xs font-semibold text-slate-500 hover:text-slate-700" data-tax-bucket="Нельготные проекты">Нельготные</button>
+<div class="flex flex-wrap items-center gap-2">
+  {% if dashboard_mode == 'test' %}
+  <div class="flex rounded-lg border border-violet-200 bg-white p-1 shadow-sm" data-tax-bucket-group role="group" aria-label="Вид налогообложения">
+    <button type="button" class="rounded-md px-3 py-1.5 text-xs font-semibold bg-violet-100 text-violet-900 ring-1 ring-violet-200" data-tax-bucket="all">Все</button>
+    <button type="button" class="rounded-md px-3 py-1.5 text-xs font-semibold text-slate-500 hover:text-slate-700" data-tax-bucket="Льготные проекты">Льготные</button>
+    <button type="button" class="rounded-md px-3 py-1.5 text-xs font-semibold text-slate-500 hover:text-slate-700" data-tax-bucket="Нельготные проекты">Нельготные</button>
+  </div>
+  {% endif %}
+  <div class="flex rounded-lg border border-slate-200 bg-white p-1 shadow-sm" data-table-period-group role="group" aria-label="Период таблицы">
+    <button type="button" class="rounded-md px-3 py-1.5 text-xs font-semibold bg-sky-100 text-sky-900 ring-1 ring-sky-200" data-table-period="month">Месяцы</button>
+    <button type="button" class="rounded-md px-3 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-800" data-table-period="quarter">Кварталы</button>
+  </div>
 </div>
-{% endif %}
 {% endblock %}
 
 {% block content %}
@@ -152,38 +158,10 @@
   </div>
 
   <section class="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-y-contain p-5 gap-5" data-tab-panel="summary">
-    {% if dashboard_mode == 'test' %}
-    <div class="almabi-summary-card almabi-consolidated-card flex max-h-[min(22rem,38vh)] min-h-0 shrink-0 flex-col overflow-hidden rounded-lg border border-violet-200 bg-white shadow-md" data-consolidated-panel>
-      <div class="flex shrink-0 items-center justify-between gap-3 border-b border-violet-100 px-5 py-3">
-        <h2 class="text-sm font-bold text-violet-900">Консолидированный P&amp;L</h2>
-        <div class="flex rounded-lg border border-violet-200 bg-white p-0.5 shadow-sm" data-table-period-group role="group" aria-label="Период таблицы">
-          <button type="button" class="rounded-md px-2.5 py-1 text-xs font-semibold bg-violet-100 text-violet-900 ring-1 ring-violet-200" data-table-period="month">Месяцы</button>
-          <button type="button" class="rounded-md px-2.5 py-1 text-xs font-semibold text-violet-700 hover:text-violet-900" data-table-period="quarter">Кварталы</button>
-        </div>
-      </div>
-      <div class="almabi-table-panel min-h-0 flex-1">
-        <div class="almabi-table-viewport" data-consolidated-table-viewport data-scrolled-y="0">
-          <div class="almabi-table-wrap" data-consolidated-table-scroll tabindex="0" role="region" aria-label="Консолидированная таблица P&amp;L">
-            <table class="almabi-table almabi-table--grid w-full">
-              <thead>
-                <tr id="almabiConsolidatedHead"></tr>
-              </thead>
-              <tbody id="almabiConsolidatedBody"></tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </div>
-    {% endif %}
-
     <div class="almabi-summary-card flex min-h-[min(28rem,52vh)] flex-1 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-md">
       <div class="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
         <h1 class="text-lg font-bold text-slate-900">{% if dashboard_mode == 'test' %}Детализация по уровням{% else %}Сводная информация{% endif %}</h1>
         <div class="flex flex-wrap items-center gap-2">
-          <div class="flex rounded-lg border border-slate-200 bg-white p-0.5 shadow-sm" data-table-period-group role="group" aria-label="Период таблицы">
-            <button type="button" class="rounded-md px-2.5 py-1 text-xs font-semibold bg-sky-100 text-sky-900 ring-1 ring-sky-200" data-table-period="month">Месяцы</button>
-            <button type="button" class="rounded-md px-2.5 py-1 text-xs font-semibold text-slate-600 hover:text-slate-800" data-table-period="quarter">Кварталы</button>
-          </div>
           <button type="button" data-summary-expand-all class="rounded-sm bg-white px-3 py-2 text-xs font-semibold text-slate-600 ring-1 ring-slate-200 hover:ring-sky-200">
             Раскрыть всё
           </button>
@@ -279,17 +257,17 @@
     data-cell-drill-modal
     aria-hidden="true"
   >
-    <div class="flex max-h-[min(90vh,40rem)] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="almabiCellDrillTitle">
-      <div class="flex shrink-0 items-start justify-between gap-4 border-b border-slate-100 px-6 py-5">
+    <div class="flex h-[min(85vh,44rem)] max-h-[min(85vh,44rem)] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="almabiCellDrillTitle">
+      <div class="flex shrink-0 items-start justify-between gap-4 border-b border-slate-100 px-6 py-4">
         <div>
-          <h3 id="almabiCellDrillTitle" class="text-xl font-bold text-slate-900" data-cell-drill-title>Статьи</h3>
+          <h3 id="almabiCellDrillTitle" class="text-xl font-bold text-slate-900" data-cell-drill-title>Расшифровки</h3>
           <p class="mt-1 text-sm text-slate-500" data-cell-drill-subtitle></p>
         </div>
         <button type="button" class="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700" data-cell-drill-close aria-label="Закрыть">
           <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
         </button>
       </div>
-      <div class="grid shrink-0 grid-cols-2 gap-4 px-6 py-4 sm:grid-cols-3">
+      <div class="grid shrink-0 grid-cols-2 gap-4 px-6 py-4 sm:grid-cols-3" data-cell-drill-summary>
         <div class="rounded-xl bg-sky-50 px-4 py-3">
           <p class="text-xs font-semibold uppercase tracking-wide text-sky-800/80">Льготные</p>
           <p class="mt-1 text-lg font-bold tabular-nums text-slate-900" data-cell-drill-privileged>—</p>
@@ -303,19 +281,24 @@
           <p class="mt-1 text-lg font-bold tabular-nums text-slate-900" data-cell-drill-total>—</p>
         </div>
       </div>
-      <div class="min-h-0 flex-1 overflow-y-auto px-6 pb-6">
-        <table class="w-full text-sm">
-          <thead class="sticky top-0 bg-white">
-            <tr class="border-b border-slate-200 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-              <th class="py-3 pr-4">Статья</th>
-              <th class="py-3 pr-4 text-right">Льготные</th>
-              <th class="py-3 pr-4 text-right">Нельготные</th>
-              <th class="py-3 text-right">Итого</th>
-            </tr>
-          </thead>
-          <tbody data-cell-drill-rows></tbody>
-        </table>
-        <p class="hidden py-8 text-center text-sm text-slate-500" data-cell-drill-empty>Нет детализации для выбранной ячейки.</p>
+      <div class="flex min-h-0 flex-1 flex-col overflow-hidden px-6 py-4" data-cell-drill-body>
+        <div class="hidden min-h-0 flex-1 overflow-hidden" data-cell-drill-other-blocks></div>
+        <div class="flex min-h-0 flex-1 flex-col overflow-hidden" data-cell-drill-table-panel>
+          <div class="shrink-0 overflow-x-auto border-b border-slate-200 bg-white" data-cell-drill-head-bar>
+            <table class="w-full table-fixed text-sm">
+              <colgroup data-cell-drill-cols></colgroup>
+              <thead data-cell-drill-head></thead>
+            </table>
+          </div>
+          <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain" data-cell-drill-scroll>
+            <table class="w-full table-fixed text-sm" data-cell-drill-table>
+              <colgroup data-cell-drill-cols-body></colgroup>
+              <tbody data-cell-drill-rows></tbody>
+            </table>
+            <p class="mt-3 hidden text-right text-xs font-semibold text-rose-600" data-cell-drill-formula>Рентабельность = Прибыль / Выручку</p>
+            <p class="hidden py-8 text-center text-sm text-slate-500" data-cell-drill-empty>Нет детализации для выбранной ячейки.</p>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -632,7 +615,7 @@
 
   function syncScenarioTableLayout() {
     const layout = scenarioTableLayout();
-    document.querySelectorAll("[data-summary-table-viewport], [data-consolidated-table-viewport]").forEach((node) => {
+    document.querySelectorAll("[data-summary-table-viewport]").forEach((node) => {
       node.dataset.scenarioLayout = layout;
     });
   }
@@ -710,7 +693,6 @@
           input.checked = true;
           return;
         }
-        renderConsolidatedTable();
         renderSummary();
       });
     });
@@ -740,35 +722,83 @@
 
   function renderDrillCell(monthKey, row) {
     if (!row?.drill) return "";
-    return ` data-cell-drill="true" data-drill-month="${monthKey}" tabindex="0" role="button" title="Показать статьи и льготу / нельготу"`;
+    let title = "Показать статьи и льготу / нельготу";
+    if (row.drill.type === "revenue_cost") {
+      title = "Показать расшифровку: выручка, себестоимость, прибыль";
+    } else if (row.drill.type === "other_pnl") {
+      title = "Показать прочие доходы и расходы";
+    }
+    return ` data-cell-drill="true" data-drill-month="${monthKey}" tabindex="0" role="button" title="${title}"`;
   }
 
   function drillCellClass(row) {
     return row?.drill ? " is-drillable" : "";
   }
 
-  function openCellDrillModal(row, periodKey) {
-    const modal = document.querySelector("[data-cell-drill-modal]");
-    if (!modal || !row?.drill) return;
+  function formatMarginPercent(value) {
+    const num = Number(value || 0);
+    if (!Number.isFinite(num)) return "—";
+    return String(Math.round(num));
+  }
 
-    const payload = drillPayloadForPeriod(row, periodKey);
-    const articles = (payload?.articles || []).filter((article) => {
-      const totals = articleDrillTotals(article);
-      return totals.total !== 0;
-    });
+  function lineScenarioAmount(pair) {
+    return scenarioDrillAmount(pair || { buh: 0, nu: 0 });
+  }
 
-    const monthLabel = periodKey === "total"
-      ? "Итого"
-      : (QUARTER_DEFS.find((item) => item.key === periodKey)?.label
-        || MONTH_HEADER_SHORT[periodKey]
-        || periodKey);
+  function setDrillTableHead(modal, columns) {
+    const head = modal.querySelector("[data-cell-drill-head]");
+    const cols = modal.querySelector("[data-cell-drill-cols]");
+    const colsBody = modal.querySelector("[data-cell-drill-cols-body]");
+    const headBar = modal.querySelector("[data-cell-drill-head-bar]");
+    const colHtml = columns.map((column) => `<col style="width:${column.width}">`).join("");
+    if (cols) cols.innerHTML = colHtml;
+    if (colsBody) colsBody.innerHTML = colHtml;
+    if (headBar) headBar.classList.toggle("hidden", !columns.length);
+    if (!head) return;
+    if (!columns.length) {
+      head.innerHTML = "";
+      return;
+    }
+    head.innerHTML = `
+      <tr class="text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+        ${columns
+          .map((column) => {
+            const align = column.align === "right" ? " text-right" : "";
+            const pad = column.align === "right" ? "py-3 pl-2 pr-3" : "py-3 pr-4";
+            return `<th class="${pad}${align}">${column.label}</th>`;
+          })
+          .join("")}
+      </tr>`;
+  }
+
+  function openArticlesDrillModal(modal, row, periodKey, payload, monthLabel) {
+    const summary = modal.querySelector("[data-cell-drill-summary]");
+    const formula = modal.querySelector("[data-cell-drill-formula]");
+    const tablePanel = modal.querySelector("[data-cell-drill-table-panel]");
+    const blocksRoot = modal.querySelector("[data-cell-drill-other-blocks]");
+    summary?.classList.remove("hidden");
+    formula?.classList.add("hidden");
+    blocksRoot?.classList.add("hidden");
+    tablePanel?.classList.remove("hidden");
+
+    const articles = (payload?.articles || [])
+      .map((article) => {
+        const totals = articleDrillTotals(article);
+        return { article, totals };
+      })
+      .filter((item) => item.totals.total !== 0)
+      .sort((left, right) => {
+        const byAbs = Math.abs(right.totals.total) - Math.abs(left.totals.total);
+        if (byAbs !== 0) return byAbs;
+        return String(left.article.name).localeCompare(String(right.article.name), "ru");
+      });
+
     modal.querySelector("[data-cell-drill-title]").textContent = row.name;
     modal.querySelector("[data-cell-drill-subtitle]").textContent = `${monthLabel} · ${orderedSelectedScenarios().join(" · ")}`;
 
     let privilegedSum = 0;
     let nonPrivilegedSum = 0;
-    articles.forEach((article) => {
-      const totals = articleDrillTotals(article);
+    articles.forEach(({ totals }) => {
       privilegedSum += totals.privileged;
       nonPrivilegedSum += totals.nonPrivileged;
     });
@@ -776,6 +806,13 @@
     modal.querySelector("[data-cell-drill-privileged]").innerHTML = formatPlAmount(row.name, privilegedSum);
     modal.querySelector("[data-cell-drill-non-privileged]").innerHTML = formatPlAmount(row.name, nonPrivilegedSum);
     modal.querySelector("[data-cell-drill-total]").innerHTML = formatPlAmount(row.name, privilegedSum + nonPrivilegedSum);
+
+    setDrillTableHead(modal, [
+      { label: "Статья", width: "40%" },
+      { label: "Льготные", width: "20%", align: "right" },
+      { label: "Нельготные", width: "20%", align: "right" },
+      { label: "Итого", width: "20%", align: "right" },
+    ]);
 
     const tbody = modal.querySelector("[data-cell-drill-rows]");
     const empty = modal.querySelector("[data-cell-drill-empty]");
@@ -785,18 +822,233 @@
     } else {
       empty?.classList.add("hidden");
       tbody.innerHTML = articles
-        .map((article) => {
-          const totals = articleDrillTotals(article);
+        .map(({ article, totals }, index) => {
+          const zebra = index % 2 === 1 ? " bg-slate-50/80" : "";
           return `
-            <tr class="border-b border-slate-100 last:border-0">
+            <tr class="border-b border-slate-100 last:border-0${zebra}">
               <td class="py-3 pr-4 font-medium text-slate-700">${article.name}</td>
-              <td class="py-3 pr-4 text-right tabular-nums text-sky-800">${formatPlAmount(row.name, totals.privileged)}</td>
-              <td class="py-3 pr-4 text-right tabular-nums text-rose-700">${formatPlAmount(row.name, totals.nonPrivileged)}</td>
-              <td class="py-3 text-right tabular-nums font-semibold">${formatPlAmount(row.name, totals.total)}</td>
+              <td class="py-3 pl-2 pr-3 text-right tabular-nums text-sky-800">${formatPlAmount(row.name, totals.privileged)}</td>
+              <td class="py-3 pl-2 pr-3 text-right tabular-nums text-rose-700">${formatPlAmount(row.name, totals.nonPrivileged)}</td>
+              <td class="py-3 pl-2 pr-3 text-right tabular-nums font-semibold">${formatPlAmount(row.name, totals.total)}</td>
             </tr>
           `;
         })
         .join("");
+    }
+  }
+
+  const drillExpandState = {
+    expandedIds: new Set(),
+  };
+
+  function resetDrillExpandState() {
+    drillExpandState.expandedIds = new Set();
+  }
+
+  function revenueCostRowHtml(node, pathKey, depth) {
+    const revenue = lineScenarioAmount(node.revenue);
+    const cost = lineScenarioAmount(node.cost);
+    const profit = lineScenarioAmount(node.profit);
+    const margin = lineScenarioAmount(node.margin);
+    if (revenue === 0 && cost === 0) return "";
+
+    const expandable = !!node.expandable && (node.children || []).length > 0;
+    const isExpanded = expandable && drillExpandState.expandedIds.has(pathKey);
+    const indent = 8 + depth * 18;
+    const qty = Number(node.quantity || 0);
+    const qtyLabel = Number.isInteger(qty) ? String(qty) : qty.toLocaleString("ru-RU", { maximumFractionDigits: 2 });
+    const chevron = expandable
+      ? `<button type="button" class="row-chevron inline-flex h-5 w-5 items-center justify-center rounded text-slate-500 hover:bg-slate-100" data-drill-expand="${pathKey}" aria-label="${isExpanded ? "Свернуть" : "Раскрыть"}">
+           <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="${isExpanded ? "M6 9l6 6 6-6" : "M9 6l6 6-6 6"}"/>
+           </svg>
+         </button>`
+      : `<span class="inline-block h-5 w-5"></span>`;
+
+    const weight = expandable ? "font-semibold text-slate-900" : "font-medium text-slate-800";
+    let html = `
+      <tr class="border-b border-slate-100 last:border-0${depth % 2 === 1 && !expandable ? " bg-slate-50/70" : ""}">
+        <td class="py-2.5 pr-4">
+          <div class="flex items-center gap-1.5" style="padding-left:${indent}px">
+            ${chevron}
+            <span class="${weight}">${node.name}</span>
+          </div>
+        </td>
+        <td class="py-2.5 pr-4 text-right tabular-nums text-slate-700">${qtyLabel}</td>
+        <td class="py-2.5 pr-4 text-right tabular-nums text-slate-800">${formatMoneyAbs(revenue)}</td>
+        <td class="py-2.5 pr-4 text-right tabular-nums text-slate-800">${formatMoneyAbs(cost)}</td>
+        <td class="py-2.5 pr-4 text-right tabular-nums font-semibold text-slate-900">${formatMoneyAbs(profit)}</td>
+        <td class="py-2.5 text-right tabular-nums text-slate-800">${formatMarginPercent(margin)}</td>
+      </tr>`;
+
+    if (expandable && isExpanded) {
+      (node.children || []).forEach((child, index) => {
+        html += revenueCostRowHtml(child, `${pathKey}/${index}:${child.name}`, depth + 1);
+      });
+    }
+    return html;
+  }
+
+  function openRevenueCostDrillModal(modal, row, periodKey, payload, monthLabel) {
+    const summary = modal.querySelector("[data-cell-drill-summary]");
+    const formula = modal.querySelector("[data-cell-drill-formula]");
+    const tablePanel = modal.querySelector("[data-cell-drill-table-panel]");
+    const blocksRoot = modal.querySelector("[data-cell-drill-other-blocks]");
+    summary?.classList.add("hidden");
+    formula?.classList.remove("hidden");
+    blocksRoot?.classList.add("hidden");
+    tablePanel?.classList.remove("hidden");
+
+    const tree = payload?.tree || [];
+    modal.querySelector("[data-cell-drill-title]").textContent = "Расшифровки";
+    modal.querySelector("[data-cell-drill-subtitle]").textContent = `${row.name} · ${monthLabel} · ${orderedSelectedScenarios().join(" · ")}`;
+
+    setDrillTableHead(modal, [
+      { label: "Наименование", width: "34%" },
+      { label: "Кол-во", width: "10%", align: "right" },
+      { label: "Выручка", width: "14%", align: "right" },
+      { label: "Себестоимость", width: "14%", align: "right" },
+      { label: "Прибыль", width: "14%", align: "right" },
+      { label: "Рентабельность", width: "14%", align: "right" },
+    ]);
+
+    const tbody = modal.querySelector("[data-cell-drill-rows]");
+    const empty = modal.querySelector("[data-cell-drill-empty]");
+    const renderTree = () => {
+      if (!tree.length) {
+        tbody.innerHTML = "";
+        empty?.classList.remove("hidden");
+        formula?.classList.add("hidden");
+        return;
+      }
+      empty?.classList.add("hidden");
+      tbody.innerHTML = tree
+        .map((node, index) => revenueCostRowHtml(node, `${index}:${node.name}`, 0))
+        .join("");
+    };
+
+    renderTree();
+    tbody.onclick = (event) => {
+      const button = event.target.closest("[data-drill-expand]");
+      if (!button) return;
+      event.preventDefault();
+      const key = button.getAttribute("data-drill-expand");
+      if (!key) return;
+      if (drillExpandState.expandedIds.has(key)) drillExpandState.expandedIds.delete(key);
+      else drillExpandState.expandedIds.add(key);
+      renderTree();
+    };
+  }
+
+  function openOtherPnlDrillModal(modal, row, periodKey, payload, monthLabel) {
+    const summary = modal.querySelector("[data-cell-drill-summary]");
+    const formula = modal.querySelector("[data-cell-drill-formula]");
+    const tablePanel = modal.querySelector("[data-cell-drill-table-panel]");
+    const blocksRoot = modal.querySelector("[data-cell-drill-other-blocks]");
+    const empty = modal.querySelector("[data-cell-drill-empty]");
+    summary?.classList.add("hidden");
+    formula?.classList.add("hidden");
+    setDrillTableHead(modal, []);
+    tablePanel?.classList.add("hidden");
+
+    modal.querySelector("[data-cell-drill-title]").textContent = "Прочие доходы и расходы";
+    modal.querySelector("[data-cell-drill-subtitle]").textContent = `${monthLabel} · ${orderedSelectedScenarios().join(" · ")}`;
+
+    const blocks = (payload?.sections || [])
+      .map((section) => {
+        const articles = (section.articles || [])
+          .map((article) => {
+            const totals = articleDrillTotals(article);
+            return { article, totals };
+          })
+          .filter((item) => item.totals.total !== 0)
+          .sort((left, right) => {
+            const byAbs = Math.abs(right.totals.total) - Math.abs(left.totals.total);
+            if (byAbs !== 0) return byAbs;
+            return String(left.article.name).localeCompare(String(right.article.name), "ru");
+          });
+        return { name: section.name, articles };
+      })
+      .filter((section) => section.articles.length > 0);
+
+    if (!blocksRoot) return;
+    if (!blocks.length) {
+      blocksRoot.classList.add("hidden");
+      blocksRoot.innerHTML = "";
+      tablePanel?.classList.remove("hidden");
+      empty?.classList.remove("hidden");
+      return;
+    }
+
+    empty?.classList.add("hidden");
+    blocksRoot.classList.remove("hidden");
+    blocksRoot.innerHTML = blocks
+      .map((section) => {
+        const rowsHtml = section.articles
+          .map(({ article, totals }) => {
+            const privilegedLabel = totals.privileged ? formatMoneyAbs(totals.privileged) : "";
+            const nonPrivilegedLabel = totals.nonPrivileged ? formatMoneyAbs(totals.nonPrivileged) : "";
+            return `
+              <tr>
+                <td>${article.name}</td>
+                <td>${privilegedLabel}</td>
+                <td>${nonPrivilegedLabel}</td>
+              </tr>`;
+          })
+          .join("");
+        return `
+          <section>
+            <h4>${section.name}</h4>
+            <div data-other-scroll>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Наименование</th>
+                    <th>Льгота</th>
+                    <th>Не льгота</th>
+                  </tr>
+                </thead>
+                <tbody>${rowsHtml}</tbody>
+              </table>
+            </div>
+          </section>`;
+      })
+      .join("");
+  }
+
+  function clearOtherPnlBlocks(modal) {
+    const blocksRoot = modal.querySelector("[data-cell-drill-other-blocks]");
+    if (blocksRoot) {
+      blocksRoot.classList.add("hidden");
+      blocksRoot.innerHTML = "";
+    }
+    const tablePanel = modal.querySelector("[data-cell-drill-table-panel]");
+    tablePanel?.classList.remove("hidden");
+    const tbody = modal.querySelector("[data-cell-drill-rows]");
+    if (tbody) tbody.onclick = null;
+  }
+
+  function openCellDrillModal(row, periodKey) {
+    const modal = document.querySelector("[data-cell-drill-modal]");
+    if (!modal || !row?.drill) return;
+
+    const payload = drillPayloadForPeriod(row, periodKey);
+    const monthLabel = periodKey === "total"
+      ? "Итого"
+      : (QUARTER_DEFS.find((item) => item.key === periodKey)?.label
+        || MONTH_HEADER_SHORT[periodKey]
+        || periodKey);
+
+    clearOtherPnlBlocks(modal);
+    resetDrillExpandState();
+
+    const drillType = payload?.type || row.drill.type || (payload?.tree || payload?.lines ? "revenue_cost" : (payload?.sections ? "other_pnl" : "articles"));
+    if (drillType === "revenue_cost") {
+      openRevenueCostDrillModal(modal, row, periodKey, payload, monthLabel);
+    } else if (drillType === "other_pnl") {
+      openOtherPnlDrillModal(modal, row, periodKey, payload, monthLabel);
+    } else {
+      openArticlesDrillModal(modal, row, periodKey, payload, monthLabel);
     }
 
     modal.classList.remove("hidden");
@@ -838,14 +1090,6 @@
       if (!cell || (event.key !== "Enter" && event.key !== " ")) return;
       event.preventDefault();
       cell.click();
-    });
-
-    document.getElementById("almabiConsolidatedBody")?.addEventListener("click", (event) => {
-      const cell = event.target.closest("[data-cell-drill]");
-      if (!cell) return;
-      event.stopPropagation();
-      const row = state.rowByName[cell.closest("[data-consolidated-name]")?.dataset.consolidatedName];
-      if (row) openCellDrillModal(row, cell.dataset.drillMonth || "total");
     });
 
     document.querySelector("[data-cell-drill-close]")?.addEventListener("click", closeCellDrillModal);
@@ -1038,7 +1282,114 @@
     return months.reduce((sum, month) => sum + Number(bucket[month] || 0), 0);
   }
 
+  function mergeRevenueCostNodes(nodes) {
+    const merged = new Map();
+    nodes.forEach((node) => {
+      const current = merged.get(node.name) || {
+        name: node.name,
+        quantity: 0,
+        revenue: { buh: 0, nu: 0 },
+        cost: { buh: 0, nu: 0 },
+        profit: { buh: 0, nu: 0 },
+        margin: { buh: 0, nu: 0 },
+        level: node.level || 1,
+        expandable: !!node.expandable,
+        children: [],
+      };
+      current.quantity = Math.max(Number(current.quantity || 0), Number(node.quantity || 0));
+      ["revenue", "cost"].forEach((key) => {
+        current[key].buh += Number(node[key]?.buh || 0);
+        current[key].nu += Number(node[key]?.nu || 0);
+      });
+      current.children.push(...(node.children || []));
+      current.expandable = current.expandable || !!node.expandable || current.children.length > 0;
+      merged.set(node.name, current);
+    });
+    return Array.from(merged.values()).map((node) => {
+      const children = node.expandable ? mergeRevenueCostNodes(node.children) : [];
+      const profitBuh = Number(node.revenue.buh) - Number(node.cost.buh);
+      const profitNu = Number(node.revenue.nu) - Number(node.cost.nu);
+      return {
+        ...node,
+        children,
+        expandable: children.length > 0,
+        profit: { buh: profitBuh, nu: profitNu },
+        margin: {
+          buh: node.revenue.buh ? (profitBuh / node.revenue.buh) * 100 : 0,
+          nu: node.revenue.nu ? (profitNu / node.revenue.nu) * 100 : 0,
+        },
+      };
+    }).sort((left, right) => {
+      const byAbs = Math.abs(right.revenue.buh) - Math.abs(left.revenue.buh);
+      if (byAbs !== 0) return byAbs;
+      return String(left.name).localeCompare(String(right.name), "ru");
+    });
+  }
+
   function mergeDrillPayloads(payloads) {
+    if (!payloads.length) return { type: "articles", articles: [] };
+    if (payloads.some((payload) => payload?.type === "other_pnl" || payload?.sections)) {
+      const sectionMap = new Map();
+      payloads.forEach((payload) => {
+        (payload?.sections || []).forEach((section) => {
+          const currentArticles = sectionMap.get(section.name) || new Map();
+          (section.articles || []).forEach((article) => {
+            const current = currentArticles.get(article.name) || {
+              name: article.name,
+              [PRIVILEGED_BUCKET]: { buh: 0, nu: 0 },
+              [NON_PRIVILEGED_BUCKET]: { buh: 0, nu: 0 },
+            };
+            [PRIVILEGED_BUCKET, NON_PRIVILEGED_BUCKET].forEach((bucket) => {
+              current[bucket].buh += Number(article[bucket]?.buh || 0);
+              current[bucket].nu += Number(article[bucket]?.nu || 0);
+            });
+            currentArticles.set(article.name, current);
+          });
+          sectionMap.set(section.name, currentArticles);
+        });
+      });
+      const sections = ["Прочие доходы", "Прочие расходы"].map((name) => ({
+        name,
+        articles: Array.from((sectionMap.get(name) || new Map()).values()),
+      }));
+      return { type: "other_pnl", sections };
+    }
+    if (payloads.some((payload) => payload?.type === "revenue_cost" || payload?.tree || payload?.lines)) {
+      const tree = mergeRevenueCostNodes(payloads.flatMap((payload) => payload?.tree || []));
+      const linesMap = new Map();
+      payloads.forEach((payload) => {
+        (payload?.lines || []).forEach((line) => {
+          const current = linesMap.get(line.name) || {
+            name: line.name,
+            quantity: 0,
+            revenue: { buh: 0, nu: 0 },
+            cost: { buh: 0, nu: 0 },
+            profit: { buh: 0, nu: 0 },
+            margin: { buh: 0, nu: 0 },
+          };
+          current.quantity = Math.max(Number(current.quantity || 0), Number(line.quantity || 0));
+          ["revenue", "cost"].forEach((key) => {
+            current[key].buh += Number(line[key]?.buh || 0);
+            current[key].nu += Number(line[key]?.nu || 0);
+          });
+          linesMap.set(line.name, current);
+        });
+      });
+      const lines = Array.from(linesMap.values()).map((line) => {
+        const profitBuh = Number(line.revenue.buh) - Number(line.cost.buh);
+        const profitNu = Number(line.revenue.nu) - Number(line.cost.nu);
+        return {
+          ...line,
+          profit: { buh: profitBuh, nu: profitNu },
+          margin: {
+            buh: line.revenue.buh ? (profitBuh / line.revenue.buh) * 100 : 0,
+            nu: line.revenue.nu ? (profitNu / line.revenue.nu) * 100 : 0,
+          },
+        };
+      });
+      return { type: "revenue_cost", tree, lines };
+    }
+
     const merged = new Map();
     payloads.forEach((payload) => {
       (payload?.articles || []).forEach((article) => {
@@ -1054,7 +1405,7 @@
         merged.set(article.name, current);
       });
     });
-    return { articles: Array.from(merged.values()) };
+    return { type: "articles", articles: Array.from(merged.values()) };
   }
 
   function drillPayloadForPeriod(row, periodKey) {
@@ -1163,59 +1514,6 @@
     document.querySelectorAll("[data-money]").forEach((node) => {
       node.textContent = formatMoney(node.dataset.money);
     });
-  }
-
-  function getConsolidatedRows() {
-    if (!almabiData.consolidated_by_tax) return [];
-    return almabiData.consolidated_by_tax[state.taxBucketFilter] || almabiData.consolidated_by_tax.all || [];
-  }
-
-  function renderConsolidatedHead() {
-    const head = document.getElementById("almabiConsolidatedHead");
-    if (!head) return;
-    const columns = getTablePeriodColumns();
-    head.innerHTML = `
-      <th class="text-left col-indicator">Показатель</th>
-      <th class="text-right col-total" title="${scenarioHeaderTitle("Итого")}">${tableTotalHeaderTitle()}</th>
-      ${columns
-        .map((column) => {
-          const title = scenarioHeaderTitle(column.title);
-          return `<th class="text-right col-month" title="${title}">${column.label}</th>`;
-        })
-        .join("")}
-    `;
-  }
-
-  function renderConsolidatedTable() {
-    const tbody = document.getElementById("almabiConsolidatedBody");
-    if (!tbody || dashboardMode !== "test") return;
-
-    rebuildRowIndex();
-
-    const rows = getConsolidatedRows();
-    const columns = getTablePeriodColumns();
-    renderConsolidatedHead();
-    syncScenarioTableLayout();
-
-    tbody.innerHTML = rows
-      .map((row) => {
-        const sourceRow = state.rowByName[row.name];
-        const monthCells = columns
-          .map((column) => `<td class="text-right col-month${drillCellClass(sourceRow)}"${renderDrillCell(column.key, sourceRow)}>${renderScenarioCell(row.values, column.months, row.name)}</td>`)
-          .join("");
-        const rowClass = row.is_calculated ? "is-level-1 font-semibold bg-violet-50/50" : "is-level-1";
-
-        return `
-          <tr class="${rowClass}" data-consolidated-name="${row.name.replace(/"/g, "&quot;")}">
-            <td class="col-indicator">
-              <span class="row-name">${row.name}</span>
-            </td>
-            <td class="text-right col-total${drillCellClass(sourceRow)}"${renderDrillCell("total", sourceRow)}>${renderScenarioCell(row.values, almabiData.months, row.name)}</td>
-            ${monthCells}
-          </tr>
-        `;
-      })
-      .join("");
   }
 
   function renderSummaryHead() {
@@ -1898,22 +2196,12 @@
   function syncTablePeriodButtons() {
     document.querySelectorAll("[data-table-period]").forEach((button) => {
       const active = (button.dataset.tablePeriod || "month") === state.tablePeriod;
-      const inConsolidated = !!button.closest("[data-consolidated-panel]");
-      if (inConsolidated) {
-        button.classList.toggle("bg-violet-100", active);
-        button.classList.toggle("text-violet-900", active);
-        button.classList.toggle("ring-1", active);
-        button.classList.toggle("ring-violet-200", active);
-        button.classList.toggle("text-violet-700", !active);
-        button.classList.toggle("hover:text-violet-900", !active);
-      } else {
-        button.classList.toggle("bg-sky-100", active);
-        button.classList.toggle("text-sky-900", active);
-        button.classList.toggle("ring-1", active);
-        button.classList.toggle("ring-sky-200", active);
-        button.classList.toggle("text-slate-600", !active);
-        button.classList.toggle("hover:text-slate-800", !active);
-      }
+      button.classList.toggle("bg-sky-100", active);
+      button.classList.toggle("text-sky-900", active);
+      button.classList.toggle("ring-1", active);
+      button.classList.toggle("ring-sky-200", active);
+      button.classList.toggle("text-slate-600", !active);
+      button.classList.toggle("hover:text-slate-800", !active);
     });
   }
 
@@ -1922,7 +2210,6 @@
       button.addEventListener("click", () => {
         state.tablePeriod = button.dataset.tablePeriod || "month";
         syncTablePeriodButtons();
-        renderConsolidatedTable();
         renderSummary();
       });
     });
@@ -2043,7 +2330,6 @@
   }
 
   function renderAll() {
-    renderConsolidatedTable();
     renderSummary();
     renderContractorCards();
     renderMoneyAttributes();

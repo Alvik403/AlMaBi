@@ -21,8 +21,10 @@ def test_almabi_test_dashboard_available(app_client):
     assert response.status_code == 200
     assert "Тест BI" in response.text
     assert "Сводная информация" in response.text
-    assert "almabiConsolidatedBody" in response.text
+    assert "data-table-period" in response.text
     assert "data-tax-bucket" in response.text
+    assert "data-consolidated-panel" not in response.text
+    assert "almabiConsolidatedBody" not in response.text
     assert "data-dashboard-toolbar-toggle" in response.text
     assert "Al Ma BI" in response.text
     assert "test_pq" in response.text

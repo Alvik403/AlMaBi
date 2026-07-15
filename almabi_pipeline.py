@@ -32,6 +32,7 @@ class Fact:
     expense_article: str = ""
     tax_type: str = ""
     contractor: str = ""
+    quantity: float = 0.0
 
 
 @dataclass
@@ -175,6 +176,7 @@ def _append_fact(
     expense_article: str = "",
     tax_type: str = "",
     contractor: str = "",
+    quantity: float = 0.0,
 ) -> None:
     if not month:
         return
@@ -196,6 +198,7 @@ def _append_fact(
             expense_article=expense_article,
             tax_type=tax_type or "Общие условия налогообложения",
             contractor=contractor,
+            quantity=float(quantity or 0),
         )
     )
 
@@ -259,6 +262,7 @@ def _append_file_fallback_facts(
                 expense_article=row.calc_article,
                 tax_type=doc_tax.get(row.document, "Общие условия налогообложения"),
                 contractor=_lookup_contractor(row.document, doc_contractor),
+                quantity=row.quantity,
             )
 
 
@@ -354,6 +358,14 @@ def build_facts(exports: ParsedExports) -> PipelineResult:
             contract = cost_match.contract or contract
         contractor = row.contractor or _lookup_contractor(row.document, doc_contractor)
 
+        quantity = 0.0
+        if cost_match is not None:
+            quantity = float(cost_match.quantity or 0)
+        elif section == "Выручка" and exports.cost and nomenclature:
+            qty_match = _lookup_cost_row(row.document, nomenclature, cost_lookup)
+            if qty_match is not None:
+                quantity = float(qty_match.quantity or 0)
+
         _append_fact(
             facts,
             kpi_l1=section,
@@ -373,6 +385,7 @@ def build_facts(exports: ParsedExports) -> PipelineResult:
             ),
             tax_type=row.tax_type,
             contractor=contractor,
+            quantity=quantity,
         )
 
         if section == "Выручка":

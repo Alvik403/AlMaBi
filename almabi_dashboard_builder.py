@@ -20,6 +20,17 @@ BENEFIT_SECTIONS = {
     "Налоги",
 }
 ARTICLE_SECTIONS = {"Прочие доходы", "Прочие расходы"}
+DRILLABLE_KPIS = frozenset(
+    {
+        "Выручка",
+        "Себестоимость",
+        "Коммерческие расходы",
+        "Управленческие расходы",
+        "Прочие доходы",
+        "Прочие расходы",
+    }
+)
+OTHER_PNL_KPIS = frozenset({"Прочие доходы", "Прочие расходы"})
 CALCULATED_KPIS = [
     ("Операционная прибыль", ["Выручка", "Себестоимость", "Коммерческие расходы", "Управленческие расходы"]),
     ("Прибыль/убыток до налогообложения", ["Операционная прибыль", "Прочие доходы", "Прочие расходы"]),
@@ -39,6 +50,8 @@ PBT_TAX_BASE_KPIS = frozenset(
 # Уровни как в «Уровни для дашборда»: L1 — KPI, далее вложенность до L5.
 REVENUE_PATH = ["direction", "project_group", "project", "contract"]
 COST_PATH = ["cost_section", "direction", "project_group", "project"]
+# В расшифровке выручки/себестоимости группы раскрываются до предпоследнего уровня пути выручки.
+REVENUE_COST_GROUP_PATH = REVENUE_PATH[:-1]
 
 COST_STRUCTURE_SECTIONS = (
     "Амортизация",
@@ -74,6 +87,18 @@ def _empty_drill_bucket() -> dict[str, float]:
     return {"buh": 0.0, "nu": 0.0}
 
 
+def _drill_article_abs_total(article: dict[str, Any]) -> float:
+    privileged = article.get(PRIVILEGED_BUCKET) or {}
+    non_privileged = article.get(NON_PRIVILEGED_BUCKET) or {}
+    total = (
+        float(privileged.get("buh") or 0)
+        + float(privileged.get("nu") or 0)
+        + float(non_privileged.get("buh") or 0)
+        + float(non_privileged.get("nu") or 0)
+    )
+    return abs(total)
+
+
 def _build_drill_data(items: list[Fact]) -> dict[str, Any]:
     """Детализация ячейки: статьи с разбивкой льгота / нельгота."""
 
@@ -95,18 +120,307 @@ def _build_drill_data(items: list[Fact]) -> dict[str, Any]:
                 PRIVILEGED_BUCKET: buckets[PRIVILEGED_BUCKET],
                 NON_PRIVILEGED_BUCKET: buckets[NON_PRIVILEGED_BUCKET],
             }
-            for name, buckets in sorted(grouped.items())
+            for name, buckets in grouped.items()
         ]
-        return {"articles": articles}
+        articles.sort(key=lambda item: (-_drill_article_abs_total(item), item["name"]))
+        return {"type": "articles", "articles": articles}
 
     return {
+        "type": "articles",
         "total": _payload(items),
         "months": {month: _payload([fact for fact in items if fact.month == month]) for month in MONTHS},
     }
 
 
-def _attach_drill(node: dict[str, Any], items: list[Fact]) -> None:
-    node["drill"] = _build_drill_data(items)
+def _revenue_cost_line_metrics(
+    *,
+    name: str,
+    revenue_buh: float,
+    revenue_nu: float,
+    cost_buh: float,
+    cost_nu: float,
+    quantity: float,
+) -> dict[str, Any]:
+    profit_buh = revenue_buh - cost_buh
+    profit_nu = revenue_nu - cost_nu
+    qty = quantity or (1.0 if revenue_buh or revenue_nu or cost_buh or cost_nu else 0.0)
+    return {
+        "name": name,
+        "quantity": qty,
+        "revenue": {"buh": revenue_buh, "nu": revenue_nu},
+        "cost": {"buh": cost_buh, "nu": cost_nu},
+        "profit": {"buh": profit_buh, "nu": profit_nu},
+        "margin": {
+            "buh": (profit_buh / revenue_buh * 100) if revenue_buh else 0.0,
+            "nu": (profit_nu / revenue_nu * 100) if revenue_nu else 0.0,
+        },
+    }
+
+
+def _aggregate_revenue_cost_metrics(nodes: list[dict[str, Any]], *, name: str) -> dict[str, Any]:
+    revenue_buh = sum(float(node["revenue"]["buh"]) for node in nodes)
+    revenue_nu = sum(float(node["revenue"]["nu"]) for node in nodes)
+    cost_buh = sum(float(node["cost"]["buh"]) for node in nodes)
+    cost_nu = sum(float(node["cost"]["nu"]) for node in nodes)
+    quantity = max((float(node.get("quantity") or 0) for node in nodes), default=0.0)
+    return _revenue_cost_line_metrics(
+        name=name,
+        revenue_buh=revenue_buh,
+        revenue_nu=revenue_nu,
+        cost_buh=cost_buh,
+        cost_nu=cost_nu,
+        quantity=quantity,
+    )
+
+
+def _build_revenue_cost_leaf_lines(rev_subset: list[Fact], cost_subset: list[Fact]) -> list[dict[str, Any]]:
+    grouped: dict[str, dict[str, float]] = defaultdict(
+        lambda: {"revenue_buh": 0.0, "revenue_nu": 0.0, "cost_buh": 0.0, "cost_nu": 0.0, "quantity": 0.0}
+    )
+    for fact in rev_subset:
+        name = (fact.nomenclature or "").strip() or (fact.contract or "").strip() or "Без наименования"
+        grouped[name]["revenue_buh"] += float(fact.amount_buh or 0)
+        grouped[name]["revenue_nu"] += float(fact.amount_nu or 0)
+        if fact.quantity:
+            grouped[name]["quantity"] = max(grouped[name]["quantity"], float(fact.quantity))
+    for fact in cost_subset:
+        name = (fact.nomenclature or "").strip() or (fact.contract or "").strip() or "Без наименования"
+        grouped[name]["cost_buh"] += abs(float(fact.amount_buh or 0))
+        grouped[name]["cost_nu"] += abs(float(fact.amount_nu or 0))
+        if fact.quantity:
+            grouped[name]["quantity"] = max(grouped[name]["quantity"], float(fact.quantity))
+
+    lines = [
+        _revenue_cost_line_metrics(
+            name=name,
+            revenue_buh=float(values["revenue_buh"]),
+            revenue_nu=float(values["revenue_nu"]),
+            cost_buh=float(values["cost_buh"]),
+            cost_nu=float(values["cost_nu"]),
+            quantity=float(values["quantity"]),
+        )
+        for name, values in grouped.items()
+    ]
+    lines.sort(
+        key=lambda item: (
+            -max(abs(float(item["revenue"]["buh"])), abs(float(item["revenue"]["nu"]))),
+            item["name"],
+        )
+    )
+    return lines
+
+
+def _build_revenue_cost_tree(
+    rev_subset: list[Fact],
+    cost_subset: list[Fact],
+    path: list[str],
+    *,
+    level: int = 1,
+) -> list[dict[str, Any]]:
+    if not path:
+        return [
+            {
+                **line,
+                "level": level,
+                "expandable": False,
+                "children": [],
+            }
+            for line in _build_revenue_cost_leaf_lines(rev_subset, cost_subset)
+        ]
+
+    current_key = path[0]
+    rev_grouped = _group_facts_by_dimension(rev_subset, current_key)
+    cost_grouped = _group_facts_by_dimension(cost_subset, current_key)
+    names = sorted(set(rev_grouped) | set(cost_grouped))
+    nodes: list[dict[str, Any]] = []
+    for name in names:
+        children = _build_revenue_cost_tree(
+            rev_grouped.get(name, []),
+            cost_grouped.get(name, []),
+            path[1:],
+            level=level + 1,
+        )
+        if not children:
+            continue
+        metrics = _aggregate_revenue_cost_metrics(children, name=name)
+        nodes.append(
+            {
+                **metrics,
+                "level": level,
+                "expandable": True,
+                "children": children,
+            }
+        )
+    nodes.sort(
+        key=lambda item: (
+            -max(abs(float(item["revenue"]["buh"])), abs(float(item["revenue"]["nu"]))),
+            item["name"],
+        )
+    )
+    return nodes
+
+
+def _build_revenue_cost_drill(
+    revenue_facts: list[Fact],
+    cost_facts: list[Fact],
+    *,
+    group_path: list[str] | None = None,
+) -> dict[str, Any]:
+    """Расшифровка выручки/себестоимости с раскрытием по уровням до предпоследнего."""
+    path = list(REVENUE_COST_GROUP_PATH if group_path is None else group_path)
+
+    def _payload(rev_subset: list[Fact], cost_subset: list[Fact]) -> dict[str, Any]:
+        tree = _build_revenue_cost_tree(rev_subset, cost_subset, list(path))
+        return {
+            "type": "revenue_cost",
+            "path": list(path),
+            "tree": tree,
+            "lines": _build_revenue_cost_leaf_lines(rev_subset, cost_subset),
+        }
+
+    return {
+        "type": "revenue_cost",
+        "total": _payload(revenue_facts, cost_facts),
+        "months": {
+            month: _payload(
+                [fact for fact in revenue_facts if fact.month == month],
+                [fact for fact in cost_facts if fact.month == month],
+            )
+            for month in MONTHS
+        },
+    }
+
+
+def _revenue_matching_cost_scope(revenue_facts: list[Fact], cost_facts: list[Fact]) -> list[Fact]:
+    if not cost_facts:
+        return []
+    keys = {
+        (
+            _dimension_value(fact, "direction"),
+            _dimension_value(fact, "project_group"),
+            _dimension_value(fact, "project"),
+            (fact.nomenclature or "").strip().casefold(),
+        )
+        for fact in cost_facts
+    }
+    return [
+        fact
+        for fact in revenue_facts
+        if (
+            _dimension_value(fact, "direction"),
+            _dimension_value(fact, "project_group"),
+            _dimension_value(fact, "project"),
+            (fact.nomenclature or "").strip().casefold(),
+        )
+        in keys
+    ]
+
+
+def _scope_revenue_cost_facts(
+    revenue_facts: list[Fact],
+    cost_facts: list[Fact],
+    filters: list[tuple[str, str]],
+) -> tuple[list[Fact], list[Fact]]:
+    rev = list(revenue_facts)
+    cost = list(cost_facts)
+    for key, name in filters:
+        if key == "cost_section":
+            cost = [fact for fact in cost if _dimension_value(fact, key) == name]
+            rev = _revenue_matching_cost_scope(rev, cost)
+        else:
+            rev = [fact for fact in rev if _dimension_value(fact, key) == name]
+            cost = [fact for fact in cost if _dimension_value(fact, key) == name]
+    return rev, cost
+
+
+def _remaining_revenue_cost_group_path(filters: list[tuple[str, str]]) -> list[str]:
+    fixed = {key for key, _ in filters}
+    return [key for key in REVENUE_COST_GROUP_PATH if key not in fixed]
+
+
+def _attach_revenue_cost_level_drills(
+    node: dict[str, Any],
+    revenue_facts: list[Fact],
+    cost_facts: list[Fact],
+    *,
+    child_path: list[str],
+    filters: list[tuple[str, str]] | None = None,
+) -> None:
+    """Вешает расшифровку на узел и всех потомков в рамках текущего среза."""
+    active_filters = list(filters or [])
+    scoped_rev, scoped_cost = _scope_revenue_cost_facts(revenue_facts, cost_facts, active_filters)
+    node["drill"] = _build_revenue_cost_drill(
+        scoped_rev,
+        scoped_cost,
+        group_path=_remaining_revenue_cost_group_path(active_filters),
+    )
+    if not child_path:
+        return
+    key = child_path[0]
+    for child in node.get("children") or []:
+        _attach_revenue_cost_level_drills(
+            child,
+            revenue_facts,
+            cost_facts,
+            child_path=child_path[1:],
+            filters=[*active_filters, (key, child["name"])],
+        )
+
+
+def _other_section_articles(facts_subset: list[Fact]) -> list[dict[str, Any]]:
+    grouped: dict[str, dict[str, dict[str, float]]] = defaultdict(
+        lambda: {
+            PRIVILEGED_BUCKET: _empty_drill_bucket(),
+            NON_PRIVILEGED_BUCKET: _empty_drill_bucket(),
+        }
+    )
+    for fact in facts_subset:
+        article = (fact.expense_article or "").strip() or (fact.contract or "").strip() or "Прочее"
+        bucket = tax_bucket(fact.tax_type)
+        grouped[article][bucket]["buh"] += fact.amount_buh
+        grouped[article][bucket]["nu"] += fact.amount_nu
+    articles = [
+        {
+            "name": name,
+            PRIVILEGED_BUCKET: buckets[PRIVILEGED_BUCKET],
+            NON_PRIVILEGED_BUCKET: buckets[NON_PRIVILEGED_BUCKET],
+        }
+        for name, buckets in grouped.items()
+    ]
+    articles.sort(key=lambda item: (-_drill_article_abs_total(item), item["name"]))
+    return articles
+
+
+def _build_other_pnl_drill(income_facts: list[Fact], expense_facts: list[Fact]) -> dict[str, Any]:
+    """Единая расшифровка прочих доходов и прочих расходов: статья × льгота / нельгота."""
+
+    def _payload(income_subset: list[Fact], expense_subset: list[Fact]) -> dict[str, Any]:
+        return {
+            "type": "other_pnl",
+            "sections": [
+                {"name": "Прочие доходы", "articles": _other_section_articles(income_subset)},
+                {"name": "Прочие расходы", "articles": _other_section_articles(expense_subset)},
+            ],
+        }
+
+    return {
+        "type": "other_pnl",
+        "total": _payload(income_facts, expense_facts),
+        "months": {
+            month: _payload(
+                [fact for fact in income_facts if fact.month == month],
+                [fact for fact in expense_facts if fact.month == month],
+            )
+            for month in MONTHS
+        },
+    }
+
+
+def _attach_drill(node: dict[str, Any], items: list[Fact], *, enabled: bool = True) -> None:
+    if enabled:
+        node["drill"] = _build_drill_data(items)
+    else:
+        node.pop("drill", None)
 
 def _next_id(prefix: str) -> str:
     global _id_seq
@@ -279,8 +593,8 @@ def _build_group_tree(
                 "children": children,
             }
         )
-        _attach_drill(node, group_items)
         nodes.append(node)
+    nodes.sort(key=lambda item: (-abs(float(item.get("total_fact") or 0)), item["name"]))
     return nodes
 
 
@@ -302,6 +616,7 @@ def _scale_facts(items: list[Fact], sign: int) -> list[Fact]:
             expense_article=fact.expense_article,
             tax_type=fact.tax_type,
             contractor=fact.contractor,
+            quantity=fact.quantity,
         )
         for fact in items
     ]
@@ -366,7 +681,6 @@ def _build_benefit_children(
                 "children": children,
             }
         )
-        _attach_drill(node, benefit_items)
         nodes.append(node)
     return nodes
 
@@ -441,6 +755,7 @@ def _build_kpi_node(
             expense_article=fact.expense_article,
             tax_type=fact.tax_type,
             contractor=fact.contractor,
+            quantity=fact.quantity,
         )
         for fact in items
     ]
@@ -468,7 +783,7 @@ def _build_kpi_node(
             ),
         }
     )
-    _attach_drill(node, scaled_items)
+    _attach_drill(node, scaled_items, enabled=name in DRILLABLE_KPIS)
     return node
 
 
@@ -564,8 +879,6 @@ def _build_calculated_node(
             "children": benefit_children or [],
         }
     )
-    if benefit_facts:
-        _attach_drill(node, benefit_facts)
     return node
 
 
@@ -617,6 +930,24 @@ def _build_summary_rows(
             )
         )
 
+    revenue_facts = _group_facts(facts, kpi_l1="Выручка")
+    cost_facts = _group_facts(facts, kpi_l1="Себестоимость")
+    for node in nodes:
+        if node["name"] == "Выручка":
+            _attach_revenue_cost_level_drills(
+                node,
+                revenue_facts,
+                cost_facts,
+                child_path=list(REVENUE_PATH),
+            )
+        elif node["name"] == "Себестоимость":
+            _attach_revenue_cost_level_drills(
+                node,
+                revenue_facts,
+                cost_facts,
+                child_path=list(COST_PATH),
+            )
+
     operating_totals = _month_totals_from_nodes(
         nodes,
         ["Выручка", "Себестоимость", "Коммерческие расходы", "Управленческие расходы"],
@@ -650,6 +981,14 @@ def _build_summary_rows(
                 plan_forecast_from_file=plan_forecast_from_file,
             )
         )
+
+    other_pnl_drill = _build_other_pnl_drill(
+        _group_facts(facts, kpi_l1="Прочие доходы"),
+        _group_facts(facts, kpi_l1="Прочие расходы"),
+    )
+    for node in nodes:
+        if node["name"] in OTHER_PNL_KPIS:
+            node["drill"] = other_pnl_drill
 
     pbt_totals = _month_totals_from_nodes(
         nodes,

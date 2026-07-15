@@ -6,6 +6,7 @@ from typing import Any
 import almabi_dashboard_builder as dashboard_builder
 from almabi_dashboard_builder import (
     ARTICLE_SECTIONS,
+    DRILLABLE_KPIS,
     _aggregate_months,
     _attach_drill,
     _attach_metrics,
@@ -94,6 +95,7 @@ def _build_test_kpi_node(
             expense_article=fact.expense_article,
             tax_type=fact.tax_type,
             contractor=fact.contractor,
+            quantity=fact.quantity,
         )
         for fact in items
     ]
@@ -121,7 +123,7 @@ def _build_test_kpi_node(
             ),
         }
     )
-    _attach_drill(node, scaled_items)
+    _attach_drill(node, scaled_items, enabled=name in DRILLABLE_KPIS)
     return node
 
 
@@ -157,6 +159,24 @@ def build_test_summary_rows_from_facts(
             )
         )
 
+    revenue_facts = _group_facts(facts, kpi_l1="Выручка")
+    cost_facts = _group_facts(facts, kpi_l1="Себестоимость")
+    for node in nodes:
+        if node["name"] == "Выручка":
+            dashboard_builder._attach_revenue_cost_level_drills(
+                node,
+                revenue_facts,
+                cost_facts,
+                child_path=list(dashboard_builder.REVENUE_PATH),
+            )
+        elif node["name"] == "Себестоимость":
+            dashboard_builder._attach_revenue_cost_level_drills(
+                node,
+                revenue_facts,
+                cost_facts,
+                child_path=list(dashboard_builder.COST_PATH),
+            )
+
     operating_totals = _month_totals_from_nodes(
         nodes,
         ["Выручка", "Себестоимость", "Коммерческие расходы", "Управленческие расходы"],
@@ -190,6 +210,14 @@ def build_test_summary_rows_from_facts(
                 plan_forecast_from_file=plan_forecast_from_file,
             )
         )
+
+    other_pnl_drill = dashboard_builder._build_other_pnl_drill(
+        _group_facts(facts, kpi_l1="Прочие доходы"),
+        _group_facts(facts, kpi_l1="Прочие расходы"),
+    )
+    for node in nodes:
+        if node["name"] in dashboard_builder.OTHER_PNL_KPIS:
+            node["drill"] = other_pnl_drill
 
     pbt_totals = _month_totals_from_nodes(
         nodes,
