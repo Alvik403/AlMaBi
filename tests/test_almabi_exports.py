@@ -136,10 +136,16 @@ def create_realization_workbook(path: Path, *, document: str = "Реализац
     workbook.save(path)
 
 
-def create_cost_workbook(path: Path, *, document: str = "Реализация товаров и услуг 00АМ-000017 от 31.01.2026 21:00:00") -> None:
+def create_cost_workbook(
+    path: Path,
+    *,
+    document: str = "Реализация товаров и услуг 00АМ-000017 от 31.01.2026 21:00:00",
+    quantity: float = 1,
+    header_pad: int = 5,
+) -> None:
     workbook = Workbook()
     sheet = workbook.active
-    _pad_rows(sheet, 5)
+    _pad_rows(sheet, header_pad)
     headers = [
         "Продукция",
         "Счет",
@@ -157,7 +163,7 @@ def create_cost_workbook(path: Path, *, document: str = "Реализация т
             "Сырье и материалы",
             document,
             "Д-001",
-            1,
+            quantity,
             400_000,
         ]
     )
@@ -524,6 +530,60 @@ def test_commercial_expense_article_from_cost_kind(tmp_path: Path):
     create_buh_workbook(path)
     commercial = next(row for row in parse_buh_register(path) if row.account_dt.startswith("90.07"))
     assert commercial.expense_article == "Реклама"
+
+
+def test_parse_cost_finds_header_on_row_4_or_6(tmp_path: Path):
+    from almabi_export_parsers import parse_cost
+
+    for header_pad in (3, 5):
+        path = tmp_path / f"cost-pad-{header_pad}.xlsx"
+        create_cost_workbook(path, header_pad=header_pad, quantity=7)
+        rows = parse_cost(path)
+        assert len(rows) == 1
+        assert rows[0].quantity == 7
+        assert rows[0].amount == 400_000
+
+
+def test_revenue_and_cost_facts_get_quantity_from_cost_file(tmp_path: Path):
+    from almabi_dashboard_builder import load_almabi_dashboard_from_exports
+    from almabi_export_parsers import parse_exports
+    from almabi_pipeline import build_facts
+    from almabi_test_pipeline import build_test_facts
+
+    paths = {
+        "buh": tmp_path / "buh.xlsx",
+        "realization": tmp_path / "realization.xlsx",
+        "cost": tmp_path / "cost.xlsx",
+    }
+    create_buh_workbook(paths["buh"])
+    create_realization_workbook(paths["realization"])
+    create_cost_workbook(paths["cost"], quantity=12.5)
+
+    main_facts = build_facts(parse_exports(paths)).facts
+    revenue = [fact for fact in main_facts if fact.kpi_l1 == "Выручка" and fact.nomenclature == "Лицензия ПО"]
+    cost = [fact for fact in main_facts if fact.kpi_l1 == "Себестоимость" and fact.nomenclature == "Лицензия ПО"]
+    assert revenue
+    assert cost
+    assert revenue[0].quantity == 12.5
+    assert cost[0].quantity == 12.5
+
+    test_facts = build_test_facts(parse_exports(paths)).facts
+    test_revenue = [fact for fact in test_facts if fact.kpi_l1 == "Выручка" and fact.nomenclature == "Лицензия ПО"]
+    test_cost = [fact for fact in test_facts if fact.kpi_l1 == "Себестоимость" and fact.nomenclature == "Лицензия ПО"]
+    assert test_revenue
+    assert test_cost
+    assert test_revenue[0].quantity == 12.5
+    assert test_cost[0].quantity == 12.5
+
+    dashboard = load_almabi_dashboard_from_exports(
+        paths,
+        upload_names={key: path.name for key, path in paths.items()},
+    )
+    rows = {row["name"]: row for row in dashboard["summary_rows"]}
+    drill_lines = {line["name"]: line for line in rows["Выручка"]["drill"]["total"]["lines"]}
+    assert drill_lines["Лицензия ПО"]["quantity"] == 12.5
+    assert drill_lines["Лицензия ПО"]["revenue"]["buh"] == 1_000_000
+    assert drill_lines["Лицензия ПО"]["cost"]["buh"] == 400_000
 
 
 def test_validate_export_types(tmp_path: Path):

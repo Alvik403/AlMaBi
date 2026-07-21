@@ -14,8 +14,8 @@ from almabi_pq_common import (
     resolve_header_index,
 )
 
-PQ_COST_SKIP_ROWS = 5
 PQ_COST_REMOVE_LAST = 38
+PQ_COST_HEADER_SCAN_ROWS = 40
 
 PQ_COST_REMOVE_COLUMN_INDICES = frozenset(
     {
@@ -134,11 +134,14 @@ def _main_section(section: str) -> str:
 
 
 def _prepare_raw_rows(raw_rows: list[tuple[object, ...]]) -> list[tuple[object, ...]]:
-    if len(raw_rows) <= PQ_COST_SKIP_ROWS:
+    if not raw_rows:
         return []
-    rows = list(raw_rows[PQ_COST_SKIP_ROWS :])
+    rows = list(raw_rows)
     if len(rows) > PQ_COST_REMOVE_LAST:
         rows = rows[: -PQ_COST_REMOVE_LAST]
+    header_index = find_header_row_index(rows, matcher=_is_cost_header, scan_limit=PQ_COST_HEADER_SCAN_ROWS)
+    if header_index is not None:
+        return rows[header_index:]
     return rows
 
 
@@ -269,20 +272,27 @@ def _sum_amounts(values: list[object]) -> float | None:
 
 
 def _group_rows(rows: list[dict[str, object]]) -> list[dict[str, object]]:
-    grouped: dict[tuple[object, ...], list[object]] = {}
+    grouped: dict[tuple[object, ...], list[dict[str, object]]] = {}
     for row in rows:
         key = tuple(row.get(column) for column in GROUP_COLUMNS)
-        grouped.setdefault(key, []).append(row.get("Сумма"))
+        grouped.setdefault(key, []).append(row)
 
     result: list[dict[str, object]] = []
-    for key, amounts in sorted(grouped.items(), key=lambda item: item[0]):
+    for key, items in sorted(grouped.items(), key=lambda item: item[0]):
         values = dict(zip(GROUP_COLUMNS, key, strict=True))
         section = normalize_text(values.get("Раздел"))
-        summed = _sum_amounts(amounts)
+        summed = _sum_amounts([row.get("Сумма") for row in items])
+        quantity = 0.0
+        for row in items:
+            raw = row.get("Количество")
+            if raw in (None, ""):
+                continue
+            quantity = max(quantity, float(parse_amount(raw)))
         result.append(
             {
                 **values,
                 "Сумма": summed if summed is not None else 0.0,
+                "Количество": quantity if quantity > 0 else None,
                 "Основной раздел": _main_section(section),
             }
         )

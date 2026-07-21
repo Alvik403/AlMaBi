@@ -194,6 +194,27 @@ def test_build_pq_cost_table_compact_workbook(tmp_path: Path):
     assert rows[0]["Раздел"] == "Материальные затраты"
 
 
+def test_build_pq_cost_table_header_on_row_4(tmp_path: Path):
+    path = tmp_path / "cost-row4.xlsx"
+    create_cost_workbook(path, header_pad=3)
+
+    rows = build_pq_cost_table(path)
+
+    assert len(rows) == 1
+    assert rows[0]["Сумма"] == 400_000
+    assert rows[0]["Раздел"] == "Материальные затраты"
+
+
+def test_build_pq_cost_table_header_on_row_6(tmp_path: Path):
+    path = tmp_path / "cost-row6.xlsx"
+    create_cost_workbook(path, header_pad=5)
+
+    rows = build_pq_cost_table(path)
+
+    assert len(rows) == 1
+    assert rows[0]["Сумма"] == 400_000
+
+
 def test_build_pq_projects_table(tmp_path: Path):
     path = tmp_path / "realization.xlsx"
     create_realization_workbook(path)
