@@ -222,16 +222,35 @@ def read_workbook_rows(path: Path) -> list[tuple[object, ...]]:
         workbook.close()
 
 
+def _is_cost_export_tail_row(row: tuple[object, ...]) -> bool:
+    cells = [normalize_text(value) for value in row]
+    if not any(cells):
+        return True
+    first = next((cell for cell in cells if cell), "")
+    return first.casefold().startswith("итого")
+
+
+def trim_cost_export_tail(rows: list[tuple[object, ...]]) -> list[tuple[object, ...]]:
+    """Убирает с конца выгрузки себестоимости только пустые строки и «Итого»."""
+    end = len(rows)
+    while end > 0 and _is_cost_export_tail_row(rows[end - 1]):
+        end -= 1
+    return rows[:end]
+
+
 def read_sheet_rows(
     path: Path,
     *,
     skip_rows: int = 0,
     remove_last: int = 0,
+    trim_cost_tail: bool = False,
     header_matcher: Callable[[list[str]], bool] | None = None,
     scan_rows: int = 40,
 ) -> tuple[list[str], list[tuple[object, ...]]]:
     raw_rows = read_workbook_rows(path)
-    if remove_last and len(raw_rows) > remove_last:
+    if trim_cost_tail:
+        raw_rows = trim_cost_export_tail(raw_rows)
+    elif remove_last and len(raw_rows) > remove_last:
         raw_rows = raw_rows[:-remove_last]
 
     header_index = 0

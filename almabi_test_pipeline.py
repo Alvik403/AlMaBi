@@ -174,16 +174,13 @@ def _prepare_cost_lookup(
     bool,
 ]:
     if cost_path is not None and cost_path.exists():
-        pq_rows = _build_pq_cost_lookup(
+        by_full, by_doc_section = _build_pq_cost_lookup(
             cost_path=cost_path,
             projects_path=projects_path,
         )
-        if pq_rows[0] or pq_rows[1]:
-            return pq_rows[0], pq_rows[1], True
-    if fallback_rows:
-        by_full, by_doc_section = _build_raw_cost_lookup(fallback_rows)
-        return by_full, by_doc_section, False
-    return {}, {}, False
+        return by_full, by_doc_section, True
+    by_full, by_doc_section = _build_raw_cost_lookup(fallback_rows)
+    return by_full, by_doc_section, False
 
 
 def _lookup_cost_rows_pq(

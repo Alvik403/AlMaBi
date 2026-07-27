@@ -49,7 +49,7 @@ PBT_TAX_BASE_KPIS = frozenset(
 )
 # Уровни как в «Уровни для дашборда»: L1 — KPI, далее вложенность до L5.
 REVENUE_PATH = ["direction", "project_group", "project", "contract"]
-COST_PATH = ["cost_section", "direction", "project_group", "project"]
+COST_PATH = list(REVENUE_PATH)
 # В расшифровке выручки/себестоимости группы раскрываются до предпоследнего уровня пути выручки.
 REVENUE_COST_GROUP_PATH = REVENUE_PATH[:-1]
 
@@ -143,10 +143,9 @@ def _revenue_cost_line_metrics(
 ) -> dict[str, Any]:
     profit_buh = revenue_buh - cost_buh
     profit_nu = revenue_nu - cost_nu
-    qty = quantity or (1.0 if revenue_buh or revenue_nu or cost_buh or cost_nu else 0.0)
     return {
         "name": name,
-        "quantity": qty,
+        "quantity": float(quantity or 0),
         "revenue": {"buh": revenue_buh, "nu": revenue_nu},
         "cost": {"buh": cost_buh, "nu": cost_nu},
         "profit": {"buh": profit_buh, "nu": profit_nu},
@@ -162,7 +161,7 @@ def _aggregate_revenue_cost_metrics(nodes: list[dict[str, Any]], *, name: str) -
     revenue_nu = sum(float(node["revenue"]["nu"]) for node in nodes)
     cost_buh = sum(float(node["cost"]["buh"]) for node in nodes)
     cost_nu = sum(float(node["cost"]["nu"]) for node in nodes)
-    quantity = max((float(node.get("quantity") or 0) for node in nodes), default=0.0)
+    quantity = sum(float(node.get("quantity") or 0) for node in nodes)
     return _revenue_cost_line_metrics(
         name=name,
         revenue_buh=revenue_buh,
@@ -175,20 +174,27 @@ def _aggregate_revenue_cost_metrics(nodes: list[dict[str, Any]], *, name: str) -
 
 def _build_revenue_cost_leaf_lines(rev_subset: list[Fact], cost_subset: list[Fact]) -> list[dict[str, Any]]:
     grouped: dict[str, dict[str, float]] = defaultdict(
-        lambda: {"revenue_buh": 0.0, "revenue_nu": 0.0, "cost_buh": 0.0, "cost_nu": 0.0, "quantity": 0.0}
+        lambda: {
+            "revenue_buh": 0.0,
+            "revenue_nu": 0.0,
+            "cost_buh": 0.0,
+            "cost_nu": 0.0,
+            "rev_quantity": 0.0,
+            "cost_quantity": 0.0,
+        }
     )
     for fact in rev_subset:
         name = (fact.nomenclature or "").strip() or (fact.contract or "").strip() or "Без наименования"
         grouped[name]["revenue_buh"] += float(fact.amount_buh or 0)
         grouped[name]["revenue_nu"] += float(fact.amount_nu or 0)
-        if fact.quantity:
-            grouped[name]["quantity"] = max(grouped[name]["quantity"], float(fact.quantity))
+        grouped[name]["rev_quantity"] += float(fact.quantity or 0)
     for fact in cost_subset:
         name = (fact.nomenclature or "").strip() or (fact.contract or "").strip() or "Без наименования"
         grouped[name]["cost_buh"] += abs(float(fact.amount_buh or 0))
         grouped[name]["cost_nu"] += abs(float(fact.amount_nu or 0))
+        # Количество продаж часто дублируется на нескольких статьях калькуляции — берём max.
         if fact.quantity:
-            grouped[name]["quantity"] = max(grouped[name]["quantity"], float(fact.quantity))
+            grouped[name]["cost_quantity"] = max(grouped[name]["cost_quantity"], float(fact.quantity))
 
     lines = [
         _revenue_cost_line_metrics(
@@ -197,7 +203,7 @@ def _build_revenue_cost_leaf_lines(rev_subset: list[Fact], cost_subset: list[Fac
             revenue_nu=float(values["revenue_nu"]),
             cost_buh=float(values["cost_buh"]),
             cost_nu=float(values["cost_nu"]),
-            quantity=float(values["quantity"]),
+            quantity=max(float(values["rev_quantity"]), float(values["cost_quantity"])),
         )
         for name, values in grouped.items()
     ]

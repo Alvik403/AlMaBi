@@ -1296,7 +1296,7 @@
         expandable: !!node.expandable,
         children: [],
       };
-      current.quantity = Math.max(Number(current.quantity || 0), Number(node.quantity || 0));
+      current.quantity = Number(current.quantity || 0) + Number(node.quantity || 0);
       ["revenue", "cost"].forEach((key) => {
         current[key].buh += Number(node[key]?.buh || 0);
         current[key].nu += Number(node[key]?.nu || 0);
@@ -1367,7 +1367,7 @@
             profit: { buh: 0, nu: 0 },
             margin: { buh: 0, nu: 0 },
           };
-          current.quantity = Math.max(Number(current.quantity || 0), Number(line.quantity || 0));
+          current.quantity = Number(current.quantity || 0) + Number(line.quantity || 0);
           ["revenue", "cost"].forEach((key) => {
             current[key].buh += Number(line[key]?.buh || 0);
             current[key].nu += Number(line[key]?.nu || 0);

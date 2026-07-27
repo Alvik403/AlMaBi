@@ -110,8 +110,62 @@ def _build_cost_lookup(cost_rows: list[CostRow]) -> dict[tuple[str, str], CostRo
         if not nomenclature:
             continue
         for key in document_match_keys(row.document):
-            lookup.setdefault((key, nomenclature), row)
+            pair = (key, nomenclature)
+            current = lookup.get(pair)
+            if current is None or float(row.quantity or 0) > float(current.quantity or 0):
+                lookup[pair] = row
     return lookup
+
+
+def _build_cost_quantity_lookup(cost_rows: list[CostRow]) -> dict[tuple[str, str], float]:
+    """Макс. «Количество продаж» по ключу (document_key, nomenclature)."""
+    lookup: dict[tuple[str, str], float] = {}
+    for row in cost_rows:
+        nomenclature = row.nomenclature.casefold()
+        if not nomenclature:
+            continue
+        qty = float(row.quantity or 0)
+        if qty <= 0:
+            continue
+        for key in document_match_keys(row.document):
+            pair = (key, nomenclature)
+            lookup[pair] = max(lookup.get(pair, 0.0), qty)
+    return lookup
+
+
+def _lookup_cost_quantity(
+    document: str,
+    nomenclature: str,
+    qty_lookup: dict[tuple[str, str], float],
+) -> float:
+    name = (nomenclature or "").casefold()
+    if not name or not document:
+        return 0.0
+    best = 0.0
+    for key in document_match_keys(document):
+        best = max(best, float(qty_lookup.get((key, name), 0.0)))
+    return best
+
+
+def resolve_quantity_from_cost(
+    *,
+    document: str,
+    nomenclature: str,
+    cost_match: CostRow | None = None,
+    qty_lookup: dict[tuple[str, str], float] | None = None,
+    cost_rows: list[CostRow] | None = None,
+) -> float:
+    """Количество продаж из cost: сначала из join-строки, иначе lookup по документу+номенклатуре."""
+    if cost_match is not None:
+        matched = float(cost_match.quantity or 0)
+        if matched > 0:
+            return matched
+    lookup = qty_lookup
+    if lookup is None and cost_rows is not None:
+        lookup = _build_cost_quantity_lookup(cost_rows)
+    if not lookup:
+        return 0.0
+    return _lookup_cost_quantity(document, nomenclature, lookup)
 
 
 def _lookup_cost_row(
@@ -216,6 +270,7 @@ def _append_file_fallback_facts(
     include_revenue: bool,
     include_cost: bool,
 ) -> None:
+    cost_qty_lookup = _build_cost_quantity_lookup(exports.cost)
     if include_revenue and exports.realization:
         for row in exports.realization:
             project = lookup_project(
@@ -237,6 +292,11 @@ def _append_file_fallback_facts(
                 nomenclature=row.nomenclature,
                 tax_type=doc_tax.get(row.document, "Общие условия налогообложения"),
                 contractor=_lookup_contractor(row.document, doc_contractor),
+                quantity=resolve_quantity_from_cost(
+                    document=row.document,
+                    nomenclature=row.nomenclature,
+                    qty_lookup=cost_qty_lookup,
+                ),
             )
 
     if include_cost and exports.cost:
@@ -282,6 +342,7 @@ def build_facts(exports: ParsedExports) -> PipelineResult:
 
     project_by_document, project_key_index, project_meta_by_key = build_project_index(exports)
     cost_lookup = _build_cost_lookup(exports.cost)
+    cost_qty_lookup = _build_cost_quantity_lookup(exports.cost)
     realization_index = build_realization_index(exports.realization, doc_contract)
 
     if exports.realization:
@@ -358,13 +419,19 @@ def build_facts(exports: ParsedExports) -> PipelineResult:
             contract = cost_match.contract or contract
         contractor = row.contractor or _lookup_contractor(row.document, doc_contractor)
 
-        quantity = 0.0
-        if cost_match is not None:
-            quantity = float(cost_match.quantity or 0)
-        elif section == "Выручка" and exports.cost and nomenclature:
-            qty_match = _lookup_cost_row(row.document, nomenclature, cost_lookup)
-            if qty_match is not None:
-                quantity = float(qty_match.quantity or 0)
+        quantity = resolve_quantity_from_cost(
+            document=row.document,
+            nomenclature=nomenclature,
+            cost_match=cost_match,
+            qty_lookup=cost_qty_lookup,
+        )
+        if quantity <= 0 and cost_match is not None and cost_match.document:
+            quantity = resolve_quantity_from_cost(
+                document=cost_match.document,
+                nomenclature=nomenclature or cost_match.nomenclature,
+                cost_match=cost_match,
+                qty_lookup=cost_qty_lookup,
+            )
 
         _append_fact(
             facts,

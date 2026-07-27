@@ -53,7 +53,7 @@ def test_test_dashboard_grouping(tmp_path: Path):
     assert "Д-001" in _child_names(revenue_project)
 
     cost = rows["Себестоимость"]
-    assert cost["children"][0]["name"] == "Материальные затраты"
+    assert cost["children"][0]["name"] == "Услуги"
     assert _max_level(cost) == 5
 
     commercial = rows["Коммерческие расходы"]

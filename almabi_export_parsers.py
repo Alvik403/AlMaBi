@@ -345,7 +345,7 @@ def _map_cost_headers(headers: list[str]) -> dict[str, int]:
 
 
 def parse_cost(path: Path) -> list[CostRow]:
-    headers, rows = read_sheet_rows(path, skip_rows=5, remove_last=38, header_matcher=_is_cost_header)
+    headers, rows = read_sheet_rows(path, skip_rows=5, trim_cost_tail=True, header_matcher=_is_cost_header)
     column_map = _map_cost_headers(headers)
     parsed: list[CostRow] = []
 

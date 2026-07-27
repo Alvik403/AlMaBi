@@ -52,13 +52,7 @@ def test_levels_spec_matches_dashboard_structure():
 
     cost = rows["Себестоимость"]
     assert _max_level(cost) == 5
-    assert set(_child_names(cost)) == {
-        "Материальные затраты",
-        "ФОТ",
-        "Аренда (прямые)",
-        "Амортизация",
-        "Прочие производственные расходы",
-    }
+    assert _child_names(cost) == ["Направление"]
 
     assert _child_names(rows["Коммерческие расходы"]) == ["Льготные проекты", "Нельготные проекты"]
     assert _child_names(rows["Прочие доходы"]) == ["Льготные проекты", "Нельготные проекты"]

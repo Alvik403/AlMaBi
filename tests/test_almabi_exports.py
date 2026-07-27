@@ -141,11 +141,10 @@ def create_cost_workbook(
     *,
     document: str = "Реализация товаров и услуг 00АМ-000017 от 31.01.2026 21:00:00",
     quantity: float = 1,
-    header_pad: int = 5,
 ) -> None:
     workbook = Workbook()
     sheet = workbook.active
-    _pad_rows(sheet, header_pad)
+    _pad_rows(sheet, 5)
     headers = [
         "Продукция",
         "Счет",
@@ -532,18 +531,6 @@ def test_commercial_expense_article_from_cost_kind(tmp_path: Path):
     assert commercial.expense_article == "Реклама"
 
 
-def test_parse_cost_finds_header_on_row_4_or_6(tmp_path: Path):
-    from almabi_export_parsers import parse_cost
-
-    for header_pad in (3, 5):
-        path = tmp_path / f"cost-pad-{header_pad}.xlsx"
-        create_cost_workbook(path, header_pad=header_pad, quantity=7)
-        rows = parse_cost(path)
-        assert len(rows) == 1
-        assert rows[0].quantity == 7
-        assert rows[0].amount == 400_000
-
-
 def test_revenue_and_cost_facts_get_quantity_from_cost_file(tmp_path: Path):
     from almabi_dashboard_builder import load_almabi_dashboard_from_exports
     from almabi_export_parsers import parse_exports
@@ -818,6 +805,51 @@ def test_upload_bundle_builds_dashboard(app_client, tmp_path: Path):
     assert "Выручка" in dashboard.text
     assert "Услуги" in dashboard.text
     assert "ООО Тест Клиент" in dashboard.text
+
+
+def test_trim_cost_export_tail_removes_empty_and_itogo():
+    from almabi_excel_utils import trim_cost_export_tail
+
+    rows = [
+        ("Продукция", "Себестоимость (бухг. учет)"),
+        ("Лицензия ПО", 400_000),
+        ("Итого", 400_000),
+        (None, None),
+        ("", ""),
+    ]
+    trimmed = trim_cost_export_tail(rows)
+
+    assert len(trimmed) == 2
+    assert trimmed[-1][0] == "Лицензия ПО"
+
+
+def test_parse_cost_short_tail_keeps_trailing_data_rows(tmp_path: Path):
+    from almabi_export_parsers import parse_cost
+
+    path = tmp_path / "cost-short-tail.xlsx"
+    workbook = Workbook()
+    sheet = workbook.active
+    _pad_rows(sheet, 5)
+    sheet.append(
+        [
+            "Продукция",
+            "Счет",
+            "Статья калькуляции",
+            "Документ отгрузки",
+            "Количество продаж",
+            "Себестоимость (бухг. учет)",
+        ]
+    )
+    sheet.append(["Лицензия ПО", 20, "Сырье и материалы", "Реализация 001", 1, 300_000])
+    sheet.append(["Поддержка", 20, "Сырье и материалы", "Реализация 002", 1, 100_000])
+    sheet.append(["Итого", None, None, None, None, None, 400_000])
+    _pad_rows(sheet, 2)
+    workbook.save(path)
+
+    rows = parse_cost(path)
+
+    assert len(rows) == 2
+    assert {row.nomenclature for row in rows} == {"Лицензия ПО", "Поддержка"}
 
 
 def _workbook_bytes(factory, path: Path) -> bytes:

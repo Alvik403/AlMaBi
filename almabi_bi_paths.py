@@ -39,10 +39,10 @@ def fact_bi_path(fact: Fact) -> str:
         return " → ".join(
             [
                 fact.kpi_l1,
-                fact.cost_section or "Общепроизводственные затраты",
                 fact.direction or "Без направления",
                 fact.project_group or "Без группы",
                 fact.project or "Без проекта",
+                fact.contract or "Без договора",
             ]
         )
 

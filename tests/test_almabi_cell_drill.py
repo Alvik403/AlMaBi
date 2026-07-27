@@ -307,10 +307,49 @@ def test_revenue_cost_level_drills_follow_hierarchy():
     assert {line["name"] for line in project["drill"]["total"]["lines"]} == {"Товар 1", "Товар 2"}
 
     cost = by_name["Себестоимость"]
-    cost_section = next(child for child in cost["children"] if child["name"] == "Товары")
-    assert cost_section["drill"]["type"] == "revenue_cost"
-    assert cost_section["drill"]["total"]["path"] == ["direction", "project_group", "project"]
-    assert {line["name"] for line in cost_section["drill"]["total"]["lines"]} == {"Товар 1"}
+    resale_cost = next(child for child in cost["children"] if child["name"] == "Перепродажа")
+    assert resale_cost["drill"]["type"] == "revenue_cost"
+    assert resale_cost["drill"]["total"]["path"] == ["project_group", "project"]
+    lines_by_name = {line["name"]: line for line in resale_cost["drill"]["total"]["lines"]}
+    assert set(lines_by_name) == {"Товар 1", "Товар 2"}
+    assert lines_by_name["Товар 1"]["cost"]["buh"] == 400
+    assert lines_by_name["Товар 2"]["cost"]["buh"] == 0
+
+
+def test_revenue_cost_quantity_keeps_real_values_without_fake_ones():
+    drill = _build_revenue_cost_drill(
+        [
+            _fact(
+                kpi_l1="Выручка",
+                nomenclature="Товар",
+                amount_buh=10_000,
+                amount_nu=10_000,
+                quantity=12.5,
+            ),
+            _fact(
+                kpi_l1="Выручка",
+                nomenclature="Без количества",
+                amount_buh=1_000,
+                amount_nu=1_000,
+                quantity=0,
+            ),
+        ],
+        [
+            _fact(
+                kpi_l1="Себестоимость",
+                nomenclature="Товар",
+                amount_buh=-4_000,
+                amount_nu=-4_000,
+                quantity=12.5,
+            ),
+        ],
+    )
+    lines = {line["name"]: line for line in drill["total"]["lines"]}
+    assert lines["Товар"]["quantity"] == 12.5
+    assert lines["Товар"]["revenue"]["buh"] == 10_000
+    assert lines["Товар"]["cost"]["buh"] == 4_000
+    assert lines["Без количества"]["quantity"] == 0
+    assert lines["Без количества"]["revenue"]["buh"] == 1_000
 
 
 def test_build_other_pnl_drill_is_shared_for_income_and_expense():
@@ -352,19 +391,19 @@ def test_group_tree_sorts_children_by_abs_amount_desc():
         [
             _fact(
                 kpi_l1="Себестоимость",
-                cost_section="ФОТ",
+                direction="ФОТ",
                 amount_buh=-80,
                 amount_nu=-80,
             ),
             _fact(
                 kpi_l1="Себестоимость",
-                cost_section="Материальные затраты",
+                direction="Материальные затраты",
                 amount_buh=-500,
                 amount_nu=-500,
             ),
             _fact(
                 kpi_l1="Себестоимость",
-                cost_section="Аренда (прямые)",
+                direction="Аренда (прямые)",
                 amount_buh=-120,
                 amount_nu=-120,
             ),

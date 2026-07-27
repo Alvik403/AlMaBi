@@ -22,7 +22,7 @@ from almabi_dashboard_builder import (
 from almabi_pipeline import Fact
 
 TEST_REVENUE_PATH = ["direction", "project_group", "project", "contract"]
-TEST_COST_PATH = ["cost_section", "direction", "project_group", "project"]
+TEST_COST_PATH = list(TEST_REVENUE_PATH)
 TEST_BENEFIT_ONLY = {
     "Коммерческие расходы",
     "Управленческие расходы",
