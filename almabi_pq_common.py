@@ -139,8 +139,6 @@ def lookup_cost_pq_rows(
             return same_nom
     return []
 
-    return tuple(value for index, value in enumerate(row) if index not in indices)
-
 
 def resolve_header_index(headers: list[str], candidates: tuple[str, ...]) -> int | None:
     """Сначала приоритет alias, затем точное совпадение header_matches (не «% от себестоимости»)."""

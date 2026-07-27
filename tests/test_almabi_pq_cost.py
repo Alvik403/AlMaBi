@@ -12,7 +12,7 @@ from almabi_pq_cost import (
     table_summary,
 )
 from almabi_pq_projects import PQ_PROJECTS_SECTION, build_pq_projects_table
-from tests.test_almabi_exports import create_cost_workbook, create_realization_workbook
+from tests.test_almabi_exports import create_buh_workbook, create_cost_workbook, create_realization_workbook
 
 
 def _pad_rows(sheet, count: int) -> None:
@@ -213,6 +213,84 @@ def test_build_pq_cost_table_header_on_row_6(tmp_path: Path):
 
     assert len(rows) == 1
     assert rows[0]["Сумма"] == 400_000
+
+
+def test_pq_cost_same_totals_for_header_row_4_and_6(tmp_path: Path):
+    document = "Реализация товаров и услуг 00АМ-000017 от 31.01.2026 21:00:00"
+    summaries: list[float] = []
+
+    for header_pad in (3, 5):
+        path = tmp_path / f"cost-pad-{header_pad}.xlsx"
+        create_cost_workbook(path, header_pad=header_pad, document=document)
+        rows = build_pq_cost_table(path)
+        summaries.append(sum(float(row.get("Сумма") or 0) for row in rows if row.get("Основной раздел") == "Расходы"))
+
+    assert summaries[0] == summaries[1] == 400_000
+
+
+def test_pq_cost_compact_footer_does_not_trim_data_rows(tmp_path: Path):
+    """Компактная выгрузка: мало строк в хвосте — не отрезаем реальные данные блоком 38."""
+    from openpyxl import Workbook
+
+    path = tmp_path / "compact-cost.xlsx"
+    document = "Реализация 001 от 31.01.2026"
+    workbook = Workbook()
+    sheet = workbook.active
+    _pad_rows(sheet, 3)
+    sheet.append(
+        [
+            "Продукция",
+            "Счет",
+            "Статья калькуляции",
+            "Документ отгрузки",
+            "Количество продаж",
+            "Себестоимость (бухг. учет)",
+        ]
+    )
+    for index in range(3):
+        sheet.append(
+            [
+                f"Товар {index + 1}",
+                "20",
+                "Сырье и материалы",
+                document,
+                1,
+                100_000,
+            ]
+        )
+    _pad_rows(sheet, 2)
+    workbook.save(path)
+
+    rows = build_pq_cost_table(path)
+    expense_rows = [row for row in rows if row.get("Основной раздел") == "Расходы"]
+
+    assert len(expense_rows) == 3
+    assert sum(float(row.get("Сумма") or 0) for row in expense_rows) == 300_000
+
+
+def test_test_pipeline_cost_totals_match_for_header_row_4_and_6(tmp_path: Path):
+    from almabi_export_parsers import parse_exports
+    from almabi_test_pipeline import build_test_facts
+
+    buh_path = tmp_path / "buh.xlsx"
+    realization_path = tmp_path / "realization.xlsx"
+    create_buh_workbook(buh_path)
+    create_realization_workbook(realization_path)
+
+    totals: list[float] = []
+    for header_pad in (3, 5):
+        cost_path = tmp_path / f"cost-{header_pad}.xlsx"
+        create_cost_workbook(cost_path, header_pad=header_pad)
+        result = build_test_facts(
+            parse_exports({"buh": buh_path, "realization": realization_path, "cost": cost_path}),
+            cost_path=cost_path,
+            projects_path=realization_path,
+        )
+        totals.append(
+            sum(fact.amount_buh for fact in result.facts if fact.kpi_l1 == "Себестоимость")
+        )
+
+    assert totals[0] == totals[1] == -400_000
 
 
 def test_build_pq_projects_table(tmp_path: Path):

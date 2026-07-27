@@ -133,16 +133,39 @@ def _main_section(section: str) -> str:
     return "Расходы"
 
 
+def _trim_cost_footer(rows: list[tuple[object, ...]]) -> list[tuple[object, ...]]:
+    """Убираем хвост 1С: пустые строки, «Итого», блок padding (как PQ RemoveLastN)."""
+    trimmed = list(rows)
+    while trimmed:
+        cells = [normalize_text(value) for value in trimmed[-1]]
+        if not any(cells):
+            trimmed.pop()
+            continue
+        if cells[0].casefold().startswith("итого"):
+            trimmed.pop()
+            continue
+        break
+    if len(trimmed) > PQ_COST_REMOVE_LAST + 1:
+        tail = trimmed[-PQ_COST_REMOVE_LAST:]
+        if all(not any(normalize_text(value) for value in row) for row in tail):
+            trimmed = trimmed[: -PQ_COST_REMOVE_LAST]
+    return trimmed
+
+
 def _prepare_raw_rows(raw_rows: list[tuple[object, ...]]) -> list[tuple[object, ...]]:
     if not raw_rows:
         return []
-    rows = list(raw_rows)
-    if len(rows) > PQ_COST_REMOVE_LAST:
-        rows = rows[: -PQ_COST_REMOVE_LAST]
-    header_index = find_header_row_index(rows, matcher=_is_cost_header, scan_limit=PQ_COST_HEADER_SCAN_ROWS)
+    header_index = find_header_row_index(
+        raw_rows,
+        matcher=_is_cost_header,
+        scan_limit=PQ_COST_HEADER_SCAN_ROWS,
+    )
     if header_index is not None:
-        return rows[header_index:]
-    return rows
+        rows = list(raw_rows[header_index:])
+    else:
+        # Legacy PQ: первые 5 строк — служебный заголовок отчёта.
+        rows = list(raw_rows[5:] if len(raw_rows) > 5 else raw_rows)
+    return _trim_cost_footer(rows)
 
 
 def _parse_cost_rows(rows: list[tuple[object, ...]]) -> list[_CostPreparedRow] | None:

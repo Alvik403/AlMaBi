@@ -18,9 +18,11 @@ from almabi_pipeline import (
     _amount_buh_for_section,
     _amount_nu_for_section,
     _append_fact,
+    _build_cost_quantity_lookup,
     _lookup_contract,
     _lookup_contractor,
     _merge_doc_tax,
+    resolve_quantity_from_cost,
 )
 from almabi_pipeline_audit import (
     PipelineAuditLog,
@@ -115,7 +117,7 @@ def _cost_row_from_pq_dict(item: dict[str, object]) -> CostRow:
         nomenclature=normalize_text(item.get("Номенклатура")),
         account=account,
         calc_article="",
-        quantity=0,
+        quantity=float(item.get("Количество") or 0),
         amount=float(item.get("Сумма") or 0),
         month=None,
         cost_section=section,
@@ -172,13 +174,16 @@ def _prepare_cost_lookup(
     bool,
 ]:
     if cost_path is not None and cost_path.exists():
-        by_full, by_doc_section = _build_pq_cost_lookup(
+        pq_rows = _build_pq_cost_lookup(
             cost_path=cost_path,
             projects_path=projects_path,
         )
-        return by_full, by_doc_section, True
-    by_full, by_doc_section = _build_raw_cost_lookup(fallback_rows)
-    return by_full, by_doc_section, False
+        if pq_rows[0] or pq_rows[1]:
+            return pq_rows[0], pq_rows[1], True
+    if fallback_rows:
+        by_full, by_doc_section = _build_raw_cost_lookup(fallback_rows)
+        return by_full, by_doc_section, False
+    return {}, {}, False
 
 
 def _lookup_cost_rows_pq(
@@ -237,6 +242,7 @@ def build_test_facts(
         projects_path=projects_path,
         fallback_rows=exports.cost,
     )
+    cost_qty_lookup = _build_cost_quantity_lookup(exports.cost)
     project_by_document, project_key_to_document, project_meta_by_key = build_project_index(exports)
     realization_index = build_realization_index(exports.realization, doc_contract)
 
@@ -354,6 +360,31 @@ def build_test_facts(
                 nomenclature=nomenclature,
             )
 
+            quantity = resolve_quantity_from_cost(
+                document=lookup_document,
+                nomenclature=nomenclature,
+                cost_match=cost_match,
+                qty_lookup=cost_qty_lookup,
+            )
+            # Для выручки cost join идёт по «Доходы», а qty лежит в строках cost с «Расходы».
+            if quantity <= 0 and section in INCOME_SECTIONS and exports.cost:
+                qty_matches = _lookup_cost_rows_pq(
+                    lookup_document,
+                    "Расходы",
+                    nomenclature or row.nomenclature_kt,
+                    by_full_key=cost_by_full,
+                    by_doc_section=cost_by_doc_section,
+                    pq_cost_lookup=pq_cost_lookup,
+                )
+                if qty_matches:
+                    quantity = max(float(item.quantity or 0) for item in qty_matches)
+                if quantity <= 0:
+                    quantity = resolve_quantity_from_cost(
+                        document=row.document,
+                        nomenclature=nomenclature or row.nomenclature_kt,
+                        qty_lookup=cost_qty_lookup,
+                    )
+
             _append_fact(
                 facts,
                 kpi_l1=section,
@@ -372,7 +403,7 @@ def build_test_facts(
                 ),
                 tax_type=row.tax_type,
                 contractor=contractor,
-                quantity=float(getattr(cost_match, "quantity", 0) or 0) if cost_match else 0.0,
+                quantity=quantity,
             )
             audit_log.record_fact(facts[-1])
 
@@ -396,6 +427,11 @@ def build_test_facts(
                 nomenclature=row.nomenclature,
                 tax_type=doc_tax.get(row.document, "Общие условия налогообложения"),
                 contractor=_lookup_contractor(row.document, doc_contractor),
+                quantity=resolve_quantity_from_cost(
+                    document=row.document,
+                    nomenclature=row.nomenclature,
+                    qty_lookup=cost_qty_lookup,
+                ),
             )
             audit_log.record_fact(facts[-1])
             audit_log.log_fallback_line(
