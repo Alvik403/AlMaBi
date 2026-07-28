@@ -52,9 +52,10 @@ CALCULATED_BENEFIT_ALWAYS_NU_KPIS = frozenset({"Выручка"})
 BENEFIT_BUCKET_NAMES = ("Льготные проекты", "Нельготные проекты")
 # Уровни как в «Уровни для дашборда»: L1 — KPI, далее вложенность до L5.
 REVENUE_PATH = ["direction", "project_group", "project", "contract"]
-COST_PATH = list(REVENUE_PATH)
-# В расшифровке выручки/себестоимости группы раскрываются до предпоследнего уровня пути выручки.
+COST_PATH = ["cost_section", "direction", "project_group", "project"]
+# В расшифровке выручки группы раскрываются до предпоследнего уровня пути.
 REVENUE_COST_GROUP_PATH = REVENUE_PATH[:-1]
+COST_GROUP_PATH = COST_PATH[:-1]
 
 COST_STRUCTURE_SECTIONS = (
     "Амортизация",
@@ -342,9 +343,14 @@ def _scope_revenue_cost_facts(
     return rev, cost
 
 
-def _remaining_revenue_cost_group_path(filters: list[tuple[str, str]]) -> list[str]:
+def _remaining_revenue_cost_group_path(
+    filters: list[tuple[str, str]],
+    *,
+    group_path_keys: list[str] | None = None,
+) -> list[str]:
     fixed = {key for key, _ in filters}
-    return [key for key in REVENUE_COST_GROUP_PATH if key not in fixed]
+    keys = group_path_keys if group_path_keys is not None else REVENUE_COST_GROUP_PATH
+    return [key for key in keys if key not in fixed]
 
 
 def _attach_revenue_cost_level_drills(
@@ -353,6 +359,7 @@ def _attach_revenue_cost_level_drills(
     cost_facts: list[Fact],
     *,
     child_path: list[str],
+    group_path_keys: list[str] | None = None,
     filters: list[tuple[str, str]] | None = None,
 ) -> None:
     """Вешает расшифровку на узел и всех потомков в рамках текущего среза."""
@@ -361,7 +368,10 @@ def _attach_revenue_cost_level_drills(
     node["drill"] = _build_revenue_cost_drill(
         scoped_rev,
         scoped_cost,
-        group_path=_remaining_revenue_cost_group_path(active_filters),
+        group_path=_remaining_revenue_cost_group_path(
+            active_filters,
+            group_path_keys=group_path_keys,
+        ),
     )
     if not child_path:
         return
@@ -372,6 +382,7 @@ def _attach_revenue_cost_level_drills(
             revenue_facts,
             cost_facts,
             child_path=child_path[1:],
+            group_path_keys=group_path_keys,
             filters=[*active_filters, (key, child["name"])],
         )
 
@@ -1153,6 +1164,7 @@ def _build_summary_rows(
                 revenue_facts,
                 cost_facts,
                 child_path=list(COST_PATH),
+                group_path_keys=list(COST_GROUP_PATH),
             )
 
     operating_component_names = [

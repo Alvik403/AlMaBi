@@ -307,13 +307,15 @@ def test_revenue_cost_level_drills_follow_hierarchy():
     assert {line["name"] for line in project["drill"]["total"]["lines"]} == {"Товар 1", "Товар 2"}
 
     cost = by_name["Себестоимость"]
-    resale_cost = next(child for child in cost["children"] if child["name"] == "Перепродажа")
-    assert resale_cost["drill"]["type"] == "revenue_cost"
-    assert resale_cost["drill"]["total"]["path"] == ["project_group", "project"]
+    assert cost["drill"]["total"]["path"] == ["cost_section", "direction", "project_group"]
+    section = next(child for child in cost["children"] if child["name"] == "Товары")
+    assert section["drill"]["type"] == "revenue_cost"
+    assert section["drill"]["total"]["path"] == ["direction", "project_group"]
+    resale_cost = next(child for child in section["children"] if child["name"] == "Перепродажа")
+    assert resale_cost["drill"]["total"]["path"] == ["project_group"]
     lines_by_name = {line["name"]: line for line in resale_cost["drill"]["total"]["lines"]}
-    assert set(lines_by_name) == {"Товар 1", "Товар 2"}
+    assert set(lines_by_name) == {"Товар 1"}
     assert lines_by_name["Товар 1"]["cost"]["buh"] == 400
-    assert lines_by_name["Товар 2"]["cost"]["buh"] == 0
 
 
 def test_revenue_cost_quantity_keeps_real_values_without_fake_ones():
@@ -391,19 +393,19 @@ def test_group_tree_sorts_children_by_abs_amount_desc():
         [
             _fact(
                 kpi_l1="Себестоимость",
-                direction="ФОТ",
+                cost_section="ФОТ",
                 amount_buh=-80,
                 amount_nu=-80,
             ),
             _fact(
                 kpi_l1="Себестоимость",
-                direction="Материальные затраты",
+                cost_section="Материальные затраты",
                 amount_buh=-500,
                 amount_nu=-500,
             ),
             _fact(
                 kpi_l1="Себестоимость",
-                direction="Аренда (прямые)",
+                cost_section="Аренда (прямые)",
                 amount_buh=-120,
                 amount_nu=-120,
             ),

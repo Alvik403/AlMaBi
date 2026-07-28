@@ -22,7 +22,7 @@ from almabi_dashboard_builder import (
 from almabi_pipeline import Fact
 
 TEST_REVENUE_PATH = ["direction", "project_group", "project", "contract"]
-TEST_COST_PATH = list(TEST_REVENUE_PATH)
+TEST_COST_PATH = ["cost_section", "direction", "project_group", "project"]
 TEST_BENEFIT_ONLY = {
     "Коммерческие расходы",
     "Управленческие расходы",
@@ -175,6 +175,7 @@ def build_test_summary_rows_from_facts(
                 revenue_facts,
                 cost_facts,
                 child_path=list(dashboard_builder.COST_PATH),
+                group_path_keys=list(dashboard_builder.COST_GROUP_PATH),
             )
 
     operating_component_names = [
