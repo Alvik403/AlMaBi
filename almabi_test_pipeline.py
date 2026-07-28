@@ -14,14 +14,26 @@ from almabi_export_parsers import (
 )
 from almabi_pipeline import (
     Fact,
+    OTHER_PNL_SECTIONS,
     PipelineResult,
     _amount_buh_for_section,
     _amount_nu_for_section,
     _append_fact,
+    _append_other_pnl_fact,
     _build_cost_quantity_lookup,
+    _build_duplicate_cost_buh_keys,
+    _build_other_pnl_nu_storno_groups,
+    _build_other_pnl_section_has_nu,
+    _build_other_pnl_storno_groups,
+    _is_duplicate_cost_buh_key,
     _lookup_contract,
     _lookup_contractor,
     _merge_doc_tax,
+    _other_pnl_nu_mismatch_documents,
+    _resolve_fact_tax_type,
+    _resolve_other_pnl_nu_tax_type,
+    _resolve_row_tax_type,
+    _skip_other_expense_inventory_non_deductible,
     resolve_quantity_from_cost,
 )
 from almabi_pipeline_audit import (
@@ -212,6 +224,55 @@ def _pq_cost_section(cost_match: CostRow | None) -> str:
     return classify_cost_section_pq(cost_match.calc_article, cost_match.account)
 
 
+def _amount_buh_for_test_section(
+    section: str,
+    row,
+    cost_match: CostRow | None,
+    *,
+    duplicate_cost_key: bool,
+) -> float:
+    """Сумма БУ для «Тест BI»: buh-регистр при duplicate key, иначе как PQ."""
+    if section != "Себестоимость":
+        return _amount_buh_for_section(section, row, cost_match)
+
+    if duplicate_cost_key:
+        return -row.amount_buh if row.amount_buh else 0.0
+
+    if cost_match is not None:
+        cost_section = _pq_cost_section(cost_match)
+        if cost_section and cost_match.amount:
+            return -cost_match.amount
+    return -row.amount_buh if row.amount_buh else 0.0
+
+
+def _cost_iterations_for_buh_row(
+    section: str,
+    cost_matches: list[CostRow],
+    *,
+    duplicate_cost_key: bool,
+) -> list[CostRow | None]:
+    if section != "Себестоимость":
+        return [cost_matches[0] if cost_matches else None]
+    if duplicate_cost_key:
+        return [cost_matches[0] if cost_matches else None]
+    return cost_matches or [None]
+
+
+def _buh_data_quality_warnings(exports: ParsedExports) -> list[str]:
+    """Предупреждения о строках бухрегистра с аномально крупными суммами."""
+    warnings: list[str] = []
+    threshold = 1_000_000_000
+    for row in exports.buh:
+        if not row.month or row.amount_buh < threshold:
+            continue
+        section = classify_buh_section(row.account_dt, row.account_kt) or "?"
+        warnings.append(
+            f"{row.month}: {section} — документ «{row.document}», сумма {row.amount_buh:,.2f}. "
+            "Проверьте, что выгрузка не дублирует период (например, накопительным итогом)."
+        )
+    return warnings
+
+
 def build_test_facts(
     exports: ParsedExports,
     *,
@@ -240,6 +301,11 @@ def build_test_facts(
         fallback_rows=exports.cost,
     )
     cost_qty_lookup = _build_cost_quantity_lookup(exports.cost)
+    duplicate_cost_buh_keys = _build_duplicate_cost_buh_keys(exports)
+    other_pnl_storno_groups = _build_other_pnl_storno_groups(exports)
+    other_pnl_nu_storno_groups = _build_other_pnl_nu_storno_groups(exports)
+    other_pnl_nu_mismatch_docs = _other_pnl_nu_mismatch_documents(exports)
+    other_pnl_section_has_nu = _build_other_pnl_section_has_nu(exports)
     project_by_document, project_key_to_document, project_meta_by_key = build_project_index(exports)
     realization_index = build_realization_index(exports.realization, doc_contract)
 
@@ -263,6 +329,8 @@ def build_test_facts(
         section = classify_buh_section(row.account_dt, row.account_kt)
         if not section or not row.month:
             continue
+        if _skip_other_expense_inventory_non_deductible(row, section):
+            continue
 
         main_section = classify_main_section(section)
         cost_matches = (
@@ -277,10 +345,12 @@ def build_test_facts(
             if exports.cost and main_section
             else []
         )
-        if section == "Себестоимость":
-            cost_iterations: list[CostRow | None] = cost_matches or [None]
-        else:
-            cost_iterations = [cost_matches[0] if cost_matches else None]
+        duplicate_cost_key = _is_duplicate_cost_buh_key(duplicate_cost_buh_keys, row)
+        cost_iterations = _cost_iterations_for_buh_row(
+            section,
+            cost_matches,
+            duplicate_cost_key=duplicate_cost_key,
+        )
 
         for cost_match in cost_iterations:
             rev_match = None
@@ -311,7 +381,12 @@ def build_test_facts(
                         prefer_cost_chain=bool(cost_match),
                     )
 
-            amount_buh = _amount_buh_for_section(section, row, cost_match)
+            amount_buh = _amount_buh_for_test_section(
+                section,
+                row,
+                cost_match,
+                duplicate_cost_key=duplicate_cost_key,
+            )
             amount_nu = _amount_nu_for_section(section, row.amount_nu_dt, row.amount_nu_kt)
             lookup_document = (
                 cost_match.document
@@ -382,27 +457,57 @@ def build_test_facts(
                         qty_lookup=cost_qty_lookup,
                     )
 
-            _append_fact(
-                facts,
-                kpi_l1=section,
-                month=row.month,
-                amount_buh=amount_buh,
-                amount_nu=amount_nu,
-                direction=direction,
-                project_group=project_group,
-                project=project,
-                contract=contract,
-                nomenclature=nomenclature,
-                cost_section=_pq_cost_section(cost_match),
-                expense_article=(
+            resolved_tax_type = _resolve_row_tax_type(
+                section,
+                row,
+                doc_tax,
+                other_pnl_storno_groups=other_pnl_storno_groups,
+                other_pnl_nu_mismatch_docs=other_pnl_nu_mismatch_docs,
+                other_pnl_section_has_nu=other_pnl_section_has_nu,
+            )
+            fact_kwargs = {
+                "kpi_l1": section,
+                "month": row.month,
+                "amount_buh": amount_buh,
+                "amount_nu": amount_nu,
+                "direction": direction,
+                "project_group": project_group,
+                "project": project,
+                "contract": contract,
+                "nomenclature": nomenclature,
+                "cost_section": _pq_cost_section(cost_match),
+                "expense_article": (
                     normalize_text(getattr(cost_match, "calc_article", "") or "")
                     or row.expense_article
                 ),
-                tax_type=row.tax_type,
-                contractor=contractor,
-                quantity=quantity,
-            )
-            audit_log.record_fact(facts[-1])
+                "contractor": contractor,
+                "quantity": quantity,
+            }
+            fact_count_before = len(facts)
+            if section in OTHER_PNL_SECTIONS:
+                resolved_nu_tax_type = _resolve_other_pnl_nu_tax_type(
+                    row,
+                    exports=exports,
+                    doc_tax=doc_tax,
+                    buh_storno_groups=other_pnl_storno_groups,
+                    nu_storno_groups=other_pnl_nu_storno_groups,
+                    nu_mismatch_docs=other_pnl_nu_mismatch_docs,
+                    section_has_nu=other_pnl_section_has_nu,
+                )
+                _append_other_pnl_fact(
+                    facts,
+                    buh_tax_type=resolved_tax_type,
+                    nu_tax_type=resolved_nu_tax_type,
+                    **fact_kwargs,
+                )
+            else:
+                _append_fact(
+                    facts,
+                    tax_type=resolved_tax_type,
+                    **fact_kwargs,
+                )
+            for fact in facts[fact_count_before:]:
+                audit_log.record_fact(fact)
 
             if section == "Выручка":
                 saw_revenue = True
@@ -481,6 +586,8 @@ def build_test_facts(
             )
 
     audit_log.analyze_duplicates(facts, exports.buh)
+
+    warnings.extend(_buh_data_quality_warnings(exports))
 
     month_order = list(MONTH_NAMES.values())
     months = sorted({fact.month for fact in facts}, key=month_order.index)

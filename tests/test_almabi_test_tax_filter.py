@@ -30,7 +30,9 @@ def test_filter_facts_by_tax_bucket(tmp_path: Path):
     facts = build_test_facts(parse_exports(paths)).facts
     privileged = filter_facts_by_tax_bucket(facts, "Льготные проекты")
     assert privileged
-    assert all(item.kpi_l1 == "Выручка" for item in privileged)
+    assert {item.kpi_l1 for item in privileged} <= {"Выручка", "Себестоимость"}
+    assert any(item.kpi_l1 == "Выручка" for item in privileged)
+    assert any(item.kpi_l1 == "Себестоимость" for item in privileged)
 
 
 def test_consolidated_table_order_and_tax_filter(tmp_path: Path):

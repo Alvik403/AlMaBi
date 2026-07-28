@@ -8,7 +8,7 @@ from typing import Any
 from almabi_excel_utils import tax_bucket
 from almabi_mock_data import MONTHS, SCENARIOS, UNITS, _MONTHS_SHORT
 from almabi_contractor_builder import build_contractor_cards, build_contractor_details
-from almabi_pipeline import Fact, PipelineResult, run_pipeline
+from almabi_pipeline import Fact, PipelineResult
 
 _id_seq = 0
 
@@ -47,6 +47,8 @@ PBT_TAX_BASE_KPIS = frozenset(
         "Прочие расходы",
     }
 )
+CALCULATED_BENEFIT_ALWAYS_NU_KPIS = frozenset({"Выручка"})
+BENEFIT_BUCKET_NAMES = ("Льготные проекты", "Нельготные проекты")
 # Уровни как в «Уровни для дашборда»: L1 — KPI, далее вложенность до L5.
 REVENUE_PATH = ["direction", "project_group", "project", "contract"]
 COST_PATH = list(REVENUE_PATH)
@@ -434,10 +436,32 @@ def _next_id(prefix: str) -> str:
     return f"{prefix}-{_id_seq}"
 
 
-def _scenario_amounts(items: list[Fact] | None, *, always_nu: bool = False) -> dict[str, float] | None:
+def _aggregate_months_for_display(
+    items: list[Fact],
+    *,
+    always_nu_kpis: frozenset[str] = frozenset(),
+) -> dict[str, dict[str, float]]:
+    totals: dict[str, dict[str, float]] = defaultdict(lambda: {"buh": 0.0, "nu": 0.0})
+    for fact in items:
+        bucket = totals[fact.month]
+        bucket["buh"] += fact.amount_nu if fact.kpi_l1 in always_nu_kpis else fact.amount_buh
+        bucket["nu"] += fact.amount_nu
+    return totals
+
+
+def _scenario_amounts(
+    items: list[Fact] | None,
+    *,
+    always_nu: bool = False,
+    always_nu_kpis: frozenset[str] = frozenset(),
+) -> dict[str, float] | None:
     if not items:
         return None
-    aggregated = _aggregate_months(items)
+    aggregated = (
+        _aggregate_months_for_display(items, always_nu_kpis=always_nu_kpis)
+        if always_nu_kpis
+        else _aggregate_months(items)
+    )
     return {
         month: float(aggregated[month]["nu"] if always_nu else aggregated[month]["buh"])
         for month in MONTHS
@@ -478,21 +502,25 @@ def _month_values(
     return result
 
 
-def _attach_metrics(node: dict[str, Any]) -> dict[str, Any]:
+def _attach_metrics(node: dict[str, Any], *, preserve_parent_totals: bool = False) -> dict[str, Any]:
+    preserve = preserve_parent_totals or bool(node.get("preserve_parent_totals"))
+    if preserve:
+        node["preserve_parent_totals"] = True
     children = node.get("children") or []
     if children:
         for child in children:
             _attach_metrics(child)
-        for scenario in SCENARIOS:
-            totals = {month: 0.0 for month in MONTHS}
-            for child in children:
-                for month in MONTHS:
-                    totals[month] += float(child["values"][scenario].get(month, 0) or 0)
-            if scenario in {"План", "Прогноз"} and node.get("plan_forecast_from_file"):
-                continue
-            if scenario in {"План", "Прогноз"} and not any(totals.values()):
-                continue
-            node["values"][scenario] = totals
+        if not preserve:
+            for scenario in SCENARIOS:
+                totals = {month: 0.0 for month in MONTHS}
+                for child in children:
+                    for month in MONTHS:
+                        totals[month] += float(child["values"][scenario].get(month, 0) or 0)
+                if scenario in {"План", "Прогноз"} and node.get("plan_forecast_from_file"):
+                    continue
+                if scenario in {"План", "Прогноз"} and not any(totals.values()):
+                    continue
+                node["values"][scenario] = totals
 
     fact = node["values"]["Факт БУ"]
     plan = node["values"]["План"]
@@ -642,6 +670,7 @@ def _build_benefit_children(
     plan_items: list[Fact] | None = None,
     forecast_items: list[Fact] | None = None,
     plan_forecast_from_file: bool = False,
+    always_nu_kpis: frozenset[str] = frozenset(),
 ) -> list[dict[str, Any]]:
     grouped: dict[str, list[Fact]] = defaultdict(list)
     for fact in items:
@@ -672,20 +701,33 @@ def _build_benefit_children(
                 forecast_items=forecast_for_benefit,
                 plan_forecast_from_file=plan_forecast_from_file,
             )
+        aggregate_months = (
+            _aggregate_months_for_display(benefit_items, always_nu_kpis=always_nu_kpis)
+            if always_nu_kpis
+            else _aggregate_months(benefit_items)
+        )
         node = _attach_metrics(
             {
                 "id": _next_id("benefit"),
                 "name": benefit_name,
                 "level": 2,
                 "plan_forecast_from_file": plan_forecast_from_file,
+                "preserve_parent_totals": bool(always_nu_kpis),
                 "values": _month_values(
-                    _aggregate_months(benefit_items),
-                    plan_amounts=_scenario_amounts(plan_grouped.get(benefit_name, [])),
-                    forecast_amounts=_scenario_amounts(forecast_grouped.get(benefit_name, [])),
+                    aggregate_months,
+                    plan_amounts=_scenario_amounts(
+                        plan_grouped.get(benefit_name, []),
+                        always_nu_kpis=always_nu_kpis,
+                    ),
+                    forecast_amounts=_scenario_amounts(
+                        forecast_grouped.get(benefit_name, []),
+                        always_nu_kpis=always_nu_kpis,
+                    ),
                     from_file=plan_forecast_from_file,
                 ),
                 "children": children,
-            }
+            },
+            preserve_parent_totals=bool(always_nu_kpis),
         )
         nodes.append(node)
     return nodes
@@ -853,21 +895,131 @@ def _build_tax_facts(component_nodes: list[dict[str, Any]], source_facts: list[F
     return tax_facts
 
 
+def _find_named_child(node: dict[str, Any], name: str) -> dict[str, Any] | None:
+    return next((child for child in node.get("children") or [] if child.get("name") == name), None)
+
+
+def _empty_scenario_values() -> dict[str, dict[str, float]]:
+    return {scenario: {month: 0.0 for month in MONTHS} for scenario in SCENARIOS}
+
+
+def _sum_scenario_values(items: list[dict[str, dict[str, float]]]) -> dict[str, dict[str, float]]:
+    totals = _empty_scenario_values()
+    for values in items:
+        for scenario in SCENARIOS:
+            for month in MONTHS:
+                totals[scenario][month] += float(values.get(scenario, {}).get(month, 0) or 0)
+    return totals
+
+
+def _facts_benefit_bucket_values(
+    facts: list[Fact],
+    bucket_name: str,
+    *,
+    always_nu_kpis: frozenset[str] = frozenset(),
+) -> dict[str, dict[str, float]]:
+    filtered = [fact for fact in facts if _dimension_value(fact, "tax_bucket") == bucket_name]
+    aggregated = _aggregate_months_for_display(filtered, always_nu_kpis=always_nu_kpis)
+    return _month_values(aggregated)
+
+
+def _component_benefit_bucket_values(
+    component_node: dict[str, Any],
+    component_facts: list[Fact] | None,
+) -> dict[str, dict[str, dict[str, float]]]:
+    by_bucket: dict[str, dict[str, dict[str, float]]] = {}
+    always_nu_kpis = (
+        CALCULATED_BENEFIT_ALWAYS_NU_KPIS
+        if component_node["name"] == "Выручка"
+        else frozenset()
+    )
+    for bucket_name in BENEFIT_BUCKET_NAMES:
+        bucket_child = _find_named_child(component_node, bucket_name)
+        if bucket_child is not None:
+            by_bucket[bucket_name] = bucket_child["values"]
+        elif component_facts:
+            by_bucket[bucket_name] = _facts_benefit_bucket_values(
+                component_facts,
+                bucket_name,
+                always_nu_kpis=always_nu_kpis,
+            )
+        else:
+            by_bucket[bucket_name] = _empty_scenario_values()
+    return by_bucket
+
+
+def _build_formula_benefit_children(
+    component_nodes: list[dict[str, Any]],
+    *,
+    component_facts: dict[str, list[Fact]] | None = None,
+    drill_facts: list[Fact] | None = None,
+    plan_forecast_from_file: bool = False,
+    with_articles: bool = False,
+) -> list[dict[str, Any]]:
+    component_facts = component_facts or {}
+    drill_grouped: dict[str, list[Fact]] = defaultdict(list)
+    for fact in drill_facts or []:
+        drill_grouped[_dimension_value(fact, "tax_bucket")].append(fact)
+
+    nodes: list[dict[str, Any]] = []
+    for bucket_name in BENEFIT_BUCKET_NAMES:
+        bucket_parts = [
+            _component_benefit_bucket_values(
+                component,
+                component_facts.get(component["name"]),
+            )[bucket_name]
+            for component in component_nodes
+        ]
+        children: list[dict[str, Any]] = []
+        bucket_drill_facts = drill_grouped.get(bucket_name, [])
+        if bucket_drill_facts:
+            path = BENEFIT_ARTICLE_PATH if with_articles else BENEFIT_PATH
+            children = _build_group_tree(
+                bucket_drill_facts,
+                path,
+                level=3,
+                plan_forecast_from_file=plan_forecast_from_file,
+            )
+        values = _sum_scenario_values(bucket_parts)
+        node = _attach_metrics(
+            {
+                "id": _next_id("benefit"),
+                "name": bucket_name,
+                "level": 2,
+                "plan_forecast_from_file": plan_forecast_from_file,
+                "preserve_parent_totals": True,
+                "signed_amounts": True,
+                "values": values,
+                "children": children,
+            },
+            preserve_parent_totals=True,
+        )
+        nodes.append(node)
+    return nodes
+
+
 def _build_calculated_node(
     name: str,
     month_totals: dict[str, dict[str, float]],
     *,
+    component_nodes: list[dict[str, Any]] | None = None,
+    component_facts: dict[str, list[Fact]] | None = None,
+    drill_facts: list[Fact] | None = None,
     children: list[dict[str, Any]] | None = None,
-    benefit_facts: list[Fact] | None = None,
     plan_forecast_from_file: bool = False,
+    with_articles: bool = False,
 ) -> dict[str, Any]:
     benefit_children = children
-    if benefit_children is None and benefit_facts is not None:
-        benefit_children = _build_benefit_children(
-            benefit_facts,
-            with_articles=False,
+    if benefit_children is None and component_nodes is not None:
+        benefit_children = _build_formula_benefit_children(
+            component_nodes,
+            component_facts=component_facts,
+            drill_facts=drill_facts,
             plan_forecast_from_file=plan_forecast_from_file,
+            with_articles=with_articles,
         )
+    for child in benefit_children or []:
+        child["signed_amounts"] = True
     plan_amounts = {month: float(month_totals[month].get("plan", 0) or 0) for month in MONTHS}
     forecast_amounts = {month: float(month_totals[month].get("forecast", 0) or 0) for month in MONTHS}
     node = _attach_metrics(
@@ -876,6 +1028,7 @@ def _build_calculated_node(
             "name": name,
             "level": 1,
             "plan_forecast_from_file": plan_forecast_from_file,
+            "preserve_parent_totals": True,
             "values": _month_values(
                 month_totals,
                 plan_amounts=plan_amounts if plan_forecast_from_file or any(plan_amounts.values()) else None,
@@ -883,7 +1036,8 @@ def _build_calculated_node(
                 from_file=plan_forecast_from_file,
             ),
             "children": benefit_children or [],
-        }
+        },
+        preserve_parent_totals=True,
     )
     return node
 
@@ -954,10 +1108,14 @@ def _build_summary_rows(
                 child_path=list(COST_PATH),
             )
 
-    operating_totals = _month_totals_from_nodes(
-        nodes,
-        ["Выручка", "Себестоимость", "Коммерческие расходы", "Управленческие расходы"],
-    )
+    operating_component_names = [
+        "Выручка",
+        "Себестоимость",
+        "Коммерческие расходы",
+        "Управленческие расходы",
+    ]
+    operating_lookup = {node["name"]: node for node in nodes}
+    operating_totals = _month_totals_from_nodes(nodes, operating_component_names)
     operating_facts = _merge_signed_fact_groups(
         [
             (_group_facts(facts, kpi_l1="Выручка"), 1),
@@ -970,7 +1128,9 @@ def _build_summary_rows(
         _build_calculated_node(
             "Операционная прибыль",
             operating_totals,
-            benefit_facts=operating_facts,
+            component_nodes=[operating_lookup[name] for name in operating_component_names],
+            component_facts={name: _group_facts(facts, kpi_l1=name) for name in operating_component_names},
+            drill_facts=operating_facts,
             plan_forecast_from_file=plan_forecast_from_file,
         )
     )
@@ -996,10 +1156,9 @@ def _build_summary_rows(
         if node["name"] in OTHER_PNL_KPIS:
             node["drill"] = other_pnl_drill
 
-    pbt_totals = _month_totals_from_nodes(
-        nodes,
-        ["Операционная прибыль", "Прочие доходы", "Прочие расходы"],
-    )
+    pbt_component_names = ["Операционная прибыль", "Прочие доходы", "Прочие расходы"]
+    pbt_lookup = {node["name"]: node for node in nodes}
+    pbt_totals = _month_totals_from_nodes(nodes, pbt_component_names)
     pbt_facts = _merge_signed_fact_groups(
         [
             (operating_facts, 1),
@@ -1011,7 +1170,9 @@ def _build_summary_rows(
         _build_calculated_node(
             "Прибыль/убыток до налогообложения",
             pbt_totals,
-            benefit_facts=pbt_facts,
+            component_nodes=[pbt_lookup[name] for name in pbt_component_names],
+            drill_facts=pbt_facts,
+            with_articles=True,
             plan_forecast_from_file=plan_forecast_from_file,
         )
     )
@@ -1028,18 +1189,16 @@ def _build_summary_rows(
         )
     )
 
-    net_totals = _month_totals_from_nodes(nodes, ["Прибыль/убыток до налогообложения", "Налоги"])
-    net_facts = _merge_signed_fact_groups(
-        [
-            (pbt_facts, 1),
-            (tax_facts, 1),
-        ]
-    )
+    net_component_names = ["Прибыль/убыток до налогообложения", "Налоги"]
+    net_lookup = {node["name"]: node for node in nodes}
+    net_totals = _month_totals_from_nodes(nodes, net_component_names)
+    net_facts = _merge_signed_fact_groups([(pbt_facts, 1), (tax_facts, 1)])
     nodes.append(
         _build_calculated_node(
             "Чистая прибыль",
             net_totals,
-            benefit_facts=net_facts,
+            component_nodes=[net_lookup[name] for name in net_component_names],
+            drill_facts=net_facts,
             plan_forecast_from_file=plan_forecast_from_file,
         )
     )
@@ -1172,46 +1331,3 @@ def build_dashboard_from_pipeline(
             "message": "Дашборд построен из загруженных выгрузок 1С.",
         },
     }
-
-
-def load_almabi_dashboard_from_exports(
-    paths: dict[str, Path],
-    *,
-    upload_names: dict[str, str],
-    plan_forecast_path: Path | None = None,
-) -> dict[str, Any]:
-    result = run_pipeline(paths)
-    plan_facts: list[Fact] = []
-    forecast_facts: list[Fact] = []
-    plan_warnings: list[str] = []
-    if plan_forecast_path and plan_forecast_path.exists():
-        from almabi_plan_forecast_parser import parse_plan_forecast_workbook
-
-        parsed = parse_plan_forecast_workbook(plan_forecast_path)
-        plan_facts = parsed.plan_facts
-        forecast_facts = parsed.forecast_facts
-        plan_warnings = parsed.warnings
-    if not result.facts:
-        from almabi_template_data import get_almabi_template_dashboard_data
-
-        data = get_almabi_template_dashboard_data()
-        data["meta"] = {
-            **data.get("meta", {}),
-            "source": "upload",
-            "parsed": False,
-            "upload_files": upload_names,
-            "warnings": result.warnings,
-            "message": "Файлы загружены, но не удалось собрать суммы по месяцам. Показан шаблон.",
-        }
-        return data
-    dashboard = build_dashboard_from_pipeline(
-        result,
-        upload_names=upload_names,
-        plan_facts=plan_facts,
-        forecast_facts=forecast_facts,
-    )
-    if plan_warnings:
-        dashboard.setdefault("meta", {})["plan_forecast_warnings"] = plan_warnings
-    if plan_forecast_path:
-        dashboard.setdefault("meta", {})["plan_forecast_loaded"] = bool(plan_facts or forecast_facts)
-    return dashboard

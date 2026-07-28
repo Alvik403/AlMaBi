@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass, field
-
 from pathlib import Path
 
 from almabi_excel_utils import MONTH_NAMES, analytics_value, document_match_keys, tax_bucket
@@ -15,6 +15,23 @@ from almabi_export_parsers import (
 )
 from almabi_project_index import ProjectMeta, build_project_index, lookup_project
 from almabi_realization_lookup import build_realization_index, resolve_realization_match
+
+OTHER_PNL_SECTIONS = frozenset({"Прочие доходы", "Прочие расходы"})
+COST_ROUNDING_ARTICLE = "Погрешность расчета себестоимости"
+# Положительное списание ТМЦ (Кт 10.*) на эту статью не входит в анализ 91.02
+# по вариантам НО. Отрицательное сторно сохраняется как межпериодная корректировка.
+NON_DEDUCTIBLE_INVENTORY_ARTICLE = "Расходы, не принимаемые в НУ (НЕ)"
+
+
+def _skip_other_expense_inventory_non_deductible(row: BuhRow, section: str) -> bool:
+    """Пропускать исходное списание запасов, сохраняя его последующее сторно."""
+    if section != "Прочие расходы":
+        return False
+    if (row.expense_article or "") != NON_DEDUCTIBLE_INVENTORY_ARTICLE:
+        return False
+    if not (row.account_kt or "").startswith("10"):
+        return False
+    return float(row.amount_buh or 0) > 0
 
 
 @dataclass(frozen=True)
@@ -71,6 +88,243 @@ def _merge_doc_tax(doc_tax: dict[str, str], row: BuhRow) -> None:
         doc_tax[document] = incoming
 
 
+def _resolve_fact_tax_type(doc_tax: dict[str, str], document: str, row_tax_type: str) -> str:
+    """Вид НО документа: из doc_tax (выручка перебивает cost), иначе с текущей строки."""
+    fallback = row_tax_type or "Общие условия налогообложения"
+    if not document:
+        return fallback
+    return doc_tax.get(document, fallback)
+
+
+def _other_pnl_nu_mismatch_documents(exports: ParsedExports) -> frozenset[str]:
+    """Документы с расхождением БУ и НУ в прочих доходах/расходах (курсовые стorno)."""
+    documents: set[str] = set()
+    for row in exports.buh:
+        if not row.month:
+            continue
+        section = classify_buh_section(row.account_dt, row.account_kt)
+        if section not in OTHER_PNL_SECTIONS:
+            continue
+        amount_buh = abs(row.amount_buh or 0)
+        amount_nu = abs(_amount_nu_for_section(section, row.amount_nu_dt, row.amount_nu_kt))
+        if amount_buh > 0.01 and amount_nu > 0.01 and abs(amount_buh - amount_nu) > 0.01:
+            documents.add(row.document)
+    return frozenset(documents)
+
+
+def _build_other_pnl_section_has_nu(exports: ParsedExports) -> frozenset[tuple[str, str, str]]:
+    """Документ/месяц/раздел прочих P&L, где в разделе есть ненулевой НУ."""
+    keys: set[tuple[str, str, str]] = set()
+    for row in exports.buh:
+        if not row.month:
+            continue
+        section = classify_buh_section(row.account_dt, row.account_kt)
+        if section not in OTHER_PNL_SECTIONS:
+            continue
+        amount_nu = _amount_nu_for_section(section, row.amount_nu_dt, row.amount_nu_kt)
+        if abs(amount_nu) >= 0.01:
+            keys.add((row.document, row.month, section))
+    return frozenset(keys)
+
+
+def _other_pnl_expense_amounts_mismatch(row: BuhRow, section: str) -> bool:
+    """Строка прочих расходов, где |БУ| и |НУ| оба ненулевые и не совпадают."""
+    if section != "Прочие расходы":
+        return False
+    amount_buh = abs(_amount_buh_for_section(section, row, None))
+    amount_nu = abs(_amount_nu_for_section(section, row.amount_nu_dt, row.amount_nu_kt))
+    return amount_buh >= 0.01 and amount_nu >= 0.01 and abs(amount_buh - amount_nu) > 0.01
+
+
+def _build_other_pnl_storno_groups(
+    exports: ParsedExports,
+) -> dict[tuple[str, str, float], list[BuhRow]]:
+    groups: dict[tuple[str, str, float], list[BuhRow]] = defaultdict(list)
+    for row in exports.buh:
+        if not row.month:
+            continue
+        section = classify_buh_section(row.account_dt, row.account_kt)
+        if section not in OTHER_PNL_SECTIONS:
+            continue
+        amount = abs(row.amount_buh or 0)
+        if amount < 0.01:
+            continue
+        groups[(row.document, section, round(amount, 2))].append(row)
+    return groups
+
+
+def _resolve_other_pnl_tax_type(
+    row: BuhRow,
+    *,
+    storno_groups: dict[tuple[str, str, float], list[BuhRow]],
+    nu_mismatch_docs: frozenset[str],
+    section_has_nu: frozenset[tuple[str, str, str]] | None = None,
+) -> str:
+    """Стorno-строка с «Общие условия» наследует льготный НО от зеркальной проводки документа."""
+    if row.expense_article and COST_ROUNDING_ARTICLE in row.expense_article:
+        return row.tax_type or "Общие условия налогообложения"
+    fallback = row.tax_type or "Общие условия налогообложения"
+    if tax_bucket(fallback) == "Льготные проекты":
+        return fallback
+    if row.document not in nu_mismatch_docs:
+        return fallback
+
+    section = classify_buh_section(row.account_dt, row.account_kt)
+    if section not in OTHER_PNL_SECTIONS:
+        return fallback
+
+    if section_has_nu is not None and (row.document, row.month, section) not in section_has_nu:
+        return fallback
+
+    amount_buh = abs(_amount_buh_for_section(section, row, None))
+    amount_nu = abs(_amount_nu_for_section(section, row.amount_nu_dt, row.amount_nu_kt))
+    if _other_pnl_expense_amounts_mismatch(row, section):
+        return fallback
+    if (
+        section == "Прочие расходы"
+        and amount_buh >= 0.01
+        and amount_nu >= 0.01
+        and abs(amount_buh - amount_nu) <= 0.01
+        and section_has_nu is not None
+        and (row.document, row.month, "Прочие доходы") not in section_has_nu
+    ):
+        return fallback
+
+    key = (row.document, section, round(abs(row.amount_buh or 0), 2))
+    for candidate in storno_groups.get(key, []):
+        if candidate is row:
+            continue
+        if tax_bucket(candidate.tax_type) != "Льготные проекты":
+            continue
+        if (row.amount_buh or 0) * (candidate.amount_buh or 0) < 0:
+            return candidate.tax_type
+    return fallback
+
+
+def _resolve_other_pnl_nu_tax_type(
+    row: BuhRow,
+    *,
+    exports: ParsedExports,
+    doc_tax: dict[str, str],
+    buh_storno_groups: dict[tuple[str, str, float], list[BuhRow]],
+    nu_storno_groups: dict[tuple[str, str, float], list[BuhRow]],
+    nu_mismatch_docs: frozenset[str],
+    section_has_nu: frozenset[tuple[str, str, str]] | None = None,
+) -> str:
+    """Вид НО для разреза «Факт НУ»: nu-only строки наследуют tax с buh-стороны сторно."""
+    section = classify_buh_section(row.account_dt, row.account_kt)
+    if section not in OTHER_PNL_SECTIONS:
+        return row.tax_type or doc_tax.get(row.document, "Общие условия налогообложения")
+
+    if _other_pnl_expense_amounts_mismatch(row, section):
+        return row.tax_type or doc_tax.get(row.document, "Общие условия налогообложения")
+
+    amount_buh = abs(_amount_buh_for_section(section, row, None))
+    amount_nu = abs(_amount_nu_for_section(section, row.amount_nu_dt, row.amount_nu_kt))
+    if (
+        section == "Прочие расходы"
+        and amount_buh >= 0.01
+        and amount_nu >= 0.01
+        and abs(amount_buh - amount_nu) <= 0.01
+        and section_has_nu is not None
+        and (row.document, row.month, "Прочие доходы") not in section_has_nu
+    ):
+        return row.tax_type or doc_tax.get(row.document, "Общие условия налогообложения")
+
+    buh_tax = _resolve_row_tax_type(
+        section,
+        row,
+        doc_tax,
+        other_pnl_storno_groups=buh_storno_groups,
+        other_pnl_nu_mismatch_docs=nu_mismatch_docs,
+        other_pnl_section_has_nu=section_has_nu,
+    )
+    if row.expense_article and COST_ROUNDING_ARTICLE in row.expense_article:
+        return row.tax_type or doc_tax.get(row.document, "Общие условия налогообложения")
+    if row.document not in nu_mismatch_docs:
+        return buh_tax
+
+    buh_raw = abs(row.amount_buh or 0)
+    nu_amount = _amount_nu_for_section(section, row.amount_nu_dt, row.amount_nu_kt)
+    nu_raw = abs(nu_amount)
+    if buh_raw >= 0.01 or nu_raw < 0.01:
+        return buh_tax
+
+    for candidate in exports.buh:
+        if candidate.document != row.document or candidate.month != row.month:
+            continue
+        cand_section = classify_buh_section(candidate.account_dt, candidate.account_kt)
+        if cand_section != section:
+            continue
+        if round(abs(candidate.amount_buh or 0), 2) != round(nu_raw, 2):
+            continue
+        return _resolve_row_tax_type(
+            section,
+            candidate,
+            doc_tax,
+            other_pnl_storno_groups=buh_storno_groups,
+            other_pnl_nu_mismatch_docs=nu_mismatch_docs,
+            other_pnl_section_has_nu=section_has_nu,
+        )
+
+    fallback = row.tax_type or doc_tax.get(row.document, "Общие условия налогообложения")
+    if tax_bucket(fallback) == "Льготные проекты":
+        return fallback
+
+    key = (row.document, section, round(nu_raw, 2))
+    for candidate in nu_storno_groups.get(key, []):
+        if candidate is row:
+            continue
+        if tax_bucket(candidate.tax_type) != "Льготные проекты":
+            continue
+        cand_nu = _amount_nu_for_section(section, candidate.amount_nu_dt, candidate.amount_nu_kt)
+        if nu_amount * cand_nu < 0:
+            return candidate.tax_type
+    return fallback
+
+
+def _resolve_row_tax_type(
+    section: str,
+    row: BuhRow,
+    doc_tax: dict[str, str],
+    *,
+    other_pnl_storno_groups: dict[tuple[str, str, float], list[BuhRow]] | None = None,
+    other_pnl_nu_mismatch_docs: frozenset[str] | None = None,
+    other_pnl_section_has_nu: frozenset[tuple[str, str, str]] | None = None,
+) -> str:
+    if section == "Себестоимость":
+        return _resolve_fact_tax_type(doc_tax, row.document, row.tax_type)
+    if (
+        section in OTHER_PNL_SECTIONS
+        and other_pnl_storno_groups is not None
+        and other_pnl_nu_mismatch_docs is not None
+    ):
+        return _resolve_other_pnl_tax_type(
+            row,
+            storno_groups=other_pnl_storno_groups,
+            nu_mismatch_docs=other_pnl_nu_mismatch_docs,
+            section_has_nu=other_pnl_section_has_nu,
+        )
+    return row.tax_type or doc_tax.get(row.document, "Общие условия налогообложения")
+
+
+def _build_other_pnl_nu_storno_groups(
+    exports: ParsedExports,
+) -> dict[tuple[str, str, float], list[BuhRow]]:
+    groups: dict[tuple[str, str, float], list[BuhRow]] = defaultdict(list)
+    for row in exports.buh:
+        if not row.month:
+            continue
+        section = classify_buh_section(row.account_dt, row.account_kt)
+        if section not in OTHER_PNL_SECTIONS:
+            continue
+        amount_nu = abs(_amount_nu_for_section(section, row.amount_nu_dt, row.amount_nu_kt))
+        if amount_nu < 0.01:
+            continue
+        groups[(row.document, section, round(amount_nu, 2))].append(row)
+    return groups
+
+
 def _lookup_contractor(document: str, doc_contractor: dict[str, str]) -> str:
     if document in doc_contractor:
         return doc_contractor[document]
@@ -92,11 +346,23 @@ def _amount_nu_for_section(section: str, amount_nu_dt: float, amount_nu_kt: floa
     return amount_nu_kt
 
 
-def _amount_buh_for_section(section: str, row: BuhRow, cost_match: CostRow | None) -> float:
+def _amount_buh_for_section(
+    section: str,
+    row: BuhRow,
+    cost_match: CostRow | None,
+    *,
+    duplicate_cost_key: bool = False,
+) -> float:
     """Сумма БУ по правилам Power Query «Свод_нов» (со знаком)."""
     if section == "Себестоимость":
         if cost_match is not None:
-            return -cost_match.amount if cost_match.amount else 0.0
+            cost_amount = abs(cost_match.amount or 0)
+            buh_amount = abs(row.amount_buh or 0)
+            if duplicate_cost_key and buh_amount and cost_amount < buh_amount:
+                return -(buh_amount + cost_amount)
+            if cost_match.amount:
+                return -cost_match.amount
+            return 0.0
         return -row.amount_buh if row.amount_buh else 0.0
     if section in {"Прочие расходы", "Коммерческие расходы", "Управленческие расходы"}:
         return -row.amount_buh if row.amount_buh else 0.0
@@ -115,6 +381,28 @@ def _build_cost_lookup(cost_rows: list[CostRow]) -> dict[tuple[str, str], CostRo
             if current is None or float(row.quantity or 0) > float(current.quantity or 0):
                 lookup[pair] = row
     return lookup
+
+
+def _build_duplicate_cost_buh_keys(exports: ParsedExports) -> frozenset[tuple[str, str]]:
+    """Строки бухрегистра с одинаковыми документом и номенклатурой Кт (90.02.1)."""
+    counts: dict[tuple[str, str], int] = {}
+    for row in exports.buh:
+        section = classify_buh_section(row.account_dt, row.account_kt)
+        if section != "Себестоимость" or not row.month:
+            continue
+        nomenclature = row.nomenclature_kt.casefold()
+        if not nomenclature:
+            continue
+        pair = (row.document, nomenclature)
+        counts[pair] = counts.get(pair, 0) + 1
+    return frozenset(key for key, count in counts.items() if count > 1)
+
+
+def _is_duplicate_cost_buh_key(duplicate_keys: frozenset[tuple[str, str]], row: BuhRow) -> bool:
+    nomenclature = row.nomenclature_kt.casefold()
+    if not nomenclature:
+        return False
+    return (row.document, nomenclature) in duplicate_keys
 
 
 def _build_cost_quantity_lookup(cost_rows: list[CostRow]) -> dict[tuple[str, str], float]:
@@ -257,6 +545,66 @@ def _append_fact(
     )
 
 
+def _append_other_pnl_fact(
+    facts: list[Fact],
+    *,
+    kpi_l1: str,
+    month: str | None,
+    amount_buh: float,
+    amount_nu: float,
+    buh_tax_type: str,
+    nu_tax_type: str,
+    direction: str = "",
+    project_group: str = "",
+    project: str = "",
+    contract: str = "",
+    nomenclature: str = "",
+    cost_section: str = "",
+    expense_article: str = "",
+    contractor: str = "",
+    quantity: float = 0.0,
+) -> None:
+    """Прочие доходы/расходы: БУ и НУ могут попадать в разные налоговые корзины."""
+    shared = {
+        "kpi_l1": kpi_l1,
+        "month": month,
+        "direction": direction,
+        "project_group": project_group,
+        "project": project,
+        "contract": contract,
+        "nomenclature": nomenclature,
+        "cost_section": cost_section,
+        "expense_article": expense_article,
+        "contractor": contractor,
+        "quantity": quantity,
+    }
+    if tax_bucket(buh_tax_type) != tax_bucket(nu_tax_type):
+        if amount_buh:
+            _append_fact(
+                facts,
+                amount_buh=amount_buh,
+                amount_nu=0.0,
+                tax_type=buh_tax_type,
+                **shared,
+            )
+        if amount_nu:
+            _append_fact(
+                facts,
+                amount_buh=0.0,
+                amount_nu=amount_nu,
+                tax_type=nu_tax_type,
+                **shared,
+            )
+        return
+    _append_fact(
+        facts,
+        amount_buh=amount_buh,
+        amount_nu=amount_nu,
+        tax_type=buh_tax_type,
+        **shared,
+    )
+
+
 def _append_file_fallback_facts(
     facts: list[Fact],
     exports: ParsedExports,
@@ -343,6 +691,11 @@ def build_facts(exports: ParsedExports) -> PipelineResult:
     project_by_document, project_key_index, project_meta_by_key = build_project_index(exports)
     cost_lookup = _build_cost_lookup(exports.cost)
     cost_qty_lookup = _build_cost_quantity_lookup(exports.cost)
+    duplicate_cost_buh_keys = _build_duplicate_cost_buh_keys(exports)
+    other_pnl_storno_groups = _build_other_pnl_storno_groups(exports)
+    other_pnl_nu_storno_groups = _build_other_pnl_nu_storno_groups(exports)
+    other_pnl_nu_mismatch_docs = _other_pnl_nu_mismatch_documents(exports)
+    other_pnl_section_has_nu = _build_other_pnl_section_has_nu(exports)
     realization_index = build_realization_index(exports.realization, doc_contract)
 
     if exports.realization:
@@ -376,6 +729,8 @@ def build_facts(exports: ParsedExports) -> PipelineResult:
         section = classify_buh_section(row.account_dt, row.account_kt)
         if not section or not row.month:
             continue
+        if _skip_other_expense_inventory_non_deductible(row, section):
+            continue
 
         cost_match = None
         if section == "Себестоимость" and exports.cost:
@@ -392,7 +747,12 @@ def build_facts(exports: ParsedExports) -> PipelineResult:
                 prefer_cost_chain=section == "Себестоимость",
             )
 
-        amount_buh = _amount_buh_for_section(section, row, cost_match)
+        amount_buh = _amount_buh_for_section(
+            section,
+            row,
+            cost_match,
+            duplicate_cost_key=_is_duplicate_cost_buh_key(duplicate_cost_buh_keys, row),
+        )
         amount_nu = _amount_nu_for_section(section, row.amount_nu_dt, row.amount_nu_kt)
 
         fallback_project = lookup_project(
@@ -433,27 +793,56 @@ def build_facts(exports: ParsedExports) -> PipelineResult:
                 qty_lookup=cost_qty_lookup,
             )
 
-        _append_fact(
-            facts,
-            kpi_l1=section,
-            month=row.month,
-            amount_buh=amount_buh,
-            amount_nu=amount_nu,
-            direction=analytics.direction,
-            project_group=analytics.project_group,
-            project=analytics.project,
-            contract=contract,
-            nomenclature=nomenclature,
-            cost_section=cost_match.cost_section if cost_match else "",
-            expense_article=(
+        resolved_tax_type = _resolve_row_tax_type(
+            section,
+            row,
+            doc_tax,
+            other_pnl_storno_groups=other_pnl_storno_groups,
+            other_pnl_nu_mismatch_docs=other_pnl_nu_mismatch_docs,
+            other_pnl_section_has_nu=other_pnl_section_has_nu,
+        )
+
+        fact_kwargs = {
+            "kpi_l1": section,
+            "month": row.month,
+            "amount_buh": amount_buh,
+            "amount_nu": amount_nu,
+            "direction": analytics.direction,
+            "project_group": analytics.project_group,
+            "project": analytics.project,
+            "contract": contract,
+            "nomenclature": nomenclature,
+            "cost_section": cost_match.cost_section if cost_match else "",
+            "expense_article": (
                 cost_match.calc_article
                 if cost_match and section == "Себестоимость" and cost_match.calc_article
                 else row.expense_article
             ),
-            tax_type=row.tax_type,
-            contractor=contractor,
-            quantity=quantity,
-        )
+            "contractor": contractor,
+            "quantity": quantity,
+        }
+        if section in OTHER_PNL_SECTIONS:
+            resolved_nu_tax_type = _resolve_other_pnl_nu_tax_type(
+                row,
+                exports=exports,
+                doc_tax=doc_tax,
+                buh_storno_groups=other_pnl_storno_groups,
+                nu_storno_groups=other_pnl_nu_storno_groups,
+                nu_mismatch_docs=other_pnl_nu_mismatch_docs,
+                section_has_nu=other_pnl_section_has_nu,
+            )
+            _append_other_pnl_fact(
+                facts,
+                buh_tax_type=resolved_tax_type,
+                nu_tax_type=resolved_nu_tax_type,
+                **fact_kwargs,
+            )
+        else:
+            _append_fact(
+                facts,
+                tax_type=resolved_tax_type,
+                **fact_kwargs,
+            )
 
         if section == "Выручка":
             saw_revenue = True

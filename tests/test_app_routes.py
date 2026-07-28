@@ -5,21 +5,21 @@ def test_root_redirects_to_dashboard(app_client):
     response = app_client.get("/", follow_redirects=False)
 
     assert response.status_code == 307
-    assert response.headers["location"].endswith("/dashboard/almabi-test")
+    assert response.headers["location"].endswith("/dashboard/almabi")
 
 
-def test_almabi_dashboard_redirects_to_test(app_client):
-    response = app_client.get("/dashboard/almabi", follow_redirects=False)
+def test_legacy_almabi_test_redirects_to_dashboard(app_client):
+    response = app_client.get("/dashboard/almabi-test", follow_redirects=False)
 
     assert response.status_code == 307
-    assert response.headers["location"].endswith("/dashboard/almabi-test")
+    assert response.headers["location"].endswith("/dashboard/almabi")
 
 
-def test_almabi_test_dashboard_available(app_client):
-    response = app_client.get("/dashboard/almabi-test")
+def test_almabi_dashboard_available(app_client):
+    response = app_client.get("/dashboard/almabi")
 
     assert response.status_code == 200
-    assert "Тест BI" in response.text
+    assert "BI" in response.text
     assert "Сводная информация" in response.text
     assert "data-table-period" in response.text
     assert "data-tax-bucket" in response.text

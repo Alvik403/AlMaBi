@@ -28,8 +28,8 @@ def _dashboard_cache_key(upload_paths: dict[str, Path], plan_forecast_path: Path
     return tuple(parts)
 
 
-def resolve_almabi_test_dashboard_data(request: Request, settings: Settings) -> dict[str, Any]:
-    """Страница «Тест BI» — структура из spec, данные через PQ-join при загрузке выгрузок."""
+def resolve_almabi_dashboard_data(request: Request, settings: Settings) -> dict[str, Any]:
+    """BI-дашборд: структура из spec, данные через PQ-join при загрузке выгрузок."""
     upload_paths = get_almabi_upload_paths(request, settings)
     upload_set = get_almabi_upload_set(request)
     upload_names = {
@@ -64,11 +64,15 @@ def resolve_almabi_test_dashboard_data(request: Request, settings: Settings) -> 
     meta = dict(data.get("meta") or {})
     meta.update(
         {
-            "mode": "test",
-            "title": "Тест BI",
+            "mode": "bi",
+            "title": "BI",
             "description": "Структура «Уровни для дашборда» + join направления как в Power Query.",
             "levels_spec": "fixtures/almabi_dashboard_levels.json",
         }
     )
     data["meta"] = meta
     return data
+
+
+def resolve_almabi_test_dashboard_data(request: Request, settings: Settings) -> dict[str, Any]:
+    return resolve_almabi_dashboard_data(request, settings)

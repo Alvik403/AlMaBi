@@ -1,0 +1,2179 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Документация Al Ma BI — полный комплект</title>
+  <style>
+:root {
+  --bg: #f6f8fb;
+  --card: #ffffff;
+  --text: #1a2332;
+  --muted: #5b6b7c;
+  --accent: #0b4f6c;
+  --border: #d8e0ea;
+  --code-bg: #0f172a;
+  --code-fg: #e2e8f0;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  color: var(--text);
+  background: linear-gradient(180deg, #e8f1f6 0%, var(--bg) 240px);
+  line-height: 1.55;
+}
+.wrap { max-width: 980px; margin: 0 auto; padding: 32px 20px 80px; }
+header.hero {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 28px 32px;
+  margin-bottom: 28px;
+  box-shadow: 0 8px 24px rgba(26, 35, 50, 0.06);
+}
+header.hero h1 { margin: 0 0 8px; font-size: 1.85rem; color: var(--accent); }
+header.hero p { margin: 4px 0; color: var(--muted); }
+nav.toc {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px 20px;
+  margin-bottom: 28px;
+}
+nav.toc h2 { margin: 0 0 10px; font-size: 1.05rem; }
+nav.toc ol { margin: 0; padding-left: 1.3rem; }
+nav.toc a { color: var(--accent); text-decoration: none; }
+nav.toc a:hover { text-decoration: underline; }
+section.doc {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 24px 28px 32px;
+  margin-bottom: 22px;
+  box-shadow: 0 4px 14px rgba(26, 35, 50, 0.04);
+}
+section.doc h1 { font-size: 1.55rem; border-bottom: 2px solid var(--accent); padding-bottom: 8px; }
+section.doc h2 { font-size: 1.25rem; margin-top: 1.6em; color: #123; }
+section.doc h3 { font-size: 1.08rem; margin-top: 1.3em; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0 18px;
+  font-size: 0.95rem;
+}
+th, td {
+  border: 1px solid var(--border);
+  padding: 8px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+th { background: #e8f2f7; }
+tr:nth-child(even) td { background: #fafcfe; }
+code {
+  font-family: Consolas, "Courier New", monospace;
+  background: #eef2f7;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+pre {
+  background: var(--code-bg);
+  color: var(--code-fg);
+  padding: 14px 16px;
+  border-radius: 10px;
+  overflow-x: auto;
+  font-size: 0.88rem;
+}
+pre code { background: transparent; color: inherit; padding: 0; }
+blockquote {
+  margin: 12px 0;
+  padding: 10px 14px;
+  border-left: 4px solid var(--accent);
+  background: #f0f6fa;
+  color: var(--muted);
+}
+hr { border: none; border-top: 1px solid var(--border); margin: 24px 0; }
+footer.note {
+  color: var(--muted);
+  font-size: 0.9rem;
+  text-align: center;
+  margin-top: 12px;
+}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="hero">
+      <h1>Документация Al Ma BI</h1>
+      <p>Полный комплект: архитектура, модель данных Excel/P&amp;L, API, развёртывание, ИБ.</p>
+      <p>Репозиторий: https://github.com/Alvik403/AlMaBi.git · Дата комплекта: июль 2026</p>
+    </header>
+    <nav class="toc">
+      <h2>Содержание</h2>
+      <ol>
+        <li><a href="#00_Оглавление">Документация проекта «Al Ma BI»</a></li>
+<li><a href="#01_Описание_проекта">01. Описание проекта</a></li>
+<li><a href="#02_Архитектура_приложения">02. Архитектура приложения</a></li>
+<li><a href="#03_Архитектура_хранилища">03. Архитектура хранилища</a></li>
+<li><a href="#04_API_и_маршруты">04. API и маршруты</a></li>
+<li><a href="#05_Модель_данных_Excel">05. Модель данных Excel и P&L</a></li>
+<li><a href="#06_Развертывание_и_эксплуатация">06. Развёртывание и эксплуатация</a></li>
+<li><a href="#07_Документация_для_проверки_ИБ">07. Документация для проверки информационной безопасности</a></li>
+<li><a href="#08_Чек_лист_проверки_ИБ">08. Чек-лист проверки информационной безопасности</a></li>
+      </ol>
+    </nav>
+    <section class="doc" id="00_Оглавление">
+<h1>Документация проекта «Al Ma BI»</h1>
+<p><strong>Версия продукта:</strong> текущая ветка разработки<br />
+<strong>Репозиторий:</strong> https://github.com/Alvik403/AlMaBi.git<br />
+<strong>Ветка:</strong> <code>dev</code> / <code>main</code><br />
+<strong>Дата комплекта:</strong> июль 2026  </p>
+<hr />
+<h2>Назначение комплекта</h2>
+<p>Набор документов описывает архитектуру, модель данных, развёртывание и меры информационной безопасности для:</p>
+<ul>
+<li>приёмочной проверки ИБ;</li>
+<li>передачи проекта в эксплуатацию;</li>
+<li>аудита и сопровождения.</li>
+</ul>
+<hr />
+<h2>Состав документов</h2>
+<table>
+<thead>
+<tr>
+<th>№</th>
+<th>Файл</th>
+<th>Содержание</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>01</td>
+<td><code>01_Описание_проекта.md</code></td>
+<td>Назначение, границы системы, пользователи, стек</td>
+</tr>
+<tr>
+<td>02</td>
+<td><code>02_Архитектура_приложения.md</code></td>
+<td>Компоненты, потоки данных, модули</td>
+</tr>
+<tr>
+<td>03</td>
+<td><code>03_Архитектура_хранилища.md</code></td>
+<td>Сессии, файловое хранилище, пути (без СУБД фактов)</td>
+</tr>
+<tr>
+<td>04</td>
+<td><code>04_API_и_маршруты.md</code></td>
+<td>HTTP API, HTML-страницы, мониторинг</td>
+</tr>
+<tr>
+<td>05</td>
+<td><code>05_Модель_данных_Excel.md</code></td>
+<td>Выгрузки 1С, join, P&amp;L, налоговые разрезы</td>
+</tr>
+<tr>
+<td>06</td>
+<td><code>06_Развертывание_и_эксплуатация.md</code></td>
+<td>Docker, env, порты, бэкапы, тесты</td>
+</tr>
+<tr>
+<td>07</td>
+<td><code>07_Документация_для_проверки_ИБ.md</code></td>
+<td>Паспорт ИБ, угрозы, контроли, остаточные риски</td>
+</tr>
+<tr>
+<td>08</td>
+<td><code>08_Чек_лист_проверки_ИБ.md</code></td>
+<td>Чек-лист для аудитора / администратора</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>Краткие технические характеристики</h2>
+<table>
+<thead>
+<tr>
+<th>Параметр</th>
+<th>Значение</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Тип системы</td>
+<td>Внутренний BI-дашборд P&amp;L (web)</td>
+</tr>
+<tr>
+<td>Backend</td>
+<td>FastAPI 0.115, Python 3.12, uvicorn</td>
+</tr>
+<tr>
+<td>Frontend</td>
+<td>Jinja2 + Vite + Tailwind</td>
+</tr>
+<tr>
+<td>БД аналитики</td>
+<td>Нет (факты строятся в памяти из Excel)</td>
+</tr>
+<tr>
+<td>Данные</td>
+<td>Excel <code>.xlsx</code> выгрузки 1С (бухрегистр, реализация, себестоимость, план/прогноз)</td>
+</tr>
+<tr>
+<td>Аутентификация</td>
+<td><strong>Не реализована</strong> (доступ открыт любому, кто достучался до порта)</td>
+</tr>
+<tr>
+<td>Порт по умолчанию</td>
+<td><code>18001</code> → контейнер <code>8000</code></td>
+</tr>
+<tr>
+<td>Контейнер</td>
+<td><code>dashboard_web</code> (имя в compose)</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>Контакты / зоны ответственности (заполнить при передаче)</h2>
+<table>
+<thead>
+<tr>
+<th>Роль</th>
+<th>ФИО / подразделение</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Владелец продукта</td>
+<td></td>
+</tr>
+<tr>
+<td>Администратор сервера</td>
+<td></td>
+</tr>
+<tr>
+<td>Ответственный за ИБ</td>
+<td></td>
+</tr>
+<tr>
+<td>Разработчик / сопровождение</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section class="doc" id="01_Описание_проекта">
+<h1>01. Описание проекта</h1>
+<h2>1.1. Назначение</h2>
+<p><strong>Al Ma BI (AlMaBi)</strong> — веб-приложение для построения управленческого P&amp;L (БДР) по выгрузкам 1С в формате Excel.</p>
+<p>Система:</p>
+<ul>
+<li>загружает и проверяет обязательный набор выгрузок: бух.регистр, реализация, себестоимость;</li>
+<li>опционально принимает файл план/прогноз;</li>
+<li>строит Power Query–совместимые таблицы и факты P&amp;L (БУ / НУ / план / прогноз);</li>
+<li>показывает сводный дашборд «Тест BI» с фильтрами, drill-down, карточками контрагентов и графиками;</li>
+<li>предоставляет отдельные отчёты по KPI (выручка, себестоимость, прочие доходы/расходы, налоги, чистая прибыль и др.);</li>
+<li>предоставляет health/readiness для мониторинга.</li>
+</ul>
+<h2>1.2. Границы системы</h2>
+<h3>Входит в scope</h3>
+<ul>
+<li>Веб-UI дашборда, графиков, «Тест Excel» и KPI-отчётов.</li>
+<li>API загрузки Excel-выгрузок и получения JSON payload для отчётов.</li>
+<li>Парсинг и join выгрузок 1С с логикой, совместимой с Power Query.</li>
+<li>Локальная сборка frontend (Vite + Tailwind).</li>
+<li>Docker-развёртывание.</li>
+</ul>
+<h3>Не входит в scope</h3>
+<ul>
+<li>Аутентификация / SSO / LDAP / AD / Basic Auth (на момент комплекта <strong>нет</strong>).</li>
+<li>Разграничение ролей (RBAC).</li>
+<li>Аналитическое хранилище (DWH) и реляционная БД фактов — данные не нормализуются в витрину СУБД.</li>
+<li>Реестр версий файлов в SQLite (в отличие от ОПиОП BI): выбор файлов хранится в cookie-сессии браузера.</li>
+<li>Высокая доступность и горизонтальное масштабирование.</li>
+<li>Встроенный TLS — ожидается reverse proxy (nginx/traefik) и ограничение сети.</li>
+</ul>
+<h2>1.3. Пользователи</h2>
+<table>
+<thead>
+<tr>
+<th>Роль</th>
+<th>Действия</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Аналитик / финансист</td>
+<td>Загрузка выгрузок 1С, просмотр P&amp;L, фильтры, drill-down, KPI-отчёты</td>
+</tr>
+<tr>
+<td>Администратор</td>
+<td>Развёртывание, <code>.env</code>, бэкапы, reverse proxy, firewall</td>
+</tr>
+<tr>
+<td>Мониторинг</td>
+<td>Опрос <code>/health</code>, <code>/ready</code></td>
+</tr>
+</tbody>
+</table>
+<h2>1.4. Технологический стек</h2>
+<table>
+<thead>
+<tr>
+<th>Слой</th>
+<th>Технологии</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Backend</td>
+<td>Python 3.12, FastAPI 0.115.12, uvicorn 0.34.3, openpyxl, Jinja2, pydantic-settings</td>
+</tr>
+<tr>
+<td>Frontend</td>
+<td>Vite 8, Tailwind 4</td>
+</tr>
+<tr>
+<td>Хранение</td>
+<td>Файловая система (<code>uploads/</code>, <code>runtime/</code>, <code>logs/</code>) + signed cookie-сессия</td>
+</tr>
+<tr>
+<td>Контейнеризация</td>
+<td>Docker multi-stage (node:24-slim → python:3.12-slim)</td>
+</tr>
+<tr>
+<td>Тесты</td>
+<td>pytest, httpx</td>
+</tr>
+</tbody>
+</table>
+<h2>1.5. Ключевые экраны</h2>
+<table>
+<thead>
+<tr>
+<th>Экран</th>
+<th>Назначение</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Тест BI</td>
+<td>Основной сводный P&amp;L, фильтры, drill-down</td>
+</tr>
+<tr>
+<td>Графики БДР</td>
+<td>Визуализация структуры</td>
+</tr>
+<tr>
+<td>Тест Excel</td>
+<td>Просмотр PQ-таблиц (бух, реализация, себестоимость, проекты)</td>
+</tr>
+<tr>
+<td>KPI-отчёты</td>
+<td>Детализация по статьям БДР</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section class="doc" id="02_Архитектура_приложения">
+<h1>02. Архитектура приложения</h1>
+<h2>2.1. Общая схема</h2>
+<pre><code>┌──────────────┐        HTTP (реком. HTTPS)       ┌─────────────────────────────┐
+│  Браузер     │ ───────────────────────────────► │  Reverse proxy (рекоменд.)  │
+│  (UI)        │ ◄─────────────────────────────── │  nginx / traefik + TLS      │
+└──────────────┘                                   └──────────────┬──────────────┘
+                                                                  │ :18001
+                                                       ┌──────────▼──────────┐
+                                                       │  Docker: web        │
+                                                       │  uvicorn + FastAPI  │
+                                                       │  container:         │
+                                                       │  dashboard_web      │
+                                                       └──────────┬──────────┘
+                              ┌────────────────┬──────────────────┼────────────┐
+                              ▼                ▼                  ▼            ▼
+                        templates/       static/dist/      uploads/almabi/   logs/
+                        (Jinja2)         (Vite build)     (Excel)           runtime/
+</code></pre>
+<h2>2.2. Компоненты backend</h2>
+<table>
+<thead>
+<tr>
+<th>Модуль</th>
+<th>Назначение</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>app.py</code></td>
+<td>Точка входа FastAPI: middleware, маршруты, рендер шаблонов</td>
+</tr>
+<tr>
+<td><code>settings.py</code></td>
+<td>Конфигурация из env/<code>.env</code></td>
+</tr>
+<tr>
+<td><code>logging_config.py</code></td>
+<td>JSON-логи приложения</td>
+</tr>
+<tr>
+<td><code>branding.py</code></td>
+<td>Бренд <code>Al Ma BI</code>, набор nav-вкладок</td>
+</tr>
+<tr>
+<td><code>almabi_data_source.py</code></td>
+<td>Сессия uploads, сохранение файлов, контекст UI</td>
+</tr>
+<tr>
+<td><code>almabi_file_validation.py</code></td>
+<td>Определение типа выгрузки и структурная валидация</td>
+</tr>
+<tr>
+<td><code>almabi_export_parsers.py</code></td>
+<td>Парсинг бух / реализация / себестоимость → dataclasses</td>
+</tr>
+<tr>
+<td><code>almabi_excel_utils.py</code></td>
+<td>Нормализация заголовков, утилиты Excel</td>
+</tr>
+<tr>
+<td><code>almabi_plan_forecast_parser.py</code></td>
+<td>Парсинг план/прогноз</td>
+</tr>
+<tr>
+<td><code>almabi_pq_*.py</code></td>
+<td>Power Query–совместимые таблицы</td>
+</tr>
+<tr>
+<td><code>almabi_test_pipeline.py</code></td>
+<td>Основной pipeline фактов для «Тест BI»</td>
+</tr>
+<tr>
+<td><code>almabi_pipeline.py</code></td>
+<td>Общие хелперы фактов / классификация счетов</td>
+</tr>
+<tr>
+<td><code>almabi_project_index.py</code></td>
+<td>Индекс проектов / аналитики</td>
+</tr>
+<tr>
+<td><code>almabi_realization_lookup.py</code></td>
+<td>Сопоставление с реализацией</td>
+</tr>
+<tr>
+<td><code>almabi_pipeline_audit.py</code></td>
+<td>Audit JSON в <code>logs/</code></td>
+</tr>
+<tr>
+<td><code>almabi_test_builder.py</code> / <code>almabi_test_dashboard_builder.py</code></td>
+<td>Payload дашборда</td>
+</tr>
+<tr>
+<td><code>almabi_dashboard_builder.py</code></td>
+<td>Сводные строки P&amp;L, налоги, сценарии</td>
+</tr>
+<tr>
+<td><code>almabi_charts_builder.py</code></td>
+<td>Данные графиков</td>
+</tr>
+<tr>
+<td><code>almabi_contractor_builder.py</code></td>
+<td>Карточки контрагентов</td>
+</tr>
+<tr>
+<td><code>almabi_bi_paths.py</code></td>
+<td>Иерархические пути BI (drill)</td>
+</tr>
+<tr>
+<td><code>almabi_*_report*.py</code></td>
+<td>KPI-отчёты (страница + data API)</td>
+</tr>
+</tbody>
+</table>
+<h2>2.3. Компоненты frontend</h2>
+<table>
+<thead>
+<tr>
+<th>Артефакт</th>
+<th>Источник</th>
+<th>Назначение</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/static/dist/*</code></td>
+<td>Vite + Tailwind</td>
+<td>Собранные CSS/JS UI</td>
+</tr>
+<tr>
+<td><code>templates/dashboard_shell.html</code></td>
+<td>Jinja2</td>
+<td>Общая оболочка</td>
+</tr>
+<tr>
+<td><code>templates/almabi_*.html</code></td>
+<td>Jinja2</td>
+<td>Дашборд, графики, отчёты, Тест Excel</td>
+</tr>
+</tbody>
+</table>
+<h2>2.4. Поток обработки (просмотр «Тест BI»)</h2>
+<pre><code>1. SessionMiddleware → cookie-сессия с путями загруженных файлов
+2. resolve_almabi_test_dashboard_data()
+3. run_test_pipeline / build_test_facts
+      ├─ parse exports
+      ├─ doc_tax / realization / cost joins
+      ├─ tax_bucket, storno/NU split для прочих
+      └─ Fact-строки
+4. dashboard_builder → свод, фильтры, drill, графики
+5. Jinja2 TemplateResponse
+</code></pre>
+<h2>2.5. Поток загрузки Excel</h2>
+<pre><code>POST /api/almabi/files/upload        (автоопределение типа)
+  или
+POST /api/almabi/files/upload-set    (buh + realization + cost [+ plan])
+  → проверка расширения .xlsx
+  → запись в uploads/almabi/{type}-{uuid}.xlsx
+  → validate_almabi_export()
+  → обновление session (almabi_upload_set / almabi_plan_forecast)
+</code></pre>
+<h2>2.6. Сессии</h2>
+<ul>
+<li>Выбор загруженных файлов хранится в <strong>signed cookie-сессии</strong> (<code>SESSION_SECRET</code>).</li>
+<li>Набор файлов действует <strong>только для текущего браузера/сессии</strong>.</li>
+<li>Глобального реестра «последней версии для всех пользователей» нет.</li>
+</ul>
+<h2>2.7. Диаграмма модулей</h2>
+<pre><code>                 ┌─────────────┐
+                 │  settings   │
+                 └──────┬──────┘
+                        ▼
+                  ┌──────────┐
+                  │  app.py  │
+                  └────┬─────┘
+       ┌───────────────┼────────────────┬──────────────────┐
+       ▼               ▼                ▼                  ▼
+ data_source     file_validation   test_pipeline     *_report_data
+       │               │                │                  │
+       └───────┬───────┘                │                  │
+               ▼                        ▼                  ▼
+        export_parsers            test_builder /     report templates
+        plan_forecast             dashboard_builder
+               │                        │
+               └────────────┬───────────┘
+                            ▼
+                     templates / static
+</code></pre>
+<h2>2.8. Классификация счетов → KPI</h2>
+<table>
+<thead>
+<tr>
+<th>Счета</th>
+<th>KPI (<code>kpi_l1</code>)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Кт <code>90.01.3</code></td>
+<td>Выручка</td>
+</tr>
+<tr>
+<td>Дт <code>90.02.1</code></td>
+<td>Себестоимость</td>
+</tr>
+<tr>
+<td>Дт <code>90.07.1</code></td>
+<td>Коммерческие расходы (в PQ: «Расходы на продажу»)</td>
+</tr>
+<tr>
+<td>Дт <code>90.08.1</code></td>
+<td>Управленческие расходы</td>
+</tr>
+<tr>
+<td>Кт <code>91.01</code></td>
+<td>Прочие доходы</td>
+</tr>
+<tr>
+<td>Дт <code>91.02</code></td>
+<td>Прочие расходы</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section class="doc" id="03_Архитектура_хранилища">
+<h1>03. Архитектура хранилища</h1>
+<h2>3.1. Общий принцип</h2>
+<p>Система <strong>не хранит аналитические факты в реляционной БД</strong>.</p>
+<table>
+<thead>
+<tr>
+<th>Что</th>
+<th>Где</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Содержимое Excel-выгрузок</td>
+<td>Файловая система (<code>uploads/almabi/</code>)</td>
+</tr>
+<tr>
+<td>Привязка файлов к пользователю</td>
+<td>Signed cookie-сессия браузера</td>
+</tr>
+<tr>
+<td>Кеш / runtime</td>
+<td><code>runtime/</code> (служебные каталоги)</td>
+</tr>
+<tr>
+<td>Логи приложения</td>
+<td><code>logs/app.log</code> (и связанные)</td>
+</tr>
+<tr>
+<td>Audit pipeline</td>
+<td><code>logs/almabi_test/audit-*.json</code></td>
+</tr>
+</tbody>
+</table>
+<p>Это упрощает развёртывание (один контейнер), но:</p>
+<ul>
+<li>нет общей истории версий между браузерами;</li>
+<li>масштабирование нескольких реплик требует общей FS или внешней сессии;</li>
+<li>бэкап критичен для <code>uploads/</code> и <code>.env</code>.</li>
+</ul>
+<h2>3.2. СУБД</h2>
+<p><strong>Отсутствует.</strong> Метаданные файлов не ведутся в SQLite (в отличие от ОПиОП BI).</p>
+<h2>3.3. Файловое хранилище</h2>
+<pre><code>AlMaBi/
+├── uploads/
+│   └── almabi/
+│       ├── buh-{uuid}.xlsx
+│       ├── realization-{uuid}.xlsx
+│       ├── cost-{uuid}.xlsx
+│       └── … план/прогноз (если загружен)
+├── runtime/                 # служебный каталог (готовность /ready)
+└── logs/
+    ├── app.log
+    └── almabi_test/
+        ├── audit-latest.json
+        └── audit-{id}.json
+</code></pre>
+<h3>Docker volumes (compose)</h3>
+<table>
+<thead>
+<tr>
+<th>Хост</th>
+<th>Контейнер</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>./uploads</code></td>
+<td><code>/app/uploads</code></td>
+</tr>
+<tr>
+<td><code>./runtime</code></td>
+<td><code>/app/runtime</code></td>
+</tr>
+<tr>
+<td><code>./logs</code></td>
+<td><code>/app/logs</code></td>
+</tr>
+</tbody>
+</table>
+<p>Весь репозиторий в <code>/app</code> <strong>не монтируется</strong>, чтобы не затирать собранные <code>static/dist</code>.</p>
+<h2>3.4. Сессионная модель</h2>
+<p>Ключи сессии:</p>
+<table>
+<thead>
+<tr>
+<th>Ключ</th>
+<th>Содержимое</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>almabi_upload_set</code></td>
+<td><code>{ buh\|realization\|cost: { original, stored } }</code></td>
+</tr>
+<tr>
+<td><code>almabi_plan_forecast</code></td>
+<td><code>{ original, stored }</code> (опционально)</td>
+</tr>
+</tbody>
+</table>
+<p>Путь на диске: <code>UPLOADS_DIR/almabi/{stored}</code>.</p>
+<h2>3.5. Жизненный цикл файла</h2>
+<ol>
+<li>Upload: сохранение под UUID-именем в <code>uploads/almabi/</code>.</li>
+<li>Валидация типа выгрузки (<code>validate_almabi_export</code>).</li>
+<li>Запись метаданных в cookie-сессию.</li>
+<li>При следующем запросе дашборда файлы читаются с диска по session paths.</li>
+<li>Удаление старых файлов из UI <strong>не реализовано</strong> (рост <code>uploads/</code> — административно).</li>
+</ol>
+<h2>3.6. Диаграмма (логическая)</h2>
+<pre><code>Session cookie
+  almabi_upload_set.buh.stored ──────────► uploads/almabi/buh-{uuid}.xlsx
+  almabi_upload_set.realization.stored ──► uploads/almabi/realization-{uuid}.xlsx
+  almabi_upload_set.cost.stored ─────────► uploads/almabi/cost-{uuid}.xlsx
+  almabi_plan_forecast.stored ───────────► uploads/almabi/…xlsx
+
+Pipeline (in-memory)
+  BuhRow / RealizationRow / CostRow → Fact → dashboard / reports
+</code></pre>
+<p>Аналитическая модель (факты P&amp;L) <strong>не материализуется в БД</strong> — строится на лету.</p>
+<h2>3.7. Рекомендации по сопровождению</h2>
+<ul>
+<li>Бэкапить <code>uploads/</code>, <code>logs/</code> (по политике), <code>.env</code>.</li>
+<li>Периодически чистить старые <code>uploads/almabi/*.xlsx</code>.</li>
+<li>Не коммитить <code>uploads/</code>, <code>logs/</code>, <code>runtime/</code>, <code>.env</code> в git.</li>
+<li>При нескольких инстансах обеспечить общее хранилище uploads и sticky sessions / общий secret.</li>
+</ul>
+</section>
+<section class="doc" id="04_API_и_маршруты">
+<h1>04. API и маршруты</h1>
+<h2>4.1. Общие правила доступа</h2>
+<table>
+<thead>
+<tr>
+<th>Условие</th>
+<th>Поведение</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Аутентификация</td>
+<td><strong>Не реализована</strong> — все маршруты доступны без логина</td>
+</tr>
+<tr>
+<td>OpenAPI</td>
+<td><code>/api/docs</code>, <code>/api/redoc</code>, <code>/api/openapi.json</code> — <strong>всегда включены</strong></td>
+</tr>
+<tr>
+<td>Сессия</td>
+<td>Signed cookie (<code>SESSION_SECRET</code>) для привязки загруженных файлов</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>Для эксплуатации во внутренней сети обязательны организационные меры: VPN/firewall и ideally reverse proxy + auth (см. документ 07).</p>
+</blockquote>
+<h2>4.2. Публичные эндпоинты (мониторинг)</h2>
+<table>
+<thead>
+<tr>
+<th>Метод</th>
+<th>Путь</th>
+<th>Ответ</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GET</td>
+<td><code>/health</code></td>
+<td><code>{"status":"ok"}</code> — liveness</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/ready</code></td>
+<td>200 <code>ready</code> / 503 <code>not_ready</code> — наличие каталогов uploads / logs / runtime</td>
+</tr>
+</tbody>
+</table>
+<h2>4.3. JSON API загрузки и данных</h2>
+<h3>Основной набор выгрузок</h3>
+<table>
+<thead>
+<tr>
+<th>Метод</th>
+<th>Путь</th>
+<th>Назначение</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GET</td>
+<td><code>/api/almabi/data-source</code></td>
+<td>Статус загруженных файлов сессии</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/api/almabi/files/upload</code></td>
+<td>Загрузка одного <code>.xlsx</code> с автоопределением типа</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/api/almabi/files/upload-set</code></td>
+<td>Пакет: <code>buh_file</code>, <code>realization_file</code>, <code>cost_file</code>, <code>plan_forecast_file</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Ограничения upload (текущие):</strong></p>
+<ul>
+<li>только <code>.xlsx</code>;</li>
+<li>структурная валидация заголовков выгрузки;</li>
+<li>отдельного <code>MAX_UPLOAD_BYTES</code> / rate limit в коде <strong>нет</strong> (остаточный риск — см. 07).</li>
+</ul>
+<h3>KPI-отчёты (шаблон для каждого)</h3>
+<table>
+<thead>
+<tr>
+<th>Метод</th>
+<th>Путь</th>
+<th>Примеры slug</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GET</td>
+<td><code>/dashboard/almabi-{slug}-report</code></td>
+<td>HTML-страница</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/api/almabi-{slug}-report/upload</code></td>
+<td>Локальная загрузка для отчёта</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/almabi-{slug}-report/data</code></td>
+<td>JSON payload</td>
+</tr>
+</tbody>
+</table>
+<p>Slugs: <code>revenue</code>, <code>cost</code>, <code>other-income</code>, <code>other-expense</code>, <code>commercial-expense</code>, <code>management-expense</code>, <code>operating-profit</code>, <code>profit-before-tax</code>, <code>taxes</code>, <code>net-profit</code>.</p>
+<h3>Тест Excel (PQ-таблицы)</h3>
+<table>
+<thead>
+<tr>
+<th>Метод</th>
+<th>Путь</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GET</td>
+<td><code>/dashboard/almabi-test-excel</code></td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/api/almabi-test-excel/{revenue\|cost\|buh\|projects}/upload</code></td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/almabi-test-excel/{revenue\|cost\|buh\|projects}/data</code></td>
+</tr>
+</tbody>
+</table>
+<h2>4.4. HTML-страницы</h2>
+<table>
+<thead>
+<tr>
+<th>Метод</th>
+<th>Путь</th>
+<th>Описание</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GET</td>
+<td><code>/</code></td>
+<td>Редирект 307 → <code>/dashboard/almabi-test</code></td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/dashboard/almabi</code></td>
+<td>Редирект → Тест BI</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/dashboard/almabi-test</code></td>
+<td>Основной дашборд P&amp;L</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/dashboard/almabi-charts</code></td>
+<td>Графики БДР</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/dashboard/almabi-test-excel</code></td>
+<td>Просмотр PQ-таблиц</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/dashboard/almabi-*-report</code></td>
+<td>KPI-отчёты</td>
+</tr>
+</tbody>
+</table>
+<h2>4.5. Статика</h2>
+<table>
+<thead>
+<tr>
+<th>Путь</th>
+<th>Содержимое</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/static/*</code></td>
+<td>Статика, включая <code>/static/dist/*</code> (Vite build)</td>
+</tr>
+</tbody>
+</table>
+<h2>4.6. Пример проверки API</h2>
+<pre><code class="language-bash"># мониторинг
+curl -s http://127.0.0.1:18001/health
+curl -s http://127.0.0.1:18001/ready
+
+# статус источников
+curl -s -c cookies.txt -b cookies.txt http://127.0.0.1:18001/api/almabi/data-source
+
+# пакетная загрузка
+curl -s -c cookies.txt -b cookies.txt \
+  -F &quot;buh_file=@./buh.xlsx&quot; \
+  -F &quot;realization_file=@./realization.xlsx&quot; \
+  -F &quot;cost_file=@./cost.xlsx&quot; \
+  http://127.0.0.1:18001/api/almabi/files/upload-set
+</code></pre>
+<p>Swagger UI: <code>http://127.0.0.1:18001/api/docs</code>.</p>
+</section>
+<section class="doc" id="05_Модель_данных_Excel">
+<h1>05. Модель данных Excel и P&amp;L</h1>
+<h2>5.1. Входные выгрузки</h2>
+<table>
+<thead>
+<tr>
+<th>Тип</th>
+<th>Ключ</th>
+<th>Обязательность</th>
+<th>Маркеры заголовков (упрощённо)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Бух.регистр</td>
+<td><code>buh</code></td>
+<td>Да</td>
+<td>документ + сумма + счет дт</td>
+</tr>
+<tr>
+<td>Реализация</td>
+<td><code>realization</code></td>
+<td>Да</td>
+<td>выручка + (номенклатура / заказ клиента / группа проектов / направление)</td>
+</tr>
+<tr>
+<td>Себестоимость</td>
+<td><code>cost</code></td>
+<td>Да</td>
+<td>продукция / документ отгрузки + колонки себестоимости</td>
+</tr>
+<tr>
+<td>План / прогноз</td>
+<td>session <code>almabi_plan_forecast</code></td>
+<td>Нет</td>
+<td>сумма + месяц + план/прогноз</td>
+</tr>
+</tbody>
+</table>
+<p>Формат: только <code>.xlsx</code>. Тип определяется по заголовкам (первые ~40 строк) и эвристикам имени файла.</p>
+<h2>5.2. Бух.регистр → <code>BuhRow</code></h2>
+<p>Основные поля: документ, счет Дт/Кт, сумма БУ, суммы НУ Дт/Кт, месяц, вид налогообложения, статья расходов, договор, проект, номенклатура Кт, контрагент.</p>
+<p>Особенности PQ:</p>
+<ul>
+<li>skip ≈ 8 строк заголовка, последняя служебная строка отбрасывается;</li>
+<li>вид налогообложения извлекается из субконто (приоритет PQ);</li>
+<li>статья прочих доходов/расходов — из субконто стороны 91.01 / 91.02.</li>
+</ul>
+<h2>5.3. Реализация → <code>RealizationRow</code></h2>
+<p>Поля: документ, номенклатура, проект, группа проектов, направление, выручка, месяц, договор.</p>
+<h2>5.4. Себестоимость → <code>CostRow</code></h2>
+<p>Поля: документ, номенклатура (продукция), счет, статья калькуляции, количество продаж, сумма, месяц, раздел себестоимости, аналитика, договор.</p>
+<p>Разделы (PQ): при счёте ≠ 20 — «Прочие производственные расходы»; для счёта 20 — материалы / ФОТ / аренда / амортизация / ОПЗ и др. по статье калькуляции.</p>
+<h2>5.5. План / прогноз</h2>
+<p>Обязательные нормализованные заголовки: сумма, месяц, план/прогноз.<br />
+Опциональные измерения: направление, группа, проект, вид налогообложения, раздел, вид себестоимости.</p>
+<p>Без файла план/прогноз сценарии могут аппроксимироваться коэффициентами от факта (см. <code>almabi_mock_data.SCENARIOS</code>).</p>
+<h2>5.6. Поток построения фактов («Тест BI»)</h2>
+<pre><code>parse exports
+  → индексы doc_tax / doc_contract / doc_contractor
+  → project_index + realization_lookup + cost PQ lookup
+  → classify_buh_section → signed amounts → Fact
+  → (прочие) storno / NU split при расхождении БУ и НУ
+  → dashboard / reports
+</code></pre>
+<h3>Join (кратко)</h3>
+<ol>
+<li>Налог документа (<code>doc_tax</code>): льготный приоритетнее; выручка 90.01.3 может перезаписать.</li>
+<li>Себестоимость: ключ <code>(document_match_key, nomenclature)</code>.</li>
+<li>Реализация: договор+номенклатура → договор → документ+номенклатура → документ.</li>
+<li>Аналитика: coalesce cost/realization → при конфликте realization → fallback project_index.</li>
+<li>Fallback: если из буха нет выручки/себестоимости — дополнение из файлов реализации/себестоимости.</li>
+</ol>
+<h3>Знаки сумм</h3>
+<ul>
+<li>Выручка / прочие доходы: положительные.</li>
+<li>Себестоимость / коммерческие / управленческие / прочие расходы: отрицательные (как в PQ «Свод_нов»).</li>
+</ul>
+<h2>5.7. Налоговые корзины (<code>tax_bucket</code>)</h2>
+<table>
+<thead>
+<tr>
+<th>Условие</th>
+<th>Корзина</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>«общие условия» / пусто</td>
+<td>Нельготные проекты</td>
+</tr>
+<tr>
+<td>льгот<em>, пониженн</em>, ставка 0, эконом. зона, …</td>
+<td>Льготные проекты</td>
+</tr>
+<tr>
+<td>Иное</td>
+<td>Нельготные проекты</td>
+</tr>
+</tbody>
+</table>
+<p>UI-фильтр: Все виды / Льготные / Нельготные (+ направление, группа, проект, договор, контрагент, квартал, месяц).</p>
+<h2>5.8. Формулы свода P&amp;L</h2>
+<p>Сценарии: <code>Факт БУ</code>, <code>Факт НУ</code>, <code>План</code>, <code>Прогноз</code>.</p>
+<pre><code>Операционная прибыль
+  = Выручка + Себестоимость + Коммерческие + Управленческие
+
+Прибыль/убыток до налогообложения
+  = Операционная + Прочие доходы + Прочие расходы
+
+Налоги (расчёт)
+  = −base × rate
+  rate = 0.02 если вид содержит «льгот», иначе 0.25
+  (база — по НУ компонентам PBT в разрезе месяц × вид НО)
+
+Чистая прибыль
+  = PBT + Налоги
+</code></pre>
+<p>Замечание: для отображения выручки сценарий «Факт БУ» может брать НУ-суммы (<code>always_nu</code>).</p>
+<h2>5.9. Иерархия drill-down</h2>
+<pre><code>Выручка / Себестоимость:
+  KPI → направление → группа проектов → проект → договор
+
+Льготные / прочие статьи:
+  KPI → tax_bucket → [статья] → договор
+</code></pre>
+<h2>5.10. Прочие доходы/расходы: storno и split БУ/НУ</h2>
+<ul>
+<li>Документы, где |БУ| и |НУ| &gt; 0.01 и различаются → <code>nu_mismatch_docs</code>.</li>
+<li>Storno-группы по <code>(document, section, round(|amount|, 2))</code>.</li>
+<li>Общая налоговая сторно-строка может наследовать льготный НО от зеркальной проводки.</li>
+<li>Если корзина налога БУ ≠ НУ → две Fact-строки (БУ-only и НУ-only).</li>
+</ul>
+<h2>5.11. Ограничения модели</h2>
+<ul>
+<li>Корректность цифр зависит от структуры выгрузок 1С и полноты аналитики.</li>
+<li>Нет версионирования фактов в БД — «версия» = набор файлов в сессии.</li>
+<li>PQ-название «Расходы на продажу» = UI «Коммерческие расходы».</li>
+</ul>
+</section>
+<section class="doc" id="06_Развертывание_и_эксплуатация">
+<h1>06. Развёртывание и эксплуатация</h1>
+<h2>6.1. Требования к серверу</h2>
+<table>
+<thead>
+<tr>
+<th>Компонент</th>
+<th>Рекомендация</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ОС</td>
+<td>Ubuntu 22.04 LTS (или совместимая) / Windows для локальной разработки</td>
+</tr>
+<tr>
+<td>Docker</td>
+<td>Docker Engine + Compose plugin</td>
+</tr>
+<tr>
+<td>Диск</td>
+<td>Запас под <code>uploads/</code> и логи</td>
+</tr>
+<tr>
+<td>Сеть</td>
+<td>Только VPN/корп. сеть; TLS на reverse proxy</td>
+</tr>
+<tr>
+<td>Python на хосте</td>
+<td>Не обязателен (всё в контейнере)</td>
+</tr>
+</tbody>
+</table>
+<h2>6.2. Файлы развёртывания</h2>
+<table>
+<thead>
+<tr>
+<th>Файл</th>
+<th>Назначение</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Dockerfile</code></td>
+<td>Multi-stage: сборка frontend + runtime Python</td>
+</tr>
+<tr>
+<td><code>docker-compose.yml</code></td>
+<td>Сервис <code>web</code>, порт <code>18001:8000</code></td>
+</tr>
+<tr>
+<td><code>.env.example</code></td>
+<td>Шаблон переменных окружения</td>
+</tr>
+<tr>
+<td><code>.env</code></td>
+<td>Локальные/серверные настройки (не в git)</td>
+</tr>
+</tbody>
+</table>
+<h2>6.3. Переменные окружения</h2>
+<table>
+<thead>
+<tr>
+<th>Переменная</th>
+<th>Описание</th>
+<th>По умолчанию</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>DEBUG</code></td>
+<td>Режим отладки uvicorn при <code>python app.py</code></td>
+<td><code>false</code> (в compose сейчас часто <code>true</code>)</td>
+</tr>
+<tr>
+<td><code>APP_HOST</code></td>
+<td>Хост bind</td>
+<td><code>0.0.0.0</code></td>
+</tr>
+<tr>
+<td><code>APP_PORT</code></td>
+<td>Порт приложения</td>
+<td><code>8000</code></td>
+</tr>
+<tr>
+<td><code>SESSION_SECRET</code></td>
+<td>Ключ cookie-сессий</td>
+<td><code>change-me-in-production</code> (<strong>сменить</strong>)</td>
+</tr>
+<tr>
+<td><code>UPLOADS_DIR</code></td>
+<td>Каталог Excel</td>
+<td><code>uploads</code> / в Docker <code>/app/uploads</code></td>
+</tr>
+<tr>
+<td><code>RUNTIME_DIR</code></td>
+<td>Runtime</td>
+<td><code>runtime</code> / <code>/app/runtime</code></td>
+</tr>
+<tr>
+<td><code>LOGS_DIR</code></td>
+<td>Логи</td>
+<td><code>logs</code> / <code>/app/logs</code></td>
+</tr>
+</tbody>
+</table>
+<p>Генерация секрета:</p>
+<pre><code class="language-bash">python -c &quot;import secrets; print(secrets.token_urlsafe(48))&quot;
+</code></pre>
+<h2>6.4. Быстрый старт</h2>
+<pre><code class="language-bash">cd ~/AlMaBi
+cp .env.example .env
+# задать SESSION_SECRET
+mkdir -p uploads runtime logs
+docker compose up --build -d
+curl -s http://127.0.0.1:18001/health
+</code></pre>
+<p>URL: <code>http://&lt;host&gt;:18001/</code> → редирект на <code>/dashboard/almabi-test</code>.</p>
+<h2>6.5. Порты и имя контейнера</h2>
+<table>
+<thead>
+<tr>
+<th>Параметр</th>
+<th>Значение по умолчанию</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Хост-порт</td>
+<td><code>18001</code></td>
+</tr>
+<tr>
+<td>Контейнер-порт</td>
+<td><code>8000</code></td>
+</tr>
+<tr>
+<td><code>container_name</code></td>
+<td><code>dashboard_web</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Важно:</strong> на одном сервере с ОПиОП BI развести имена контейнеров и порты (например ОПиОП <code>18000</code>, AlMaBi <code>18001</code>). Текущее имя <code>dashboard_web</code> может конфликтовать — при совместном размещении переименовать.</p>
+<h2>6.6. Frontend assets</h2>
+<p>Локально:</p>
+<pre><code class="language-bash">npm install
+npm run build
+</code></pre>
+<p>В Docker frontend собирается в stage <code>node:24-slim</code>.</p>
+<h2>6.7. Автозапуск</h2>
+<p>В текущем <code>docker-compose.yml</code> политика <code>restart</code> может быть не задана — рекомендуется <code>restart: unless-stopped</code>.</p>
+<pre><code class="language-bash">sudo systemctl enable docker
+</code></pre>
+<h2>6.8. Бэкапы</h2>
+<p>Минимальный набор:</p>
+<pre><code class="language-bash">tar -czf almabi-backup-$(date +%F).tar.gz uploads runtime logs .env
+</code></pre>
+<h2>6.9. Обновление</h2>
+<pre><code class="language-bash">cd ~/AlMaBi
+git pull
+docker compose up --build -d
+</code></pre>
+<h2>6.10. Логи</h2>
+<pre><code class="language-bash">docker compose logs -f web
+tail -f logs/app.log
+</code></pre>
+<p>Есть <code>x-request-id</code> / <code>request_id</code> в middleware логирования.</p>
+<h2>6.11. Тесты</h2>
+<pre><code class="language-bash">docker compose build
+docker compose run --rm web pytest -q
+</code></pre>
+<p>Покрывается: парсинг выгрузок, PQ-таблицы, pipeline, налоговые корзины, отчёты, маршруты.</p>
+<h2>6.12. Ручной smoke-check</h2>
+<ol>
+<li>Открыть <code>http://localhost:18001/</code> — редирект на Тест BI.</li>
+<li>Загрузить обязательные выгрузки 1С.</li>
+<li>Проверить свод, фильтры, drill-down, графики.</li>
+<li>Открыть Тест Excel и 1–2 KPI-отчёта.</li>
+<li>Проверить <code>/health</code> и <code>/ready</code>.</li>
+</ol>
+</section>
+<section class="doc" id="07_Документация_для_проверки_ИБ">
+<h1>07. Документация для проверки информационной безопасности</h1>
+<p><strong>Объект:</strong> Al Ma BI (AlMaBi)<br />
+<strong>Тип документа:</strong> паспорт ИБ / материалы для аудита<br />
+<strong>Классификация данных (уточнить владельцем):</strong> [ ] общедоступные [ ] внутренние [ ] конфиденциальные  </p>
+<hr />
+<h2>7.1. Краткое описание объекта защиты</h2>
+<p>Веб-приложение для построения управленческого P&amp;L по Excel-выгрузкам 1С. Развёртывается в Docker. Доступ предполагается во <strong>внутренней сети / VPN</strong>. Содержит финансовые/управленческие данные из загружаемых файлов (выручка, себестоимость, договоры, контрагенты, налоговые режимы).</p>
+<h2>7.2. Активы</h2>
+<table>
+<thead>
+<tr>
+<th>Актив</th>
+<th>Описание</th>
+<th>Критичность</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Excel-выгрузки 1С</td>
+<td><code>uploads/almabi/</code></td>
+<td>Высокая</td>
+</tr>
+<tr>
+<td>Cookie-сессии (привязка файлов)</td>
+<td><code>SESSION_SECRET</code></td>
+<td>Высокая</td>
+</tr>
+<tr>
+<td>Журналы / audit</td>
+<td><code>logs/</code>, <code>logs/almabi_test/</code></td>
+<td>Средняя</td>
+</tr>
+<tr>
+<td>Исходный код / образ</td>
+<td>репозиторий, Docker image</td>
+<td>Средняя</td>
+</tr>
+<tr>
+<td>Доступность сервиса</td>
+<td>порт 18001 / reverse proxy</td>
+<td>Средняя</td>
+</tr>
+<tr>
+<td>OpenAPI UI</td>
+<td><code>/api/docs</code></td>
+<td>Средняя (разведка API)</td>
+</tr>
+</tbody>
+</table>
+<h2>7.3. Модель доступа</h2>
+<table>
+<thead>
+<tr>
+<th>Субъект</th>
+<th>Аутентификация</th>
+<th>Авторизация</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Пользователь UI/API</td>
+<td><strong>Нет</strong></td>
+<td>Все функции доступны любому, кто достучался до порта</td>
+</tr>
+<tr>
+<td>Мониторинг</td>
+<td>Нет</td>
+<td><code>/health</code>, <code>/ready</code></td>
+</tr>
+<tr>
+<td>Администратор ОС</td>
+<td>SSH / локальный доступ</td>
+<td>Файлы, Docker, <code>.env</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Важно для аудита:</strong> на момент комплекта <strong>нет Basic Auth, SSO и RBAC</strong>. Защита опирается только на сетевой периметр. Это <strong>критичное отличие</strong> от hardened ОПиОП BI v1.1.</p>
+<h2>7.4. Реализованные меры защиты (контроли)</h2>
+<h3>7.4.1. Аутентификация и сессии</h3>
+<table>
+<thead>
+<tr>
+<th>Контроль</th>
+<th>Реализация</th>
+<th>Статус</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Аутентификация пользователей</td>
+<td>—</td>
+<td><strong>Не реализовано</strong></td>
+</tr>
+<tr>
+<td>Обязательность auth в prod</td>
+<td>—</td>
+<td><strong>Не реализовано</strong></td>
+</tr>
+<tr>
+<td>Сессионные cookie</td>
+<td>Starlette SessionMiddleware, signed</td>
+<td>Реализовано</td>
+</tr>
+<tr>
+<td>Сила SESSION_SECRET</td>
+<td>Задаётся env; дефолт слабый</td>
+<td><strong>Частично</strong> (нужна орг. проверка)</td>
+</tr>
+<tr>
+<td>Cookie SameSite</td>
+<td><code>SameSite=Lax</code></td>
+<td>Реализовано</td>
+</tr>
+<tr>
+<td>Cookie Secure / https_only</td>
+<td>Не включено явно</td>
+<td><strong>Не реализовано</strong></td>
+</tr>
+</tbody>
+</table>
+<h3>7.4.2. Управление конфигурацией</h3>
+<table>
+<thead>
+<tr>
+<th>Контроль</th>
+<th>Реализация</th>
+<th>Статус</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Секреты вне кода</td>
+<td><code>.env</code> (ожидается в <code>.gitignore</code>)</td>
+<td>Реализовано (процесс)</td>
+</tr>
+<tr>
+<td>Пример без реальных секретов</td>
+<td><code>.env.example</code></td>
+<td>Реализовано</td>
+</tr>
+<tr>
+<td>Отключение debug в prod compose</td>
+<td>В текущем compose часто <code>DEBUG=true</code></td>
+<td><strong>Требует hardening</strong></td>
+</tr>
+<tr>
+<td>Отключение OpenAPI в prod</td>
+<td>OpenAPI всегда включён</td>
+<td><strong>Не реализовано</strong></td>
+</tr>
+</tbody>
+</table>
+<h3>7.4.3. Защита ввода / upload</h3>
+<table>
+<thead>
+<tr>
+<th>Контроль</th>
+<th>Реализация</th>
+<th>Статус</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Ограничение типа файла</td>
+<td>только <code>.xlsx</code></td>
+<td>Реализовано</td>
+</tr>
+<tr>
+<td>Лимит размера</td>
+<td>—</td>
+<td><strong>Не реализовано</strong></td>
+</tr>
+<tr>
+<td>Rate limit upload</td>
+<td>—</td>
+<td><strong>Не реализовано</strong></td>
+</tr>
+<tr>
+<td>Структурная валидация</td>
+<td><code>validate_almabi_export</code></td>
+<td>Реализовано</td>
+</tr>
+<tr>
+<td>Имя на диске</td>
+<td><code>{type}-{uuid}.xlsx</code></td>
+<td>Реализовано</td>
+</tr>
+<tr>
+<td>Санитизация исходного имени</td>
+<td><code>Path(...).name</code></td>
+<td>Реализовано</td>
+</tr>
+</tbody>
+</table>
+<h3>7.4.4. Сетевые и HTTP-контроли</h3>
+<table>
+<thead>
+<tr>
+<th>Контроль</th>
+<th>Реализация</th>
+<th>Статус</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Security headers (XFO, nosniff, …)</td>
+<td>—</td>
+<td><strong>Не реализовано</strong></td>
+</tr>
+<tr>
+<td>Trusted proxy</td>
+<td>—</td>
+<td><strong>Не реализовано</strong></td>
+</tr>
+<tr>
+<td>TLS</td>
+<td>Не встроено — reverse proxy</td>
+<td><strong>Орг. мера</strong></td>
+</tr>
+<tr>
+<td>Firewall / VPN</td>
+<td>Не встроено</td>
+<td><strong>Орг. мера</strong></td>
+</tr>
+</tbody>
+</table>
+<h3>7.4.5. Контейнер и runtime</h3>
+<table>
+<thead>
+<tr>
+<th>Контроль</th>
+<th>Реализация</th>
+<th>Статус</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Non-root USER</td>
+<td>В Dockerfile не задан <code>USER app</code></td>
+<td><strong>Не реализовано</strong></td>
+</tr>
+<tr>
+<td>Минимальный образ</td>
+<td>python:3.12-slim</td>
+<td>Реализовано</td>
+</tr>
+<tr>
+<td>Pytest в runtime image</td>
+<td><code>pytest</code> в <code>requirements.txt</code></td>
+<td>Уязвимость поверхности / лишний вес</td>
+</tr>
+<tr>
+<td>Restart policy</td>
+<td>Рекомендуется <code>unless-stopped</code></td>
+<td>Проверить compose</td>
+</tr>
+</tbody>
+</table>
+<h3>7.4.6. Frontend / supply chain</h3>
+<table>
+<thead>
+<tr>
+<th>Контроль</th>
+<th>Реализация</th>
+<th>Статус</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Нет runtime CDN (сборка Vite)</td>
+<td>Tailwind/Vite в образ</td>
+<td>Реализовано</td>
+</tr>
+<tr>
+<td>Фиксация версий Python deps</td>
+<td>pinned в requirements.txt</td>
+<td>Реализовано</td>
+</tr>
+<tr>
+<td>npm lockfile</td>
+<td><code>package-lock.json</code></td>
+<td>Реализовано</td>
+</tr>
+</tbody>
+</table>
+<h3>7.4.7. Журналирование</h3>
+<table>
+<thead>
+<tr>
+<th>Контроль</th>
+<th>Реализация</th>
+<th>Статус</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Структурированные логи</td>
+<td>JSON + middleware</td>
+<td>Реализовано</td>
+</tr>
+<tr>
+<td>Request ID</td>
+<td><code>x-request-id</code></td>
+<td>Реализовано</td>
+</tr>
+<tr>
+<td>Pipeline audit</td>
+<td><code>logs/almabi_test/audit-*.json</code></td>
+<td>Реализовано</td>
+</tr>
+<tr>
+<td>Централизованный SIEM</td>
+<td>Не из коробки</td>
+<td><strong>Орг. мера</strong></td>
+</tr>
+</tbody>
+</table>
+<h2>7.5. Анализ угроз (упрощённый)</h2>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Угроза</th>
+<th>Вектор</th>
+<th>Реализованная защита</th>
+<th>Остаточный риск</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>T01</td>
+<td>Несанкционированный доступ к P&amp;L</td>
+<td>Открытый порт без auth</td>
+<td>Только сеть</td>
+<td><strong>Высокий</strong> без VPN/firewall</td>
+</tr>
+<tr>
+<td>T02</td>
+<td>Перехват данных / cookie</td>
+<td>HTTP без TLS</td>
+<td>—</td>
+<td><strong>Высокий без HTTPS</strong></td>
+</tr>
+<tr>
+<td>T03</td>
+<td>DoS через большой upload</td>
+<td>POST multipart</td>
+<td>Тип .xlsx</td>
+<td><strong>Высокий</strong> (нет size/rate limit)</td>
+</tr>
+<tr>
+<td>T04</td>
+<td>Разведка API</td>
+<td>Открытый Swagger</td>
+<td>—</td>
+<td>Средний</td>
+</tr>
+<tr>
+<td>T05</td>
+<td>Path traversal в имени файла</td>
+<td>upload filename</td>
+<td><code>Path.name</code> + UUID</td>
+<td>Низкий</td>
+</tr>
+<tr>
+<td>T06</td>
+<td>XSS через данные Excel</td>
+<td>имена в шаблонах</td>
+<td>Jinja autoescape</td>
+<td>Низкий/средний</td>
+</tr>
+<tr>
+<td>T07</td>
+<td>Утечка содержимого uploads</td>
+<td>доступ к FS / другой сессии при слабом секрете</td>
+<td>UUID имена</td>
+<td>Средний при слабом <code>SESSION_SECRET</code></td>
+</tr>
+<tr>
+<td>T08</td>
+<td>Компрометация <code>.env</code></td>
+<td>доступ к серверу</td>
+<td>Права ОС</td>
+<td>Зависит от hardening ОС</td>
+</tr>
+<tr>
+<td>T09</td>
+<td>Неконтролируемый рост диска</td>
+<td>частые upload</td>
+<td>Нет автоочистки</td>
+<td>Средний</td>
+</tr>
+<tr>
+<td>T10</td>
+<td>Контейнер от root</td>
+<td>RCE в приложении → root</td>
+<td>—</td>
+<td>Средний/высокий</td>
+</tr>
+<tr>
+<td>T11</td>
+<td>Отсутствие RBAC</td>
+<td>любой visitor = полный доступ</td>
+<td>—</td>
+<td>Высокий в multi-user</td>
+</tr>
+</tbody>
+</table>
+<h2>7.6. Остаточные риски и рекомендации</h2>
+<h3>Обязательно до вывода в эксплуатацию (если доступ шире localhost)</h3>
+<ol>
+<li><strong>Ограничить сеть</strong> — firewall / VPN; не публиковать <code>:18001</code> в интернет.</li>
+<li><strong>TLS (HTTPS)</strong> через nginx/traefik.</li>
+<li><strong>Ввести аутентификацию</strong> (Basic Auth / SSO) по аналогии с ОПиОП BI — иначе любой в сети видит финансы.</li>
+<li>Сменить <strong><code>SESSION_SECRET</code></strong> на длинный случайный (≥32).</li>
+<li><code>DEBUG=false</code> в production compose; отключить OpenAPI в prod.</li>
+<li>Регламент <strong>бэкапа</strong> <code>uploads/</code>, <code>.env</code>.</li>
+</ol>
+<h3>Рекомендуется в следующих итерациях</h3>
+<ol>
+<li><code>MAX_UPLOAD_BYTES</code> + rate limit upload.</li>
+<li>Security headers (X-Frame-Options, nosniff, Referrer-Policy, CSP).</li>
+<li>Non-root <code>USER</code> в Dockerfile.</li>
+<li>Вынести pytest в <code>requirements-dev.txt</code>.</li>
+<li>Cookie <code>Secure</code> / <code>https_only</code> при HTTPS.</li>
+<li>RBAC (read-only vs upload).</li>
+<li>Автоочистка старых uploads.</li>
+<li>Централизованный сбор логов / алерты.</li>
+<li>CI security-сканы зависимостей.</li>
+</ol>
+<h2>7.7. Обработка персональных данных</h2>
+<p>Типовой сценарий — <strong>управленческая отчётность / договоры / контрагенты</strong>, не целевая обработка ПДн физлиц.<br />
+Если в выгрузках появляются ФИО сотрудников, табельные номера и т.п. — владелец обязан:</p>
+<ul>
+<li>классифицировать данные;</li>
+<li>применить 152-ФЗ / внутренние политики;</li>
+<li>ограничить доступ к порту и (после внедрения) к учётным записям;</li>
+<li>учесть сроки хранения файлов в <code>uploads/</code>.</li>
+</ul>
+<p><strong>Вывод для аудита:</strong> ПДн не заложены в модель явно; риск определяется содержимым выгрузок 1С.</p>
+<h2>7.8. Соответствие ожиданиям «internal BI»</h2>
+<table>
+<thead>
+<tr>
+<th>Критерий</th>
+<th>Оценка</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Готовность к internal prod за VPN + HTTPS <strong>без доработок auth</strong></td>
+<td><strong>Нет</strong> — отсутствует аутентификация</td>
+</tr>
+<tr>
+<td>Готовность после внедрения auth + hardening (как ОПиОП) + VPN + HTTPS</td>
+<td><strong>Да</strong>, при выполнении п. 7.6</td>
+</tr>
+<tr>
+<td>Готовность к публичному интернету</td>
+<td><strong>Нет</strong></td>
+</tr>
+<tr>
+<td>Наличие документации для ИБ</td>
+<td>Настоящий комплект</td>
+</tr>
+</tbody>
+</table>
+<h2>7.9. Контакты для аудита (заполнить)</h2>
+<table>
+<thead>
+<tr>
+<th>Роль</th>
+<th>ФИО</th>
+<th>Контакт</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Владелец информации</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>Администратор ИС</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>Представитель ИБ</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>Дата проверки</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>Результат</td>
+<td>[ ] принято [ ] принято с замечаниями [ ] не принято</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section class="doc" id="08_Чек_лист_проверки_ИБ">
+<h1>08. Чек-лист проверки информационной безопасности</h1>
+<p><strong>Система:</strong> Al Ma BI (AlMaBi)<br />
+<strong>Проверяющий:</strong> <strong><em>_</em></strong><strong><em>_</em></strong><strong><em><br />
+<strong>Дата:</strong> </em></strong><strong><em>_</em></strong><strong><em>_</em></strong>  </p>
+<p>Отметки: ✅ выполнено / ❌ не выполнено / ➖ не применимо / 📝 замечание</p>
+<hr />
+<h2>A. Конфигурация и секреты</h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Проверка</th>
+<th>Статус</th>
+<th>Комментарий</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A1</td>
+<td>Файл <code>.env</code> существует и <strong>не</strong> лежит в git</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>A2</td>
+<td><code>DEBUG=false</code> в production</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>A3</td>
+<td><code>SESSION_SECRET</code> ≥ 32 символов, не из примера</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>A4</td>
+<td>Права на <code>.env</code> ограничены (например <code>chmod 600</code>)</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>A5</td>
+<td>В <code>docker-compose.yml</code> нет plaintext-секретов (только <code>.env</code>)</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>A6</td>
+<td>OpenAPI в prod отключён <strong>или</strong> доступ к нему ограничен сетью/auth</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h2>B. Аутентификация и доступ</h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Проверка</th>
+<th>Статус</th>
+<th>Комментарий</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>B1</td>
+<td>Реализована аутентификация (Basic Auth / SSO / proxy auth)</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>B2</td>
+<td>Без учётки <code>/dashboard/almabi-test</code> недоступен (401/403/сеть)</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>B3</td>
+<td><code>/health</code> доступен для мониторинга</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>B4</td>
+<td><code>/ready</code> доступен для мониторинга</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>B5</td>
+<td>Доступ к порту ограничен VPN/firewall</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>B6</td>
+<td>Круг лиц с доступом учтён и минимален</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>B7</td>
+<td>Зафиксировано отсутствие RBAC как принятый риск <strong>или</strong> план внедрения</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h2>C. Транспорт и периметр</h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Проверка</th>
+<th>Статус</th>
+<th>Комментарий</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>C1</td>
+<td>Перед приложением настроен HTTPS (nginx/traefik)</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>C2</td>
+<td>HTTP→HTTPS redirect</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>C3</td>
+<td>HSTS на proxy (по политике)</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>C4</td>
+<td>Порт 18001 не открыт в интернет напрямую</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>C5</td>
+<td>Имя контейнера/порт не конфликтует с другими BI на хосте</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h2>D. Upload и данные</h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Проверка</th>
+<th>Статус</th>
+<th>Комментарий</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>D1</td>
+<td>Загрузка не-xlsx отклоняется</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>D2</td>
+<td>Есть лимит размера upload (или принят риск)</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>D3</td>
+<td>Есть rate limit / защита от массовых upload (или принят риск)</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>D4</td>
+<td>Невалидная структура выгрузки отклоняется</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>D5</td>
+<td>Файлы хранятся как <code>{type}-{uuid}.xlsx</code> вне произвольных путей пользователя</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>D6</td>
+<td>Есть регламент бэкапа <code>uploads/</code> / <code>.env</code></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>D7</td>
+<td>Есть регламент очистки старых uploads</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h2>E. HTTP-заголовки и клиент</h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Проверка</th>
+<th>Статус</th>
+<th>Комментарий</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>E1</td>
+<td>Ответ содержит <code>X-Frame-Options</code> (или CSP frame-ancestors)</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>E2</td>
+<td><code>X-Content-Type-Options: nosniff</code></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>E3</td>
+<td>Нет подключения внешних CDN в runtime HTML</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>E4</td>
+<td>Session cookie с флагом Secure на HTTPS</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h2>F. Контейнер и хост</h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Проверка</th>
+<th>Статус</th>
+<th>Комментарий</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>F1</td>
+<td>Контейнер работает не от root (<code>docker exec ... id</code>)</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>F2</td>
+<td>Docker включён в автозагрузку</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>F3</td>
+<td>На сервере обновляются пакеты / Docker (регламент)</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>F4</td>
+<td>SSH к серверу ограничен (ключи, политика)</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>F5</td>
+<td><code>restart: unless-stopped</code> (или эквивалент)</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h2>G. Журналирование и мониторинг</h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Проверка</th>
+<th>Статус</th>
+<th>Комментарий</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>G1</td>
+<td>Логи пишутся (<code>logs/app.log</code> / docker logs)</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>G2</td>
+<td>Ошибки запросов / upload видны в логах</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>G3</td>
+<td><code>/health</code> и <code>/ready</code> подключены к мониторингу</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>G4</td>
+<td>Есть алерт при падении контейнера (по возможности)</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h2>H. Организационные меры</h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Проверка</th>
+<th>Статус</th>
+<th>Комментарий</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>H1</td>
+<td>Определён владелец системы и ответственный за ИБ</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>H2</td>
+<td>Классификация данных (внутренние / конфиденциальные) зафиксирована</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>H3</td>
+<td>Пользователи предупреждены не загружать ПДн без оснований</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>H4</td>
+<td>План hardening auth (если ещё нет) согласован</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>H5</td>
+<td>План восстановления из бэкапа проверен</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>Итог проверки</h2>
+<table>
+<thead>
+<tr>
+<th>Показатель</th>
+<th>Значение</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Критичных замечаний</td>
+<td></td>
+</tr>
+<tr>
+<td>Существенных замечаний</td>
+<td></td>
+</tr>
+<tr>
+<td>Рекомендаций</td>
+<td></td>
+</tr>
+<tr>
+<td>Решение</td>
+<td>[ ] ввод в эксплуатацию разрешён</td>
+</tr>
+<tr>
+<td></td>
+<td>[ ] разрешён после устранения</td>
+</tr>
+<tr>
+<td></td>
+<td>[ ] не разрешён</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Подпись проверяющего:</strong> <strong><em>_</em></strong><strong><em>_</em></strong><strong><em><br />
+<strong>Подпись владельца системы:</strong> </em></strong><strong><em>_</em></strong><strong><em>_</em></strong>  </p>
+</section>
+    <footer class="note">Сгенерировано из markdown в папке «Документация для AlMaBi».</footer>
+  </div>
+</body>
+</html>

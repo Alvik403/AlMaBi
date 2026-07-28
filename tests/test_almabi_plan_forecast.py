@@ -4,7 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from almabi_dashboard_builder import _build_summary_rows, load_almabi_dashboard_from_exports
+from almabi_dashboard_builder import _build_summary_rows
+from almabi_test_builder import load_almabi_dashboard_from_exports
 from almabi_plan_forecast_parser import parse_plan_forecast_workbook, validate_plan_forecast_workbook
 from almabi_pipeline import Fact
 from almabi_test_dashboard_builder import build_test_summary_rows_from_facts

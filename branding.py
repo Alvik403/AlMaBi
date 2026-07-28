@@ -2,7 +2,7 @@ APP_BRAND = "Al Ma BI"
 
 ALMABI_NAV_TABS = frozenset(
     {
-        "almabi_test",
+        "almabi_dashboard",
         "almabi_charts",
         "almabi_test_excel",
         "almabi_revenue_report",

@@ -199,6 +199,22 @@ def load_test_dashboard_from_exports(
     )
 
 
+def load_almabi_dashboard_from_exports(
+    paths: dict[str, Path],
+    *,
+    upload_names: dict[str, str],
+    logs_dir: Path | None = None,
+    plan_forecast_path: Path | None = None,
+) -> dict[str, Any]:
+    """Единственный путь сборки BI-дашборда (PQ/test pipeline)."""
+    return load_test_dashboard_from_exports(
+        paths,
+        upload_names=upload_names,
+        logs_dir=logs_dir,
+        plan_forecast_path=plan_forecast_path,
+    )
+
+
 def build_empty_test_dashboard() -> dict[str, Any]:
     return {
         "months": MONTHS,

@@ -42,6 +42,69 @@ def test_expense_kpis_stored_negative_in_summary():
     assert rows["Себестоимость"]["total_fact"] == -100.0
 
 
+def test_operating_profit_equals_components_with_tax_split():
+    facts = [
+        Fact(
+            kpi_l1="Выручка",
+            month="Апрель",
+            amount_buh=100.0,
+            amount_nu=200.0,
+            tax_type="Доходы по льготируемым видам деятельности",
+        ),
+        Fact(
+            kpi_l1="Выручка",
+            month="Апрель",
+            amount_buh=50.0,
+            amount_nu=80.0,
+            tax_type="Общие условия налогообложения",
+        ),
+        Fact(
+            kpi_l1="Себестоимость",
+            month="Апрель",
+            amount_buh=-30.0,
+            amount_nu=-25.0,
+            tax_type="Доходы по льготируемым видам деятельности",
+        ),
+        Fact(
+            kpi_l1="Коммерческие расходы",
+            month="Апрель",
+            amount_buh=-10.0,
+            amount_nu=-10.0,
+            tax_type="Общие условия налогообложения",
+        ),
+        Fact(
+            kpi_l1="Управленческие расходы",
+            month="Апрель",
+            amount_buh=-5.0,
+            amount_nu=-5.0,
+            tax_type="Доходы по льготируемым видам деятельности",
+        ),
+    ]
+    rows = _rows_by_name(facts)
+    month = "Апрель"
+    components = [
+        "Выручка",
+        "Себестоимость",
+        "Коммерческие расходы",
+        "Управленческие расходы",
+    ]
+    operating = rows["Операционная прибыль"]
+
+    for scenario in ("Факт БУ", "Факт НУ"):
+        component_sum = sum(float(rows[name]["values"][scenario][month]) for name in components)
+        operating_value = float(operating["values"][scenario][month])
+        child_sum = sum(float(child["values"][scenario][month]) for child in operating["children"])
+        assert operating_value == pytest.approx(component_sum, abs=0.01)
+        assert child_sum == pytest.approx(operating_value, abs=0.01)
+
+    privileged = next(child for child in operating["children"] if child["name"] == "Льготные проекты")
+    non_privileged = next(child for child in operating["children"] if child["name"] == "Нельготные проекты")
+    assert privileged.get("signed_amounts") is True
+    assert non_privileged.get("signed_amounts") is True
+    assert float(privileged["values"]["Факт БУ"][month]) == pytest.approx(200.0 - 30.0 - 5.0, abs=0.01)
+    assert float(non_privileged["values"]["Факт БУ"][month]) == pytest.approx(80.0 - 10.0, abs=0.01)
+
+
 def test_taxes_are_zero_when_pbt_base_is_not_positive():
     facts = [
         Fact(kpi_l1="Выручка", month="Январь", amount_buh=100.0, amount_nu=100.0),

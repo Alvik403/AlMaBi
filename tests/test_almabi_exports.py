@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from openpyxl import Workbook
 
-from almabi_dashboard_builder import load_almabi_dashboard_from_exports
+from almabi_test_builder import load_almabi_dashboard_from_exports
 from almabi_file_validation import validate_almabi_export
 
 
@@ -532,7 +532,7 @@ def test_commercial_expense_article_from_cost_kind(tmp_path: Path):
 
 
 def test_revenue_and_cost_facts_get_quantity_from_cost_file(tmp_path: Path):
-    from almabi_dashboard_builder import load_almabi_dashboard_from_exports
+    from almabi_test_builder import load_almabi_dashboard_from_exports
     from almabi_export_parsers import parse_exports
     from almabi_pipeline import build_facts
     from almabi_test_pipeline import build_test_facts

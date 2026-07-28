@@ -177,10 +177,14 @@ def build_test_summary_rows_from_facts(
                 child_path=list(dashboard_builder.COST_PATH),
             )
 
-    operating_totals = _month_totals_from_nodes(
-        nodes,
-        ["Выручка", "Себестоимость", "Коммерческие расходы", "Управленческие расходы"],
-    )
+    operating_component_names = [
+        "Выручка",
+        "Себестоимость",
+        "Коммерческие расходы",
+        "Управленческие расходы",
+    ]
+    operating_lookup = {node["name"]: node for node in nodes}
+    operating_totals = _month_totals_from_nodes(nodes, operating_component_names)
     operating_facts = _merge_signed_fact_groups(
         [
             (_group_facts(facts, kpi_l1="Выручка"), 1),
@@ -193,7 +197,9 @@ def build_test_summary_rows_from_facts(
         _build_calculated_node(
             "Операционная прибыль",
             operating_totals,
-            benefit_facts=operating_facts,
+            component_nodes=[operating_lookup[name] for name in operating_component_names],
+            component_facts={name: _group_facts(facts, kpi_l1=name) for name in operating_component_names},
+            drill_facts=operating_facts,
             plan_forecast_from_file=plan_forecast_from_file,
         )
     )
@@ -219,10 +225,9 @@ def build_test_summary_rows_from_facts(
         if node["name"] in dashboard_builder.OTHER_PNL_KPIS:
             node["drill"] = other_pnl_drill
 
-    pbt_totals = _month_totals_from_nodes(
-        nodes,
-        ["Операционная прибыль", "Прочие доходы", "Прочие расходы"],
-    )
+    pbt_component_names = ["Операционная прибыль", "Прочие доходы", "Прочие расходы"]
+    pbt_lookup = {node["name"]: node for node in nodes}
+    pbt_totals = _month_totals_from_nodes(nodes, pbt_component_names)
     pbt_facts = _merge_signed_fact_groups(
         [
             (operating_facts, 1),
@@ -234,7 +239,9 @@ def build_test_summary_rows_from_facts(
         _build_calculated_node(
             "Прибыль/убыток до налогообложения",
             pbt_totals,
-            benefit_facts=pbt_facts,
+            component_nodes=[pbt_lookup[name] for name in pbt_component_names],
+            drill_facts=pbt_facts,
+            with_articles=True,
             plan_forecast_from_file=plan_forecast_from_file,
         )
     )
@@ -251,18 +258,16 @@ def build_test_summary_rows_from_facts(
         )
     )
 
-    net_totals = _month_totals_from_nodes(nodes, ["Прибыль/убыток до налогообложения", "Налоги"])
-    net_facts = _merge_signed_fact_groups(
-        [
-            (pbt_facts, 1),
-            (tax_facts, 1),
-        ]
-    )
+    net_component_names = ["Прибыль/убыток до налогообложения", "Налоги"]
+    net_lookup = {node["name"]: node for node in nodes}
+    net_totals = _month_totals_from_nodes(nodes, net_component_names)
+    net_facts = _merge_signed_fact_groups([(pbt_facts, 1), (tax_facts, 1)])
     nodes.append(
         _build_calculated_node(
             "Чистая прибыль",
             net_totals,
-            benefit_facts=net_facts,
+            component_nodes=[net_lookup[name] for name in net_component_names],
+            drill_facts=net_facts,
             plan_forecast_from_file=plan_forecast_from_file,
         )
     )
