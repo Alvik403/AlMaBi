@@ -7,6 +7,7 @@ from typing import Any
 
 from almabi_excel_utils import tax_bucket
 from almabi_mock_data import MONTHS, SCENARIOS, UNITS, _MONTHS_SHORT
+from almabi_taxes_report import compute_tax_with_loss_carryforward
 from almabi_contractor_builder import build_contractor_cards, build_contractor_details
 from almabi_pipeline import Fact, PipelineResult
 
@@ -851,47 +852,93 @@ def _tax_rate_for_type(tax_type: str) -> float:
     return 0.02 if "льгот" in tax_type.casefold() else 0.25
 
 
-def _build_tax_facts(component_nodes: list[dict[str, Any]], source_facts: list[Fact]) -> list[Fact]:
-    """Налог по льготным/нельготным базам НУ: ставка × база, только если база > 0."""
-    grouped: dict[tuple[str, str], float] = defaultdict(float)
-    for fact in source_facts:
-        if fact.kpi_l1 not in PBT_TAX_BASE_KPIS:
-            continue
-        grouped[(fact.month, fact.tax_type)] += fact.amount_nu
+def _bucket_tax_type(bucket_name: str) -> str:
+    if bucket_name == PRIVILEGED_BUCKET:
+        return "Доходы по льготируемым видам деятельности"
+    return "Общие условия налогообложения"
 
-    if not grouped:
-        pbt = _sum_nodes_by_name(component_nodes, ["Прибыль/убыток до налогообложения"], "Факт НУ")
-        tax_facts: list[Fact] = []
+
+def _pbt_by_bucket_from_nodes(component_nodes: list[dict[str, Any]]) -> dict[str, dict[str, dict[str, float]]]:
+    pbt_node = next(
+        (node for node in component_nodes if node.get("name") == "Прибыль/убыток до налогообложения"),
+        None,
+    )
+    if pbt_node is None:
+        return {}
+    by_bucket: dict[str, dict[str, dict[str, float]]] = {}
+    for bucket_name in BENEFIT_BUCKET_NAMES:
+        child = _find_named_child(pbt_node, bucket_name)
+        if child is None:
+            by_bucket[bucket_name] = {
+                scenario: {month: 0.0 for month in MONTHS} for scenario in ("Факт БУ", "Факт НУ")
+            }
+            continue
+        values = child.get("values", {})
+        by_bucket[bucket_name] = {
+            scenario: {
+                month: float(values.get(scenario, {}).get(month, 0) or 0) for month in MONTHS
+            }
+            for scenario in ("Факт БУ", "Факт НУ")
+        }
+    return by_bucket
+
+
+def _build_tax_facts(component_nodes: list[dict[str, Any]], source_facts: list[Fact]) -> list[Fact]:
+    """Налог от PBT по льготным/нельготным корзинам с переносом убытков (БУ и НУ отдельно)."""
+    pbt_by_bucket = _pbt_by_bucket_from_nodes(component_nodes)
+    tax_facts: list[Fact] = []
+
+    if not pbt_by_bucket:
+        pbt_bu = _sum_nodes_by_name(component_nodes, ["Прибыль/убыток до налогообложения"], "Факт БУ")
+        pbt_nu = _sum_nodes_by_name(component_nodes, ["Прибыль/убыток до налогообложения"], "Факт НУ")
+        taxes_bu, _ = compute_tax_with_loss_carryforward(pbt_bu, rate=0.25, months=tuple(MONTHS))
+        taxes_nu, _ = compute_tax_with_loss_carryforward(pbt_nu, rate=0.25, months=tuple(MONTHS))
         for month in MONTHS:
-            base = pbt.get(month, 0)
-            if base <= 0:
+            amount_buh = taxes_bu.get(month, 0.0)
+            amount_nu = taxes_nu.get(month, 0.0)
+            if amount_buh == 0 and amount_nu == 0:
                 continue
-            tax_value = -base * 0.25
             tax_facts.append(
                 Fact(
                     kpi_l1="Налоги",
                     month=month,
-                    amount_buh=tax_value,
-                    amount_nu=tax_value,
+                    amount_buh=amount_buh,
+                    amount_nu=amount_nu,
                     tax_type="Общие условия налогообложения",
                 )
             )
         return tax_facts
 
-    tax_facts: list[Fact] = []
-    for (month, tax_type), amount in grouped.items():
-        if amount <= 0:
-            continue
-        tax_value = -amount * _tax_rate_for_type(tax_type)
-        tax_facts.append(
-            Fact(
-                kpi_l1="Налоги",
-                month=month,
-                amount_buh=tax_value,
-                amount_nu=tax_value,
-                tax_type=tax_type,
-            )
+    for bucket_name in BENEFIT_BUCKET_NAMES:
+        bucket_pbt = pbt_by_bucket.get(bucket_name, {})
+        monthly_bu = bucket_pbt.get("Факт БУ", {})
+        monthly_nu = bucket_pbt.get("Факт НУ", {})
+        tax_type = _bucket_tax_type(bucket_name)
+        rate = _tax_rate_for_type(tax_type)
+        taxes_bu, _ = compute_tax_with_loss_carryforward(
+            monthly_bu,
+            rate=rate,
+            months=tuple(MONTHS),
         )
+        taxes_nu, _ = compute_tax_with_loss_carryforward(
+            monthly_nu,
+            rate=rate,
+            months=tuple(MONTHS),
+        )
+        for month in MONTHS:
+            amount_buh = taxes_bu.get(month, 0.0)
+            amount_nu = taxes_nu.get(month, 0.0)
+            if amount_buh == 0 and amount_nu == 0:
+                continue
+            tax_facts.append(
+                Fact(
+                    kpi_l1="Налоги",
+                    month=month,
+                    amount_buh=amount_buh,
+                    amount_nu=amount_nu,
+                    tax_type=tax_type,
+                )
+            )
     return tax_facts
 
 

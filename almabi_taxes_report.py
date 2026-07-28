@@ -113,6 +113,34 @@ def _tax_amount(base: float, bucket: str) -> float:
     return -abs(base) * _tax_rate_for_bucket(bucket)
 
 
+MONTHS_ORDERED = tuple(MONTH_NAMES.values())
+
+
+def compute_tax_with_loss_carryforward(
+    monthly_base: dict[str, float],
+    *,
+    rate: float,
+    months: tuple[str, ...] | None = None,
+) -> tuple[dict[str, float], dict[str, float]]:
+    """Налог и налогооблагаемая база по месяцам с переносом убытков внутри корзины."""
+    month_order = months or MONTHS_ORDERED
+    carryforward = 0.0
+    taxes: dict[str, float] = {}
+    taxable_bases: dict[str, float] = {}
+    for month in month_order:
+        pbt = float(monthly_base.get(month, 0) or 0)
+        net = carryforward + pbt
+        if net <= 0:
+            carryforward = net
+            taxes[month] = 0.0
+            taxable_bases[month] = 0.0
+        else:
+            carryforward = 0.0
+            taxable_bases[month] = net
+            taxes[month] = -net * rate
+    return taxes, taxable_bases
+
+
 def _taxable_source_rows_from_buh(all_rows: list[dict[str, object]]) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     for row in all_rows:
@@ -194,31 +222,40 @@ def _tax_calculation_rows(source_rows: list[dict[str, object]], *, fallback: boo
         for row in source_rows:
             by_month[_field_value(row, "Месяц")] += float(row.get("Сумма НУ") or 0)
         for month, base in by_month.items():
-            if base <= 0:
-                continue
             bucket = TAX_BUCKET_NON_PRIVILEGED
             grouped[(month, bucket)] = base
 
+    monthly_by_bucket: dict[str, dict[str, float]] = {bucket: {} for bucket in TAX_BUCKETS}
+    for (month, bucket), amount in grouped.items():
+        if bucket in monthly_by_bucket:
+            monthly_by_bucket[bucket][month] = amount
+
     rows: list[dict[str, object]] = []
-    bucket_order = {TAX_BUCKET_PRIVILEGED: 0, TAX_BUCKET_NON_PRIVILEGED: 1}
-    for (month, bucket) in sorted(
-        grouped.keys(),
-        key=lambda item: (MONTH_ORDER.get(item[0], 99), bucket_order.get(item[1], 2)),
-    ):
-        base = grouped[(month, bucket)]
-        if base <= 0:
-            continue
-        rate = _tax_rate_for_bucket(bucket) if not fallback else TAX_RATE_BY_BUCKET[TAX_BUCKET_NON_PRIVILEGED]
-        tax = -base * rate
-        rows.append(
-            {
-                "Месяц": month,
-                "Льгота": bucket,
-                "Налоговая база НУ": base,
-                "Ставка": _format_rate(rate),
-                "Налог": tax,
-            }
+    buckets = (TAX_BUCKET_NON_PRIVILEGED,) if fallback else TAX_BUCKETS
+    for bucket in buckets:
+        rate = (
+            TAX_RATE_BY_BUCKET[TAX_BUCKET_NON_PRIVILEGED]
+            if fallback
+            else _tax_rate_for_bucket(bucket)
         )
+        taxes, taxable_bases = compute_tax_with_loss_carryforward(
+            monthly_by_bucket.get(bucket, {}),
+            rate=rate,
+        )
+        for month in _sorted_group_keys("Месяц", taxes.keys()):
+            tax = taxes[month]
+            base = taxable_bases[month]
+            if tax == 0 and base == 0:
+                continue
+            rows.append(
+                {
+                    "Месяц": month,
+                    "Льгота": bucket,
+                    "Налоговая база НУ": base,
+                    "Ставка": _format_rate(rate),
+                    "Налог": tax,
+                }
+            )
     return rows
 
 

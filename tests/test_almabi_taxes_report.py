@@ -7,12 +7,29 @@ from almabi_taxes_report import (
     TAX_BUCKET_PRIVILEGED,
     build_taxes_hierarchy,
     build_taxes_report,
+    compute_tax_with_loss_carryforward,
 )
 from tests.test_almabi_exports import (
     create_cost_workbook,
     create_profit_before_tax_buh_workbook,
     create_realization_workbook,
 )
+
+
+def test_compute_tax_with_loss_carryforward_example():
+    monthly = {
+        "Январь": 5000.0,
+        "Февраль": -3000.0,
+        "Март": -2000.0,
+        "Апрель": 10000.0,
+    }
+    taxes, bases = compute_tax_with_loss_carryforward(monthly, rate=0.25)
+    assert bases["Январь"] == 5000.0
+    assert taxes["Январь"] == -1250.0
+    assert taxes["Февраль"] == 0.0
+    assert taxes["Март"] == 0.0
+    assert bases["Апрель"] == 5000.0
+    assert taxes["Апрель"] == -1250.0
 
 
 def test_build_taxes_hierarchy_groups_by_tax_bucket():
@@ -47,8 +64,9 @@ def test_build_taxes_report_from_fixture_exports(tmp_path: Path):
     taxes = report["summary"]["component_totals"]
     assert report["summary"]["row_count"] >= 3
     assert bases[TAX_BUCKET_PRIVILEGED] == 1_000_000
-    assert bases[TAX_BUCKET_NON_PRIVILEGED] == 400_000
+    # Февральский убыток −50k переносится и уменьшает мартовскую базу 400k → 350k.
+    assert bases[TAX_BUCKET_NON_PRIVILEGED] == 350_000
     assert taxes[TAX_BUCKET_PRIVILEGED] == -20_000
-    assert taxes[TAX_BUCKET_NON_PRIVILEGED] == -100_000
-    assert report["summary"]["total_amount"] == -120_000
+    assert taxes[TAX_BUCKET_NON_PRIVILEGED] == -87_500
+    assert report["summary"]["total_amount"] == -107_500
     assert len(report["tree"]) == 2

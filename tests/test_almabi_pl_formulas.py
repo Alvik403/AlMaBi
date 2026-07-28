@@ -114,3 +114,25 @@ def test_taxes_are_zero_when_pbt_base_is_not_positive():
     assert rows["Прибыль/убыток до налогообложения"]["total_fact"] == -400.0
     assert rows["Налоги"]["total_fact"] == 0.0
     assert rows["Чистая прибыль"]["total_fact"] == -400.0
+
+
+def test_tax_loss_carryforward_offsets_future_profit():
+    """Убытки накапливаются и уменьшают базу в следующих месяцах (2% / 25%)."""
+    privileged = "Доходы по льготируемым видам деятельности"
+    non_privileged = "Общие условия налогообложения"
+    facts = [
+        Fact(kpi_l1="Выручка", month="Январь", amount_buh=5000, amount_nu=5000, tax_type=privileged),
+        Fact(kpi_l1="Себестоимость", month="Февраль", amount_buh=-3000, amount_nu=-3000, tax_type=privileged),
+        Fact(kpi_l1="Себестоимость", month="Март", amount_buh=-2000, amount_nu=-2000, tax_type=privileged),
+        Fact(kpi_l1="Выручка", month="Апрель", amount_buh=10000, amount_nu=10000, tax_type=privileged),
+        Fact(kpi_l1="Выручка", month="Январь", amount_buh=5000, amount_nu=5000, tax_type=non_privileged),
+        Fact(kpi_l1="Себестоимость", month="Февраль", amount_buh=-3000, amount_nu=-3000, tax_type=non_privileged),
+        Fact(kpi_l1="Себестоимость", month="Март", amount_buh=-2000, amount_nu=-2000, tax_type=non_privileged),
+        Fact(kpi_l1="Выручка", month="Апрель", amount_buh=10000, amount_nu=10000, tax_type=non_privileged),
+    ]
+    rows = _rows_by_name(facts)
+    taxes = rows["Налоги"]["values"]["Факт НУ"]
+    assert float(taxes["Январь"]) == pytest.approx(-5000 * 0.02 - 5000 * 0.25, abs=0.01)
+    assert float(taxes["Февраль"]) == 0.0
+    assert float(taxes["Март"]) == 0.0
+    assert float(taxes["Апрель"]) == pytest.approx(-5000 * 0.02 - 5000 * 0.25, abs=0.01)
