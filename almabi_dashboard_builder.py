@@ -5,8 +5,17 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
-from almabi_excel_utils import tax_bucket
+from almabi_excel_utils import month_name, normalize_text, parse_date_from_text, tax_bucket
+from almabi_export_parsers import classify_cost_section_pq
 from almabi_mock_data import MONTHS, SCENARIOS, UNITS, _MONTHS_SHORT
+from almabi_pq_common import (
+    build_davaltz_document_totals,
+    davaltz_cost_tree_group,
+    is_black_metal_scrap_nomenclature,
+    is_davaltz_cost_document,
+    should_include_in_cost_structure,
+    should_include_in_cost_tree,
+)
 from almabi_taxes_report import compute_tax_with_loss_carryforward
 from almabi_contractor_builder import build_contractor_cards, build_contractor_details
 from almabi_pipeline import Fact, PipelineResult
@@ -75,6 +84,8 @@ _COST_STRUCTURE_ALIASES = {
 def _normalize_cost_structure_section(section: str) -> str | None:
     text = (section or "").strip()
     if not text:
+        return None
+    if text.casefold() == "себестоимость":
         return None
     text = _COST_STRUCTURE_ALIASES.get(text, text)
     if text in COST_STRUCTURE_SECTIONS:
@@ -569,7 +580,25 @@ def _dimension_value(fact: Fact, key: str) -> str:
         "tax_bucket": tax_bucket(fact.tax_type),
         "expense_article": fact.expense_article or "Прочее",
     }
-    return mapping[key]
+    value = mapping[key]
+    if key == "cost_section" and value.casefold() == "себестоимость":
+        return "Общепроизводственные затраты"
+    return value
+
+
+def _node_is_effectively_empty(node: dict[str, Any]) -> bool:
+    if abs(float(node.get("total_fact") or 0)) > 0.005:
+        return False
+    if abs(float(node.get("total_plan") or 0)) > 0.005:
+        return False
+    if abs(float(node.get("total_forecast") or 0)) > 0.005:
+        return False
+    for scenario in SCENARIOS:
+        month_values = (node.get("values") or {}).get(scenario) or {}
+        if any(abs(float(value or 0)) > 0.005 for value in month_values.values()):
+            return False
+    children = node.get("children") or []
+    return not children or all(_node_is_effectively_empty(child) for child in children)
 
 
 def _filter_group_facts(items: list[Fact] | None, key: str, name: str) -> list[Fact]:
@@ -639,6 +668,8 @@ def _build_group_tree(
                 "children": children,
             }
         )
+        if _node_is_effectively_empty(node):
+            continue
         nodes.append(node)
     nodes.sort(key=lambda item: (-abs(float(item.get("total_fact") or 0)), item["name"]))
     return nodes
@@ -1304,6 +1335,381 @@ def _chart_series(facts: list[Fact], kpi_l1: str) -> list[dict[str, Any]]:
     ]
 
 
+def _month_from_cost_document(document: object) -> str | None:
+    return month_name(parse_date_from_text(document))
+
+
+def build_cost_structure_facts_from_pq_rows(pq_rows: list[dict[str, object]]) -> list[Fact]:
+    """Факты для дерева «Себестоимость» (раздел → направление → …) из PQ cost, без изменения KPI L1."""
+    facts: list[Fact] = []
+    for row in pq_rows:
+        if normalize_text(row.get("Основной раздел")) != "Расходы":
+            continue
+        if not should_include_in_cost_tree(
+            document=row.get("Документ"),
+            nomenclature=row.get("Номенклатура"),
+        ):
+            continue
+        month = _month_from_cost_document(row.get("Документ"))
+        if month not in MONTHS:
+            continue
+        section = _normalize_cost_structure_section(str(row.get("Раздел") or ""))
+        if not section:
+            continue
+        amount = float(row.get("Сумма") or 0)
+        if not amount:
+            continue
+        if is_davaltz_cost_document(row.get("Документ")):
+            direction = ""
+            project_group = davaltz_cost_tree_group(row.get("Документ"))
+            project = ""
+        else:
+            direction = normalize_text(row.get("Направление"))
+            project_group = normalize_text(row.get("Группа проектов"))
+            project = normalize_text(row.get("Проект"))
+        facts.append(
+            Fact(
+                kpi_l1="Себестоимость",
+                month=month,
+                amount_buh=-amount,
+                amount_nu=-amount,
+                direction=direction,
+                project_group=project_group,
+                project=project,
+                nomenclature=normalize_text(row.get("Номенклатура")),
+                cost_section=section,
+            )
+        )
+    return facts
+
+
+_COST_MERGE_OEZ_KEY = "__оэз__"
+
+
+def _cost_nomenclature_merge_key(nomenclature: object) -> str:
+    text = normalize_text(nomenclature).casefold()
+    if not text:
+        return ""
+    if text.startswith("оэз"):
+        return _COST_MERGE_OEZ_KEY
+    return text
+
+
+def _map_buh_cost_section(fact: Fact) -> str:
+    article = normalize_text(fact.expense_article)
+    account = normalize_text(fact.cost_account) or "20"
+    if article:
+        mapped = _normalize_cost_structure_section(classify_cost_section_pq(article, account))
+        if mapped:
+            return mapped
+    section = _normalize_cost_structure_section(fact.cost_section)
+    if section:
+        return section
+    if normalize_text(fact.nomenclature).casefold() == "прочее":
+        return "Прочие производственные расходы"
+    return "Общепроизводственные затраты"
+
+
+def _buh_fact_to_structure(fact: Fact) -> Fact:
+    return Fact(
+        kpi_l1="Себестоимость",
+        month=fact.month,
+        amount_buh=fact.amount_buh,
+        amount_nu=fact.amount_nu,
+        direction=fact.direction,
+        project_group=fact.project_group,
+        project=fact.project,
+        nomenclature=fact.nomenclature,
+        cost_section=_map_buh_cost_section(fact),
+    )
+
+
+_COST_SECTION_MATCH_TOLERANCE = 0.05
+
+
+def _amount_match_tolerance(amount: float) -> float:
+    return max(1.0, abs(amount) * 1e-8)
+
+
+def _build_pq_only_amount_pool(
+    pq_groups: dict[tuple[str, str], list[Fact]],
+    buh_groups: dict[tuple[str, str], list[Fact]],
+) -> dict[str, list[dict[str, Any]]]:
+    """PQ-only группы по месяцам для сопоставления с buh-only по сумме."""
+    pool: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for key, items in pq_groups.items():
+        if key in buh_groups:
+            continue
+        month, _merge_key = key
+        total = sum(fact.amount_buh for fact in items)
+        if abs(total) < 1e-9:
+            continue
+        pool[month].append({"items": items, "total": total, "used": False})
+    for month in pool:
+        pool[month].sort(key=lambda entry: abs(entry["total"]), reverse=True)
+    return pool
+
+
+def _take_pq_only_amount_match(
+    month: str,
+    buh_total: float,
+    pool: dict[str, list[dict[str, Any]]],
+) -> list[Fact] | None:
+    """buh-only и PQ-only с той же суммой — одна операция, разные ключи номенклатуры."""
+    tolerance = _amount_match_tolerance(buh_total)
+    entries = pool.get(month, [])
+    best_entry: dict[str, Any] | None = None
+    best_delta = tolerance + 1.0
+    for entry in entries:
+        if entry["used"]:
+            continue
+        delta = abs(entry["total"] - buh_total)
+        if delta <= tolerance and delta < best_delta:
+            best_entry = entry
+            best_delta = delta
+    if best_entry is not None:
+        best_entry["used"] = True
+        return best_entry["items"]
+
+    unused = [entry for entry in entries if not entry["used"]]
+    if len(unused) >= 2:
+        from itertools import combinations
+
+        for size in range(2, min(len(unused) + 1, 6)):
+            best_combo: tuple[dict[str, Any], ...] | None = None
+            best_combo_delta = tolerance + 1.0
+            for combo in combinations(unused, size):
+                combo_total = sum(entry["total"] for entry in combo)
+                delta = abs(combo_total - buh_total)
+                if delta <= tolerance and delta < best_combo_delta:
+                    best_combo = combo
+                    best_combo_delta = delta
+            if best_combo is not None:
+                merged: list[Fact] = []
+                for entry in best_combo:
+                    entry["used"] = True
+                    merged.extend(entry["items"])
+                return merged
+    return None
+
+
+def _scale_pq_splits_to_buh_amount(pq_items: list[Fact], buh_total: float) -> list[Fact]:
+    pq_total = sum(fact.amount_buh for fact in pq_items)
+    if abs(pq_total) < 1e-9:
+        return list(pq_items)
+    scaled: list[Fact] = []
+    for pq_fact in pq_items:
+        share = pq_fact.amount_buh / pq_total
+        scaled.append(
+            Fact(
+                kpi_l1=pq_fact.kpi_l1,
+                month=pq_fact.month,
+                amount_buh=buh_total * share,
+                amount_nu=buh_total * share,
+                direction=pq_fact.direction,
+                project_group=pq_fact.project_group,
+                project=pq_fact.project,
+                nomenclature=pq_fact.nomenclature,
+                cost_section=pq_fact.cost_section,
+                expense_article=pq_fact.expense_article,
+                tax_type=pq_fact.tax_type,
+                contractor=pq_fact.contractor,
+                quantity=pq_fact.quantity,
+            )
+        )
+    return scaled
+
+
+def _buh_only_with_pq_hint(
+    buh_items: list[Fact],
+    pq_hint_items: list[Fact],
+) -> list[Fact]:
+    """Статьи из PQ-only подсказки (та же сумма), аналитика buh сохраняется где возможно."""
+    buh_total = sum(fact.amount_buh for fact in buh_items)
+    lead = buh_items[0] if buh_items else None
+    scaled_pq = _scale_pq_splits_to_buh_amount(pq_hint_items, buh_total)
+    adjusted = _apply_buh_nu_to_pq_splits(scaled_pq, buh_items)
+    if not lead:
+        return adjusted
+    return [
+        Fact(
+            kpi_l1=fact.kpi_l1,
+            month=fact.month,
+            amount_buh=fact.amount_buh,
+            amount_nu=fact.amount_nu,
+            direction=lead.direction or fact.direction,
+            project_group=lead.project_group or fact.project_group,
+            project=lead.project or fact.project,
+            nomenclature=lead.nomenclature or fact.nomenclature,
+            cost_section=fact.cost_section,
+            expense_article=fact.expense_article,
+            tax_type=fact.tax_type,
+            contractor=fact.contractor,
+            quantity=fact.quantity,
+        )
+        for fact in adjusted
+    ]
+
+
+def _cost_section_totals(
+    items: list[Fact],
+    section_for: Any,
+) -> dict[str, float]:
+    totals: dict[str, float] = defaultdict(float)
+    for fact in items:
+        section = section_for(fact)
+        if section:
+            totals[section] += fact.amount_buh
+    return dict(totals)
+
+
+def _apply_buh_nu_to_pq_splits(pq_items: list[Fact], buh_items: list[Fact]) -> list[Fact]:
+    """PQ даёт структуру по БУ; НУ берём из buh и распределяем пропорционально суммам БУ."""
+    buh_bu_total = sum(fact.amount_buh for fact in buh_items)
+    buh_nu_total = sum(fact.amount_nu for fact in buh_items)
+    pq_bu_total = sum(fact.amount_buh for fact in pq_items)
+    if abs(pq_bu_total) < 1e-9:
+        return [_buh_fact_to_structure(fact) for fact in buh_items]
+
+    adjusted: list[Fact] = []
+    nu_assigned = 0.0
+    for index, pq_fact in enumerate(pq_items):
+        if index == len(pq_items) - 1:
+            amount_nu = buh_nu_total - nu_assigned
+        else:
+            share = pq_fact.amount_buh / pq_bu_total
+            amount_nu = buh_nu_total * share
+            nu_assigned += amount_nu
+        adjusted.append(
+            Fact(
+                kpi_l1=pq_fact.kpi_l1,
+                month=pq_fact.month,
+                amount_buh=pq_fact.amount_buh,
+                amount_nu=amount_nu,
+                direction=pq_fact.direction,
+                project_group=pq_fact.project_group,
+                project=pq_fact.project,
+                nomenclature=pq_fact.nomenclature,
+                cost_section=pq_fact.cost_section,
+                expense_article=pq_fact.expense_article,
+                tax_type=pq_fact.tax_type,
+                contractor=pq_fact.contractor,
+                quantity=pq_fact.quantity,
+            )
+        )
+    return adjusted
+
+
+def _group_cost_structure_facts(facts: list[Fact]) -> dict[tuple[str, str], list[Fact]]:
+    groups: dict[tuple[str, str], list[Fact]] = defaultdict(list)
+    for fact in facts:
+        merge_key = _cost_nomenclature_merge_key(fact.nomenclature)
+        if not merge_key:
+            merge_key = normalize_text(fact.nomenclature).casefold() or "—"
+        groups[(fact.month, merge_key)].append(fact)
+    return groups
+
+
+def build_unified_cost_structure_facts(
+    buh_cost_facts: list[Fact],
+    pq_rows: list[dict[str, object]] | None,
+) -> list[Fact]:
+    """Единое дерево себестoимости: buh — сумма (L1), PQ — детализация статей/направлений без PQ-only строк."""
+    buh_facts = [
+        fact
+        for fact in buh_cost_facts
+        if fact.kpi_l1 == "Себестоимость" and not is_black_metal_scrap_nomenclature(fact.nomenclature)
+    ]
+    if not buh_facts:
+        return []
+    if not pq_rows:
+        return [_buh_fact_to_structure(fact) for fact in buh_facts]
+
+    pq_facts = build_cost_structure_facts_from_pq_rows(pq_rows)
+    pq_groups = _group_cost_structure_facts(pq_facts)
+    buh_groups = _group_cost_structure_facts(buh_facts)
+    pq_only_pool = _build_pq_only_amount_pool(pq_groups, buh_groups)
+    unified: list[Fact] = []
+
+    for key in set(pq_groups) | set(buh_groups):
+        pq_items = pq_groups.get(key, [])
+        buh_items = buh_groups.get(key, [])
+        pq_total = sum(fact.amount_buh for fact in pq_items)
+        buh_total = sum(fact.amount_buh for fact in buh_items)
+
+        if buh_items and pq_items and abs(pq_total - buh_total) <= max(1.0, abs(buh_total) * 1e-9):
+            unified.extend(_apply_buh_nu_to_pq_splits(pq_items, buh_items))
+        elif buh_items:
+            pq_hint = _take_pq_only_amount_match(key[0], buh_total, pq_only_pool)
+            if pq_hint:
+                unified.extend(_buh_only_with_pq_hint(buh_items, pq_hint))
+            else:
+                unified.extend(_buh_fact_to_structure(fact) for fact in buh_items)
+
+    for month in MONTHS:
+        buh_total = sum(fact.amount_buh for fact in buh_facts if fact.month == month)
+        if abs(buh_total) < 0.005:
+            continue
+        unified_total = sum(fact.amount_buh for fact in unified if fact.month == month)
+        if abs(unified_total - buh_total) > 0.05:
+            unified = [fact for fact in unified if fact.month != month]
+            unified.extend(_buh_fact_to_structure(fact) for fact in buh_facts if fact.month == month)
+
+    return unified
+
+
+COST_STRUCTURE_GAP_PATH = ["cost_section", "nomenclature"]
+
+
+def build_cost_structure_gap_facts_from_pq_rows(pq_rows: list[dict[str, object]]) -> list[Fact]:
+    """Не используется для детализации «Прочее» — gap только buh vs PQ (округление)."""
+    del pq_rows
+    return []
+
+
+def _chart_cost_structure_from_pq_rows(pq_rows: list[dict[str, object]]) -> dict[str, Any]:
+    """Структура себестоимости из PQ-таблицы (как этalon), месяц — из даты документа отгрузки."""
+    monthly_sections: dict[str, dict[str, float]] = {
+        month: {section: 0.0 for section in COST_STRUCTURE_SECTIONS} for month in MONTHS
+    }
+    davaltz_totals = build_davaltz_document_totals(pq_rows)
+
+    for row in pq_rows:
+        if normalize_text(row.get("Основной раздел")) != "Расходы":
+            continue
+        if not should_include_in_cost_structure(
+            document=row.get("Документ"),
+            nomenclature=row.get("Номенклатура"),
+            davaltz_totals=davaltz_totals,
+        ):
+            continue
+        month = _month_from_cost_document(row.get("Документ"))
+        if month not in monthly_sections:
+            continue
+        section = _normalize_cost_structure_section(str(row.get("Раздел") or ""))
+        if not section:
+            continue
+        monthly_sections[month][section] += float(row.get("Сумма") or 0)
+
+    by_month: list[dict[str, Any]] = []
+    for full, short in zip(MONTHS, _MONTHS_SHORT, strict=True):
+        section_values = {
+            name: abs(float(monthly_sections[full].get(name, 0) or 0)) for name in COST_STRUCTURE_SECTIONS
+        }
+        by_month.append(
+            {
+                "month": short,
+                "total": sum(section_values.values()),
+                "sections": section_values,
+            }
+        )
+
+    return {
+        "sections": list(COST_STRUCTURE_SECTIONS),
+        "by_month": by_month,
+    }
+
+
 def _chart_cost_structure(facts: list[Fact]) -> dict[str, Any]:
     """Себестоимость: только стандартные статьи затрат (как в дереве P&L)."""
 
@@ -1313,6 +1719,8 @@ def _chart_cost_structure(facts: list[Fact]) -> dict[str, Any]:
 
     for fact in facts:
         if fact.kpi_l1 != "Себестоимость":
+            continue
+        if is_black_metal_scrap_nomenclature(fact.nomenclature):
             continue
         section = _normalize_cost_structure_section(fact.cost_section)
         if not section:

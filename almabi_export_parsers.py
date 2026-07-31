@@ -144,18 +144,21 @@ def classify_cost_section(calc_article: str, account: str) -> str:
 
 
 def classify_cost_section_pq(calc_article: str, account: str) -> str:
-    """Раздел себестоимости как в Power Query «Свод_нов» (счёт 20 + статья калькуляции)."""
+    """Раздел себестоимости по правилам PQ (счёт 20 + статья калькуляции)."""
     article = (calc_article or "Сырье и материалы").strip()
     account_value = (account or "20").strip()
     if account_value != "20":
         return "Прочие производственные расходы"
     pq_map = {
         "Сырье и материалы": "Материальные затраты",
-        "Прочие производственные расходы": "Материальные затраты",
+        "Прочие производственные расходы": "Общепроизводственные затраты",
         "Оплата труда": "ФОТ",
         "Страховые взносы": "ФОТ",
         "Аренда": "Аренда (прямые)",
         "Амортизация": "Амортизация",
+        "Возвратные отходы": "Материальные затраты",
+        "Полуфабрикаты производимые в процессе": "Материальные затраты",
+        "Работы Субподрядчика": "Прочие производственные расходы",
     }
     return pq_map.get(article, "Прочие производственные расходы")
 
@@ -366,7 +369,7 @@ def parse_cost(path: Path) -> list[CostRow]:
                 quantity=parse_amount(cell_value(row, column_map, "количество")),
                 amount=amount,
                 month=_resolve_month(document, cell_value(row, column_map, "дата")),
-                cost_section=classify_cost_section(calc_article, account),
+                cost_section=classify_cost_section_pq(calc_article, account),
                 direction=direction,
                 project_group=project_group,
                 project=project,

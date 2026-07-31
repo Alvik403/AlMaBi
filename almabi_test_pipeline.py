@@ -42,7 +42,7 @@ from almabi_pipeline_audit import (
     _match_payload_realization,
 )
 from almabi_project_index import ProjectMeta, build_project_index, lookup_project
-from almabi_pq_common import build_cost_pq_lookup, lookup_cost_pq_rows, nomenclature_key
+from almabi_pq_common import build_cost_pq_lookup, is_black_metal_scrap_nomenclature, lookup_cost_pq_rows, nomenclature_key
 from almabi_realization_lookup import build_realization_index, resolve_realization_match
 
 INCOME_SECTIONS = frozenset({"Выручка", "Прочие доходы"})
@@ -53,6 +53,7 @@ class TestPipelineResult:
     result: PipelineResult
     audit: PipelineAuditLog
     audit_path: Path | None = None
+    pq_cost_rows: list[dict[str, object]] | None = None
 
 
 def classify_main_section(section: str) -> str | None:
@@ -411,6 +412,9 @@ def build_test_facts(
             elif rev_match and rev_match.nomenclature:
                 nomenclature = rev_match.nomenclature
 
+            if section == "Себестоимость" and is_black_metal_scrap_nomenclature(nomenclature):
+                continue
+
             contract = analytics_value(row.contract, default="") or _lookup_contract(row.document, doc_contract)
             if cost_match and cost_match.contract:
                 contract = cost_match.contract or contract
@@ -476,6 +480,7 @@ def build_test_facts(
                 "contract": contract,
                 "nomenclature": nomenclature,
                 "cost_section": _pq_cost_section(cost_match),
+                "cost_account": normalize_text(getattr(cost_match, "account", "") or "") if cost_match else "",
                 "expense_article": (
                     normalize_text(getattr(cost_match, "calc_article", "") or "")
                     or row.expense_article
@@ -494,11 +499,16 @@ def build_test_facts(
                     nu_mismatch_docs=other_pnl_nu_mismatch_docs,
                     section_has_nu=other_pnl_section_has_nu,
                 )
+                pnl_kwargs = {
+                    key: value
+                    for key, value in fact_kwargs.items()
+                    if key not in ("cost_section", "cost_account", "expense_article")
+                }
                 _append_other_pnl_fact(
                     facts,
                     buh_tax_type=resolved_tax_type,
                     nu_tax_type=resolved_nu_tax_type,
-                    **fact_kwargs,
+                    **pnl_kwargs,
                 )
             else:
                 _append_fact(
@@ -552,6 +562,8 @@ def build_test_facts(
 
     if not saw_cost and exports.cost:
         for row in exports.cost:
+            if is_black_metal_scrap_nomenclature(row.nomenclature):
+                continue
             _append_fact(
                 facts,
                 kpi_l1="Себестоимость",
@@ -564,6 +576,7 @@ def build_test_facts(
                 contract=_lookup_contract(row.document, doc_contract),
                 nomenclature=row.nomenclature,
                 cost_section=classify_cost_section_pq(row.calc_article, row.account),
+                cost_account=row.account,
                 expense_article=row.calc_article,
                 tax_type=doc_tax.get(row.document, "Общие условия налогообложения"),
                 contractor=_lookup_contractor(row.document, doc_contractor),
@@ -614,11 +627,18 @@ def run_test_pipeline(
 ) -> TestPipelineResult:
     audit = PipelineAuditLog()
     exports = parse_exports(paths)
+    pq_cost_rows: list[dict[str, object]] | None = None
+    cost_path = paths.get("cost")
+    projects_path = paths.get("realization")
+    if cost_path is not None and cost_path.exists():
+        from almabi_pq_cost import build_pq_cost_table
+
+        pq_cost_rows = build_pq_cost_table(cost_path, projects_path=projects_path)
     result = build_test_facts(
         exports,
         audit=audit,
-        cost_path=paths.get("cost"),
-        projects_path=paths.get("realization"),
+        cost_path=cost_path,
+        projects_path=projects_path,
     )
     audit_path = audit.write_report(logs_dir) if logs_dir and write_audit else None
-    return TestPipelineResult(result=result, audit=audit, audit_path=audit_path)
+    return TestPipelineResult(result=result, audit=audit, audit_path=audit_path, pq_cost_rows=pq_cost_rows)

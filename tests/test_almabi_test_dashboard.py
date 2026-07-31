@@ -25,11 +25,14 @@ def _max_level(node: dict) -> int:
 
 def test_classify_cost_section_pq_matches_excel_rules():
     assert classify_cost_section_pq("Сырье и материалы", "20") == "Материальные затраты"
-    assert classify_cost_section_pq("Прочие производственные расходы", "20") == "Материальные затраты"
+    assert classify_cost_section_pq("Прочие производственные расходы", "20") == "Общепроизводственные затраты"
     assert classify_cost_section_pq("Оплата труда", "20") == "ФОТ"
     assert classify_cost_section_pq("Страховые взносы", "20") == "ФОТ"
     assert classify_cost_section_pq("Аренда", "20") == "Аренда (прямые)"
     assert classify_cost_section_pq("Амортизация", "20") == "Амортизация"
+    assert classify_cost_section_pq("Возвратные отходы", "20") == "Материальные затраты"
+    assert classify_cost_section_pq("Полуфабрикаты производимые в процессе", "20") == "Материальные затраты"
+    assert classify_cost_section_pq("Работы Субподрядчика", "20") == "Прочие производственные расходы"
     assert classify_cost_section_pq("Прочее", "20") == "Прочие производственные расходы"
     assert classify_cost_section_pq("Сырье и материалы", "10") == "Прочие производственные расходы"
 

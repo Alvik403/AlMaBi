@@ -11,8 +11,8 @@ const MONTHS_RU = [
 ];
 
 const moneyFormatter = new Intl.NumberFormat("ru-RU", {
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 0,
 });
 
 const REPORT_CONFIGS = {

@@ -8,7 +8,13 @@ from almabi_contractor_builder import build_contractor_cards, build_contractor_d
 from almabi_test_dashboard_builder import build_test_summary_rows_from_facts
 from almabi_mock_data import MONTHS, SCENARIOS, UNITS
 
-from almabi_dashboard_builder import _chart_cost_structure, _chart_series, _collect_filter_values, _empty_cost_structure
+from almabi_dashboard_builder import (
+    _chart_cost_structure,
+    _chart_cost_structure_from_pq_rows,
+    _chart_series,
+    _collect_filter_values,
+    _empty_cost_structure,
+)
 from almabi_excel_utils import tax_bucket
 from almabi_pipeline import Fact
 from almabi_test_pipeline import TestPipelineResult, run_test_pipeline
@@ -71,9 +77,15 @@ def _build_summary_by_tax(
     *,
     plan_facts: list[Fact] | None = None,
     forecast_facts: list[Fact] | None = None,
+    pq_cost_rows: list[dict[str, object]] | None = None,
 ) -> dict[str, list[dict[str, Any]]]:
     return {
-        "all": build_test_summary_rows_from_facts(facts, plan_facts=plan_facts, forecast_facts=forecast_facts),
+        "all": build_test_summary_rows_from_facts(
+            facts,
+            plan_facts=plan_facts,
+            forecast_facts=forecast_facts,
+            pq_cost_rows=pq_cost_rows,
+        ),
         **{
             bucket: build_test_summary_rows_from_facts(
                 filter_facts_by_tax_bucket(facts, bucket),
@@ -85,12 +97,21 @@ def _build_summary_by_tax(
     }
 
 
-def _build_charts_by_tax(facts: list[Fact]) -> dict[str, dict[str, list[dict[str, Any]]]]:
+def _build_charts_by_tax(
+    facts: list[Fact],
+    *,
+    pq_cost_rows: list[dict[str, object]] | None = None,
+) -> dict[str, dict[str, list[dict[str, Any]]]]:
+    all_structure = (
+        _chart_cost_structure_from_pq_rows(pq_cost_rows)
+        if pq_cost_rows
+        else _chart_cost_structure(facts)
+    )
     charts: dict[str, dict[str, list[dict[str, Any]]]] = {
         "all": {
             "revenue_by_month": _chart_series(facts, "Выручка"),
             "cost_by_month": _chart_series(facts, "Себестоимость"),
-            "cost_structure_by_month": _chart_cost_structure(facts),
+            "cost_structure_by_month": all_structure,
         }
     }
     for bucket in TAX_BUCKET_OPTIONS:
@@ -113,8 +134,13 @@ def build_test_dashboard_from_pipeline(
 ) -> dict[str, Any]:
     result = pipeline.result
     audit = pipeline.audit
-    summary_by_tax = _build_summary_by_tax(result.facts, plan_facts=plan_facts, forecast_facts=forecast_facts)
-    charts_by_tax = _build_charts_by_tax(result.facts)
+    summary_by_tax = _build_summary_by_tax(
+        result.facts,
+        plan_facts=plan_facts,
+        forecast_facts=forecast_facts,
+        pq_cost_rows=pipeline.pq_cost_rows,
+    )
+    charts_by_tax = _build_charts_by_tax(result.facts, pq_cost_rows=pipeline.pq_cost_rows)
     summary_rows = summary_by_tax["all"]
     consolidated_by_tax = _build_consolidated_by_tax(summary_by_tax)
     revenue_chart = charts_by_tax["all"]["revenue_by_month"]

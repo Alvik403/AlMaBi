@@ -144,7 +144,9 @@ def _resolve_cost_section(kpi_l1: str, cost_kind: str, cost_kind_future: str) ->
     for candidate in (cost_kind, cost_kind_future):
         if candidate in KNOWN_COST_SECTIONS:
             return candidate
-    return cost_kind or cost_kind_future or "Общепроизводственные затраты"
+        if candidate in KPI_NAMES:
+            continue
+    return "Общепроизводственные затраты"
 
 
 def _signed_amount(kpi_l1: str, amount: float) -> float:

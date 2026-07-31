@@ -46,6 +46,7 @@ class Fact:
     contract: str = ""
     nomenclature: str = ""
     cost_section: str = ""
+    cost_account: str = ""
     expense_article: str = ""
     tax_type: str = ""
     contractor: str = ""
@@ -515,6 +516,7 @@ def _append_fact(
     contract: str = "",
     nomenclature: str = "",
     cost_section: str = "",
+    cost_account: str = "",
     expense_article: str = "",
     tax_type: str = "",
     contractor: str = "",
@@ -537,6 +539,7 @@ def _append_fact(
             contract=contract,
             nomenclature=nomenclature,
             cost_section=cost_section,
+            cost_account=cost_account,
             expense_article=expense_article,
             tax_type=tax_type or "Общие условия налогообложения",
             contractor=contractor,
@@ -813,6 +816,7 @@ def build_facts(exports: ParsedExports) -> PipelineResult:
             "contract": contract,
             "nomenclature": nomenclature,
             "cost_section": cost_match.cost_section if cost_match else "",
+            "cost_account": normalize_text(getattr(cost_match, "account", "") or "") if cost_match else "",
             "expense_article": (
                 cost_match.calc_article
                 if cost_match and section == "Себестоимость" and cost_match.calc_article
@@ -831,11 +835,16 @@ def build_facts(exports: ParsedExports) -> PipelineResult:
                 nu_mismatch_docs=other_pnl_nu_mismatch_docs,
                 section_has_nu=other_pnl_section_has_nu,
             )
+            pnl_kwargs = {
+                key: value
+                for key, value in fact_kwargs.items()
+                if key not in ("cost_section", "cost_account", "expense_article")
+            }
             _append_other_pnl_fact(
                 facts,
                 buh_tax_type=resolved_tax_type,
                 nu_tax_type=resolved_nu_tax_type,
-                **fact_kwargs,
+                **pnl_kwargs,
             )
         else:
             _append_fact(

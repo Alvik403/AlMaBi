@@ -114,23 +114,14 @@ def _account_value(raw: object) -> int:
         return 20
 
 
-def _classify_section(calc_article: str, account: int) -> str:
-    article = calc_article or "Сырье и материалы"
-    if account != 20:
-        return "Прочие производственные расходы"
-    if article == "Сырье и материалы":
-        return "Материальные затраты"
-    if article == "Прочие производственные расходы":
-        return "Материальные затраты"
-    if article == "Оплата труда":
-        return "ФОТ"
-    if article == "Страховые взносы":
-        return "ФОТ"
-    if article == "Аренда":
-        return "Аренда"
-    if article == "Амортизация":
-        return "Амортизация"
-    return "Прочие производственные расходы"
+def _classify_section(calc_article: str, account: int, *, nomenclature: str = "") -> str:
+    from almabi_pq_common import is_black_metal_scrap_nomenclature
+
+    from almabi_export_parsers import classify_cost_section_pq
+
+    if is_black_metal_scrap_nomenclature(nomenclature):
+        return ""
+    return classify_cost_section_pq(calc_article, str(account))
 
 
 def _main_section(section: str) -> str:
@@ -179,15 +170,16 @@ def _parse_cost_rows(rows: list[tuple[object, ...]]) -> list[_CostPreparedRow] |
         amount = parse_amount(raw_amount) if raw_amount not in (None, "") else None
         account = _account_value(cell_value(row, account_idx))
         calc_article = normalize_text(cell_value(row, calc_idx)) or "Сырье и материалы"
+        nomenclature = normalize_text(cell_value(row, nomenclature_idx))
         parsed.append(
             _CostPreparedRow(
-                nomenclature=normalize_text(cell_value(row, nomenclature_idx)),
+                nomenclature=nomenclature,
                 account=account,
                 calc_article=calc_article,
                 document=document,
                 quantity=parse_amount(cell_value(row, quantity_idx)),
                 amount=amount,
-                section=_classify_section(calc_article, account),
+                section=_classify_section(calc_article, account, nomenclature=nomenclature),
             )
         )
     return parsed

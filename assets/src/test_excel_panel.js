@@ -27,8 +27,8 @@ function numeric(value) {
 
 function formatMoney(value) {
   return new Intl.NumberFormat("ru-RU", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
   }).format(numeric(value));
 }
 

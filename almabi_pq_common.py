@@ -17,6 +17,99 @@ def nomenclature_key(value: object) -> str:
     return normalize_text(value).casefold()
 
 
+def is_cost_structure_shipment_document(document: object) -> bool:
+    """PQ «Свод_нов»: в структуру себестоимости входят только документы отгрузки «Реализация …»."""
+    text = normalize_text(document)
+    return bool(text) and text.casefold().startswith("реализация")
+
+
+DAVALTZ_STRUCTURE_MAX_TOTAL = 12_000_000.0
+
+
+def _davaltz_document_key(document: object) -> str:
+    text = normalize_text(document)
+    if not text:
+        return ""
+    return text.split(" от ")[0].strip()
+
+
+def build_davaltz_document_totals(rows: list[dict[str, object]]) -> dict[str, float]:
+    """Сумма по документам «Отчет давальцу …» для порога включения в структуру."""
+    totals: dict[str, float] = {}
+    for row in rows:
+        document = row.get("Документ")
+        text = normalize_text(document).casefold()
+        if not text.startswith("отчет давальц"):
+            continue
+        key = _davaltz_document_key(document)
+        if not key:
+            continue
+        totals[key] = totals.get(key, 0.0) + abs(float(row.get("Сумма") or 0))
+    return totals
+
+
+def is_cost_structure_cost_document(
+    document: object,
+    *,
+    davaltz_totals: dict[str, float] | None = None,
+) -> bool:
+    """«Реализация …» и «Отчет давальцу …» ниже порога (крупные — вне структуры)."""
+    text = normalize_text(document)
+    if not text:
+        return False
+    lowered = text.casefold()
+    if lowered.startswith("реализация"):
+        return True
+    if lowered.startswith("отчет давальц"):
+        if not davaltz_totals:
+            return False
+        key = _davaltz_document_key(document)
+        total = davaltz_totals.get(key, 0.0)
+        return 0.0 < total < DAVALTZ_STRUCTURE_MAX_TOTAL
+    return False
+
+
+def is_black_metal_scrap_nomenclature(nomenclature: object) -> bool:
+    """Лом чёрных металлов не входит в «Сырье и материалы» эталона (номенклатура, не статья калькуляции)."""
+    text = normalize_text(nomenclature).casefold()
+    return text.startswith("лом черных металлов")
+
+
+def is_davaltz_cost_document(document: object) -> bool:
+    text = normalize_text(document).casefold()
+    return text.startswith("отчет давальц")
+
+
+def davaltz_cost_tree_group(document: object) -> str:
+    """Подпись группы проектов для «Отчет давальцу …» в дереве себестоимости."""
+    return "Отчет давальцу"
+
+
+def should_include_in_cost_tree(
+    *,
+    document: object,
+    nomenclature: object = "",
+) -> bool:
+    """Строки PQ для дерева себестоимости: «Реализация …», все «Отчет давальцу …», без лома чёрных металлов."""
+    if is_black_metal_scrap_nomenclature(nomenclature):
+        return False
+    text = normalize_text(document).casefold()
+    if text.startswith("реализация"):
+        return True
+    return is_davaltz_cost_document(document)
+
+
+def should_include_in_cost_structure(
+    *,
+    document: object,
+    nomenclature: object = "",
+    davaltz_totals: dict[str, float] | None = None,
+) -> bool:
+    if is_black_metal_scrap_nomenclature(nomenclature):
+        return False
+    return is_cost_structure_cost_document(document, davaltz_totals=davaltz_totals)
+
+
 def register_document_lookup(
     lookup: dict[tuple[str, ...], list[RowT]],
     *,
@@ -138,8 +231,6 @@ def lookup_cost_pq_rows(
         if same_nom:
             return same_nom
     return []
-
-    return tuple(value for index, value in enumerate(row) if index not in indices)
 
 
 def resolve_header_index(headers: list[str], candidates: tuple[str, ...]) -> int | None:

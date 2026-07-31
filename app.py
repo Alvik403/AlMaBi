@@ -90,7 +90,7 @@ def money(value: float) -> str:
         amount = float(value)
     except (TypeError, ValueError):
         amount = 0.0
-    return f"{amount:,.2f}".replace(",", " ").replace(".", ",")
+    return f"{amount:,.0f}".replace(",", " ")
 
 
 def pct(value: float) -> str:

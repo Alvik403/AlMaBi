@@ -20,9 +20,11 @@ from almabi_dashboard_builder import (
     _month_values,
 )
 from almabi_pipeline import Fact
+from almabi_mock_data import MONTHS, SCENARIOS
 
 TEST_REVENUE_PATH = ["direction", "project_group", "project", "contract"]
 TEST_COST_PATH = ["cost_section", "direction", "project_group", "project"]
+COST_STRUCTURE_GAP_SECTION = "Прочее"
 TEST_BENEFIT_ONLY = {
     "Коммерческие расходы",
     "Управленческие расходы",
@@ -70,6 +72,63 @@ def _build_test_section_children(
     return []
 
 
+def _append_cost_structure_gap_child(
+    cost_node: dict[str, Any],
+    *,
+    pq_cost_rows: list[dict[str, object]] | None = None,
+) -> None:
+    """Строка «Прочее»: только расхождение KPI buh (L1) и суммы разделов PQ после распределения."""
+    del pq_cost_rows
+    children = list(cost_node.get("children") or [])
+    gap_values: dict[str, dict[str, float]] = {
+        scenario: {month: 0.0 for month in MONTHS} for scenario in SCENARIOS
+    }
+    has_gap = False
+    for scenario in ("Факт БУ", "Факт НУ"):
+        for month in MONTHS:
+            parent = float(cost_node["values"][scenario].get(month, 0) or 0)
+            child_sum = sum(float(child["values"][scenario].get(month, 0) or 0) for child in children)
+            gap = parent - child_sum
+            gap_values[scenario][month] = gap
+            if abs(gap) > 0.005:
+                has_gap = True
+    if not has_gap:
+        return
+
+    residual_facts: list[Fact] = []
+    for month in MONTHS:
+        gap_val = gap_values["Факт БУ"][month]
+        if abs(gap_val) > 0.005:
+            residual_facts.append(
+                Fact(
+                    kpi_l1="Себестоимость",
+                    month=month,
+                    amount_buh=gap_val,
+                    amount_nu=gap_values["Факт НУ"][month],
+                    cost_section="Разница buh / cost",
+                    nomenclature="—",
+                )
+            )
+    gap_children = (
+        _build_group_tree(residual_facts, ["cost_section"], level=3)
+        if residual_facts
+        else []
+    )
+
+    gap_node = _attach_metrics(
+        {
+            "id": dashboard_builder._next_id("cost-structure-gap"),
+            "name": COST_STRUCTURE_GAP_SECTION,
+            "level": 2,
+            "values": gap_values,
+            "children": gap_children,
+            "expandable": bool(gap_children),
+        }
+    )
+    children.append(gap_node)
+    cost_node["children"] = children
+
+
 def _build_test_kpi_node(
     name: str,
     items: list[Fact],
@@ -79,6 +138,7 @@ def _build_test_kpi_node(
     plan_items: list[Fact] | None = None,
     forecast_items: list[Fact] | None = None,
     plan_forecast_from_file: bool = False,
+    child_items: list[Fact] | None = None,
 ) -> dict[str, Any]:
     scaled_items = [
         Fact(
@@ -101,12 +161,14 @@ def _build_test_kpi_node(
     ]
     scaled_plan = dashboard_builder._scale_facts(plan_items or [], sign)
     scaled_forecast = dashboard_builder._scale_facts(forecast_items or [], sign)
+    section_items = child_items if child_items is not None else scaled_items
     node = _attach_metrics(
         {
             "id": dashboard_builder._next_id(f"kpi-{name}"),
             "name": name,
             "level": 1,
             "plan_forecast_from_file": plan_forecast_from_file,
+            "preserve_parent_totals": child_items is not None,
             "values": _month_values(
                 _aggregate_months(scaled_items),
                 always_nu=always_nu,
@@ -116,7 +178,7 @@ def _build_test_kpi_node(
             ),
             "children": _build_test_section_children(
                 name,
-                scaled_items,
+                section_items,
                 plan_items=scaled_plan,
                 forecast_items=scaled_forecast,
                 plan_forecast_from_file=plan_forecast_from_file,
@@ -132,12 +194,19 @@ def build_test_summary_rows_from_facts(
     *,
     plan_facts: list[Fact] | None = None,
     forecast_facts: list[Fact] | None = None,
+    pq_cost_rows: list[dict[str, object]] | None = None,
 ) -> list[dict[str, Any]]:
     dashboard_builder._id_seq = 0
 
     plan_facts = plan_facts or []
     forecast_facts = forecast_facts or []
     plan_forecast_from_file = bool(plan_facts or forecast_facts)
+    cost_buh_facts = _group_facts(facts, kpi_l1="Себестоимость")
+    cost_structure_facts = (
+        dashboard_builder.build_unified_cost_structure_facts(cost_buh_facts, pq_cost_rows)
+        if pq_cost_rows
+        else None
+    )
 
     base_kpis = [
         ("Выручка", 1, True),
@@ -147,6 +216,7 @@ def build_test_summary_rows_from_facts(
     ]
     nodes: list[dict[str, Any]] = []
     for name, sign, always_nu in base_kpis:
+        child_items = cost_structure_facts if name == "Себестоимость" and cost_structure_facts else None
         nodes.append(
             _build_test_kpi_node(
                 name,
@@ -156,11 +226,16 @@ def build_test_summary_rows_from_facts(
                 plan_items=_group_facts(plan_facts, kpi_l1=name),
                 forecast_items=_group_facts(forecast_facts, kpi_l1=name),
                 plan_forecast_from_file=plan_forecast_from_file,
+                child_items=child_items,
             )
         )
 
+    if cost_structure_facts:
+        cost_node = next(node for node in nodes if node["name"] == "Себестоимость")
+        _append_cost_structure_gap_child(cost_node, pq_cost_rows=pq_cost_rows)
+
     revenue_facts = _group_facts(facts, kpi_l1="Выручка")
-    cost_facts = _group_facts(facts, kpi_l1="Себестоимость")
+    cost_facts = cost_structure_facts or _group_facts(facts, kpi_l1="Себестоимость")
     for node in nodes:
         if node["name"] == "Выручка":
             dashboard_builder._attach_revenue_cost_level_drills(
