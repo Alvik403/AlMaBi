@@ -34,6 +34,7 @@ from almabi_pipeline import (
     _resolve_other_pnl_nu_tax_type,
     _resolve_row_tax_type,
     _skip_other_expense_inventory_non_deductible,
+    _apply_cost_nu_to_buh_facts,
     resolve_quantity_from_cost,
 )
 from almabi_pipeline_audit import (
@@ -124,12 +125,13 @@ def _analytics_from_pq(item: dict[str, object], field: str) -> str:
 
 def _cost_row_from_pq_dict(item: dict[str, object]) -> CostRow:
     account = normalize_text(item.get("Счет")) or "20"
-    section = normalize_text(item.get("Раздел")) or classify_cost_section_pq("", account)
+    calc_article = normalize_text(item.get("Статья калькуляции")) or "Сырье и материалы"
+    section = normalize_text(item.get("Раздел")) or classify_cost_section_pq(calc_article, account)
     return CostRow(
         document=normalize_text(item.get("Документ")),
         nomenclature=normalize_text(item.get("Номенклатура")),
         account=account,
-        calc_article="",
+        calc_article=calc_article,
         quantity=float(item.get("Количество") or 0),
         amount=float(item.get("Сумма") or 0),
         month=None,
@@ -259,17 +261,55 @@ def _cost_iterations_for_buh_row(
     return cost_matches or [None]
 
 
+def _raw_cost_rows_for_buh(document: str, nomenclature_kt: str, cost_rows: list[CostRow]) -> list[CostRow]:
+    """Строки сырой себестoимости по документу (+ номенклатура Кт, если указана)."""
+    doc_keys = document_match_keys(document)
+    if not doc_keys:
+        return []
+    nom = nomenclature_key(nomenclature_kt)
+    matched: list[CostRow] = []
+    for row in cost_rows:
+        if not (document_match_keys(row.document) & doc_keys):
+            continue
+        if nom and nomenclature_key(row.nomenclature) != nom:
+            continue
+        matched.append(row)
+    return matched
+
+
+def _prefer_raw_cost_matches(
+    pq_matches: list[CostRow],
+    raw_matches: list[CostRow],
+) -> list[CostRow]:
+    if not raw_matches:
+        return pq_matches
+    if not pq_matches:
+        return raw_matches
+    if len(raw_matches) > len(pq_matches):
+        return raw_matches
+    return pq_matches
+
+
 def _buh_data_quality_warnings(exports: ParsedExports) -> list[str]:
-    """Предупреждения о строках бухрегистра с аномально крупными суммами."""
-    warnings: list[str] = []
+    """Информационные напоминания о крупных проводках бухрегистра (не ошибки)."""
+    from collections import defaultdict
+
     threshold = 1_000_000_000
+    grouped: dict[tuple[str, str, str], list] = defaultdict(list)
     for row in exports.buh:
         if not row.month or row.amount_buh < threshold:
             continue
         section = classify_buh_section(row.account_dt, row.account_kt) or "?"
+        grouped[(row.month, section, row.document)].append(row)
+
+    warnings: list[str] = []
+    for (month, section, document), rows in sorted(grouped.items()):
+        total = sum(item.amount_buh for item in rows)
+        peak = max(item.amount_buh for item in rows)
         warnings.append(
-            f"{row.month}: {section} — документ «{row.document}», сумма {row.amount_buh:,.2f}. "
-            "Проверьте, что выгрузка не дублирует период (например, накопительным итогом)."
+            f"{month}: {section} — «{document}»: {len(rows)} строк, "
+            f"крупнейшая {peak:,.2f}, сумма строк {total:,.2f}. "
+            "Напоминание сверить период выгрузки; это не сигнал об ошибке в расчёте."
         )
     return warnings
 
@@ -322,6 +362,10 @@ def build_test_facts(
         warnings.append(
             "Файл себестоимости не сгруппирован по правилам PQ — используется сырая выгрузка."
         )
+    if exports.cost and not exports.cost_nu:
+        warnings.append(
+            "Файл «Себестоимость НУ» не загружен — факт НУ по себестоимости будет нулевым."
+        )
 
     saw_revenue = False
     saw_cost = False
@@ -346,6 +390,9 @@ def build_test_facts(
             if exports.cost and main_section
             else []
         )
+        if section == "Себестоимость" and exports.cost:
+            raw_matches = _raw_cost_rows_for_buh(row.document, row.nomenclature_kt, exports.cost)
+            cost_matches = _prefer_raw_cost_matches(cost_matches, raw_matches)
         duplicate_cost_key = _is_duplicate_cost_buh_key(duplicate_cost_buh_keys, row)
         cost_iterations = _cost_iterations_for_buh_row(
             section,
@@ -388,7 +435,10 @@ def build_test_facts(
                 cost_match,
                 duplicate_cost_key=duplicate_cost_key,
             )
-            amount_nu = _amount_nu_for_section(section, row.amount_nu_dt, row.amount_nu_kt)
+            if section == "Себестоимость":
+                amount_nu = 0.0
+            else:
+                amount_nu = _amount_nu_for_section(section, row.amount_nu_dt, row.amount_nu_kt)
             lookup_document = (
                 cost_match.document
                 if cost_match and cost_match.document
@@ -485,6 +535,7 @@ def build_test_facts(
                     normalize_text(getattr(cost_match, "calc_article", "") or "")
                     or row.expense_article
                 ),
+                "document": lookup_document,
                 "contractor": contractor,
                 "quantity": quantity,
             }
@@ -502,7 +553,7 @@ def build_test_facts(
                 pnl_kwargs = {
                     key: value
                     for key, value in fact_kwargs.items()
-                    if key not in ("cost_section", "cost_account", "expense_article")
+                    if key not in ("cost_section", "cost_account", "expense_article", "document")
                 }
                 _append_other_pnl_fact(
                     facts,
@@ -569,12 +620,13 @@ def build_test_facts(
                 kpi_l1="Себестоимость",
                 month=row.month,
                 amount_buh=-abs(row.amount),
-                amount_nu=-abs(row.amount),
+                amount_nu=0.0,
                 direction=row.direction,
                 project_group=row.project_group,
                 project=row.project,
                 contract=_lookup_contract(row.document, doc_contract),
                 nomenclature=row.nomenclature,
+                document=row.document,
                 cost_section=classify_cost_section_pq(row.calc_article, row.account),
                 cost_account=row.account,
                 expense_article=row.calc_article,
@@ -598,6 +650,9 @@ def build_test_facts(
                 }
             )
 
+    if exports.cost_nu:
+        _apply_cost_nu_to_buh_facts(facts, exports.cost_nu, exports.buh)
+
     audit_log.analyze_duplicates(facts, exports.buh)
 
     warnings.extend(_buh_data_quality_warnings(exports))
@@ -609,11 +664,13 @@ def build_test_facts(
 
     if audit_log.duplicate_facts:
         warnings.append(
-            f"Найдено {len(audit_log.duplicate_facts)} групп дублей в собранных фактах — см. audit log."
+            f"Audit: {len(audit_log.duplicate_facts)} групп фактов с одинаковой BI-аналитикой "
+            "(часто амортизация: разные ОС в buh, одна номенклатура в BI) — см. audit log."
         )
     if audit_log.cross_section_overlaps:
         warnings.append(
-            f"Найдено {len(audit_log.cross_section_overlaps)} пересечений между KPI — см. audit log."
+            f"Audit: {len(audit_log.cross_section_overlaps)} номенклатур встречаются в нескольких KPI "
+            "(курсовые разницы, NU-only строки себестоимости) — см. audit log."
         )
 
     return PipelineResult(facts=facts, months=months, warnings=warnings)

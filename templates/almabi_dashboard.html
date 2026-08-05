@@ -82,6 +82,13 @@
     </div>
 
     {% if dashboard.meta %}
+    {% if dashboard.meta.warnings %}
+    <div class="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+      {% for warning in dashboard.meta.warnings %}
+      <p>{{ warning }}</p>
+      {% endfor %}
+    </div>
+    {% endif %}
     <div class="hidden mt-3 rounded-lg border border-sky-100 bg-sky-50 px-3 py-2 text-xs text-sky-900">
       <span class="font-semibold">{{ dashboard.meta.title or almabi_data_context.title }}</span>
       {% if dashboard.meta.description %}
@@ -90,7 +97,7 @@
       {% if dashboard.meta.upload_files %}
       <span class="block mt-1 text-sky-700">
         {% for export_key, export_name in dashboard.meta.upload_files.items() %}
-        {% if export_key == 'buh' %}Бух.регистр{% elif export_key == 'realization' %}Реализация{% elif export_key == 'cost' %}Себестоимость{% else %}{{ export_key }}{% endif %}: {{ export_name }}{% if not loop.last %} · {% endif %}
+        {% if export_key == 'buh' %}Бух.регистр{% elif export_key == 'realization' %}Реализация{% elif export_key == 'cost' %}Себестоимость{% elif export_key == 'cost_nu' %}Себестоимость НУ{% else %}{{ export_key }}{% endif %}: {{ export_name }}{% if not loop.last %} · {% endif %}
         {% endfor %}
       </span>
       {% elif dashboard.meta.upload_file_name %}
@@ -228,24 +235,68 @@
       </div>
     </div>
 
-    <div class="almabi-chart-card rounded-xl border border-slate-200 bg-white shadow-md">
-      <div class="border-b border-slate-100 px-5 py-3 sm:px-6">
-        <h2 class="text-lg font-bold text-slate-900">Выручка, себестоимость и прибыль</h2>
+    <div class="grid gap-5 xl:grid-cols-2">
+      <div class="almabi-revenue-panel rounded-xl border border-slate-200/80 bg-white shadow-sm">
+        <div class="border-b border-slate-100 px-5 py-4 sm:px-6">
+          <div class="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 class="text-base font-bold text-slate-900">Динамика выручки</h2>
+              <p class="mt-1 text-sm text-slate-500">Тренд по выбранному периоду и фильтрам</p>
+            </div>
+            <div class="flex flex-wrap gap-2" data-revenue-trend-kpi aria-live="polite"></div>
+          </div>
+        </div>
+        <div class="px-4 pb-5 pt-3 sm:px-5">
+          <div class="h-[17rem] min-h-[14rem] sm:h-[18rem]" role="img" aria-label="График динамики выручки">
+            <canvas id="almabiRevenueTrendChart"></canvas>
+          </div>
+        </div>
       </div>
-      <div class="px-5 pb-5 pt-4 sm:px-6">
-        <div class="h-[28rem] min-h-[20rem]">
-          <canvas id="almabiOverviewChart"></canvas>
+
+      <div class="almabi-revenue-panel rounded-xl border border-slate-200/80 bg-white shadow-sm">
+        <div class="border-b border-slate-100 px-5 py-4 sm:px-6">
+          <div class="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 class="text-base font-bold text-slate-900">Себестоимость и маржа</h2>
+              <p class="mt-1 text-sm text-slate-500">100% от выручки; линия — маржа %</p>
+            </div>
+            <div class="flex flex-wrap gap-2" data-margin-structure-kpi aria-live="polite"></div>
+          </div>
+        </div>
+        <div class="px-4 pb-5 pt-3 sm:px-5">
+          <div class="h-[17rem] min-h-[14rem] sm:h-[18rem]" role="img" aria-label="График себестоимости и маржи">
+            <canvas id="almabiMarginStructureChart"></canvas>
+          </div>
         </div>
       </div>
     </div>
 
-    <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-md sm:p-6">
-      <div class="mb-4">
-        <h2 class="text-lg font-bold text-slate-900">Структура себестоимости</h2>
-        <p class="mt-1 text-sm text-slate-500">Доля статей по месяцам; мелкие статьи видны минимум 7%, в подсказке — точная доля</p>
+    <div class="almabi-revenue-panel rounded-xl border border-slate-200/80 bg-white shadow-sm">
+      <div class="border-b border-slate-100 px-5 py-4 sm:px-6">
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 class="text-base font-bold text-slate-900">Структура себестоимости</h2>
+            <p class="mt-1 text-sm text-slate-500" data-cost-structure-subtitle>Доли статей; выбросы помечены отдельно</p>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <div class="flex flex-wrap gap-2" data-cost-structure-kpi aria-live="polite"></div>
+            <div class="flex rounded-lg border border-slate-200 bg-white p-0.5 shadow-sm" data-cost-structure-mode-group role="group" aria-label="Режим структуры себестоимости">
+              <button type="button" class="almabi-chart-toggle is-active" data-cost-structure-mode="share">Доля %</button>
+              <button type="button" class="almabi-chart-toggle" data-cost-structure-mode="absolute">Сумма</button>
+            </div>
+            <div class="hidden flex rounded-lg border border-amber-200 bg-amber-50/80 p-0.5 shadow-sm" data-cost-structure-breakout-group role="group" aria-label="Фильтр выбросов">
+              <button type="button" class="almabi-chart-toggle is-active" data-cost-structure-breakout="normal">Обычные</button>
+              <button type="button" class="almabi-chart-toggle" data-cost-structure-breakout="anomaly">Выбросы</button>
+              <button type="button" class="almabi-chart-toggle" data-cost-structure-breakout="all">Все</button>
+            </div>
+          </div>
+        </div>
       </div>
-      <div class="h-[28rem] min-h-[20rem]">
-        <canvas id="almabiCostStructureChart"></canvas>
+      <div class="hidden border-b border-amber-100 bg-amber-50/70 px-5 py-2.5 text-xs font-semibold text-amber-900 sm:px-6" data-cost-structure-scale-banner aria-live="polite"></div>
+      <div class="px-4 pb-5 pt-3 sm:px-5">
+        <div class="h-[22rem] min-h-[16rem] sm:h-[24rem]" role="img" aria-label="График структуры себестоимости">
+          <canvas id="almabiCostStructureChart"></canvas>
+        </div>
       </div>
     </div>
   </section>
@@ -325,20 +376,40 @@
     { key: "Q4", label: "Q4", months: QUARTER_MONTHS.Q4 },
   ];
 
+  const CHART_PALETTE = {
+    revenue: { stroke: "#0284C7", fill: "rgba(224, 242, 254, 0.9)", point: "#0369A1" },
+    cost: { fill: "rgba(251, 113, 133, 0.9)", border: "#E11D48" },
+    margin: { fill: "rgba(56, 189, 248, 0.92)", border: "#0284C7" },
+    loss: { fill: "rgba(244, 63, 94, 0.92)", border: "#BE123C" },
+    grid: "#EEF2F7",
+    tick: "#94A3B8",
+    tooltipBg: "#0F172A",
+  };
+
   const COST_SECTION_COLORS = [
-    "rgba(251, 146, 60, 0.92)",
-    "rgba(249, 115, 22, 0.92)",
-    "rgba(245, 158, 11, 0.92)",
-    "rgba(234, 88, 12, 0.92)",
-    "rgba(217, 119, 6, 0.92)",
-    "rgba(180, 83, 9, 0.92)",
+    "rgba(56, 189, 248, 0.88)",
+    "rgba(14, 165, 233, 0.88)",
+    "rgba(2, 132, 199, 0.88)",
+    "rgba(251, 113, 133, 0.88)",
+    "rgba(244, 63, 94, 0.88)",
+    "rgba(253, 164, 175, 0.9)",
+    "rgba(125, 211, 252, 0.88)",
+    "rgba(225, 29, 72, 0.85)",
   ];
 
   const COST_SECTION_LABELS = {
     "Аренда (прямые)": "Аренда",
+    "Общепроизводственные затраты": "ОПЗ",
+    "Прочие производственные расходы": "Проч. пр-во",
+    "Материальные затраты": "Материалы",
+    "Амортизация": "Аморт.",
+    "Коммерческие расходы": "Коммерч.",
+    "Управленческие расходы": "Управл.",
   };
 
-  const COST_STRUCTURE_MIN_VISUAL_SHARE = 7;
+  const ANOMALY_TOTAL_MEDIAN_MULTIPLIER = 3;
+  const ANOMALY_SECTION_SHARE_THRESHOLD = 70;
+  const MARGIN_BAR_LABEL_MIN_SHARE = 12;
 
   function costSectionLabel(name) {
     return COST_SECTION_LABELS[name] || name;
@@ -353,46 +424,215 @@
     return "0%";
   }
 
-  function formatStructureShareOnChart(share) {
-    const value = Number(share || 0);
-    if (value >= 10) return `${Math.round(value)}%`;
-    if (value >= 1) return `${value.toFixed(1)}%`;
-    if (value >= 0.1) return `${value.toFixed(2)}%`;
-    if (value >= 0.01) return `${value.toFixed(2)}%`;
-    if (value > 0) return "<0.01%";
-    return "";
+  function formatCompactRu(rubles, options = {}) {
+    const num = Number(rubles || 0);
+    const abs = Math.abs(num);
+    const sign = num < 0 ? "−" : "";
+    const pickDecimals = (scaled) => {
+      if (options.decimals != null) return options.decimals;
+      return Math.abs(scaled) < 100 ? 1 : 0;
+    };
+    const fmt = (scaled, suffix) => {
+      const d = pickDecimals(scaled);
+      const formatted = new Intl.NumberFormat("ru-RU", {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: d,
+      }).format(scaled);
+      return `${sign}${formatted} ${suffix}`;
+    };
+    if (abs >= 1_000_000_000) return fmt(abs / 1_000_000_000, "млрд");
+    if (abs >= 1_000_000) return fmt(abs / 1_000_000, "млн");
+    if (abs >= 1_000) return fmt(abs / 1_000, "тыс");
+    const d = pickDecimals(abs);
+    const formatted = new Intl.NumberFormat("ru-RU", {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: d,
+    }).format(abs);
+    return `${sign}${formatted} ₽`;
   }
 
-  function computeVisualSegmentSizes(sectionValues) {
-    const entries = sectionValues.filter((entry) => Number(entry.actual) > 0);
-    const count = entries.length;
-    if (!count) return new Map();
+  function medianPositive(values) {
+    const positive = values.filter((value) => value > 0).sort((left, right) => left - right);
+    if (!positive.length) return 0;
+    const mid = Math.floor(positive.length / 2);
+    if (positive.length % 2) return positive[mid];
+    return (positive[mid - 1] + positive[mid]) / 2;
+  }
 
-    const total = entries.reduce((sum, entry) => sum + Number(entry.actual), 0);
-    const remainderShare = Math.max(0, 100 - count * COST_STRUCTURE_MIN_VISUAL_SHARE);
-    const visual = new Map();
-
-    entries.forEach(({ name, actual }) => {
-      const amount =
-        total * (COST_STRUCTURE_MIN_VISUAL_SHARE / 100) + Number(actual) * (remainderShare / 100);
-      visual.set(name, amount);
+  function analyzeCostPeriod(period) {
+    const total = Number(period.total || 0);
+    const sections = period.sections || {};
+    let topSection = "";
+    let topValue = 0;
+    Object.entries(sections).forEach(([name, raw]) => {
+      const value = Number(raw || 0);
+      if (value > topValue) {
+        topValue = value;
+        topSection = name;
+      }
     });
-    return visual;
+    const topShare = total > 0 ? (topValue / total) * 100 : 0;
+    return {
+      topSection,
+      topShare,
+      isConcentrated: topShare >= ANOMALY_SECTION_SHARE_THRESHOLD,
+    };
   }
 
-  function enrichCostStructurePeriods(periods, activeSections) {
+  function scaleAnomalyBaseline(values) {
+    const positive = values.filter((value) => value > 0).sort((left, right) => left - right);
+    if (!positive.length) return 0;
+    if (positive.length <= 3) return positive[0];
+    return medianPositive(positive);
+  }
+
+  function classifyCostPeriods(periods) {
+    const baseline = scaleAnomalyBaseline(periods.map((period) => Number(period.total || 0)));
     return periods.map((period) => {
-      const entries = activeSections.map((name) => ({
-        name,
-        actual: Number(period.sections[name] || 0),
-      }));
-      const visualMap = computeVisualSegmentSizes(entries);
-      const visualSections = {};
-      activeSections.forEach((name) => {
-        visualSections[name] = visualMap.has(name) ? visualMap.get(name) : null;
-      });
-      return { ...period, visualSections };
+      const total = Number(period.total || 0);
+      const meta = analyzeCostPeriod(period);
+      const isScaleAnomaly = baseline > 0 && total > baseline * ANOMALY_TOTAL_MEDIAN_MULTIPLIER;
+      return {
+        ...period,
+        ...meta,
+        isAnomaly: isScaleAnomaly || meta.isConcentrated,
+        isScaleAnomaly,
+      };
     });
+  }
+
+  function filterCostPeriodsBreakout(periods, breakout) {
+    if (breakout === "anomaly") return periods.filter((period) => period.isScaleAnomaly);
+    if (breakout === "normal") return periods.filter((period) => !period.isScaleAnomaly);
+    return periods;
+  }
+
+  function classifyValueSeriesScaleAnomaly(rows) {
+    const baseline = scaleAnomalyBaseline(rows.map((row) => Number(row.value || 0)));
+    return rows.map((row) => ({
+      ...row,
+      isScaleAnomaly: baseline > 0 && Number(row.value || 0) > baseline * ANOMALY_TOTAL_MEDIAN_MULTIPLIER,
+    }));
+  }
+
+  function trimTrailingZeroChartSeries(revenue, cost) {
+    const paired = revenue.map((row, index) => ({
+      month: row.month,
+      revenue: Number(row.value || 0),
+      cost: Number(cost[index]?.value || 0),
+    }));
+    while (paired.length && paired[paired.length - 1].revenue === 0) {
+      paired.pop();
+    }
+    return {
+      revenue: paired.map((row) => ({ month: row.month, value: row.revenue })),
+      cost: paired.map((row) => ({ month: row.month, value: row.cost })),
+    };
+  }
+
+  function buildScaleAnomalyBanner(classifiedPeriods) {
+    const scalePeriods = classifiedPeriods.filter((period) => period.isScaleAnomaly);
+    if (!scalePeriods.length) return null;
+
+    const normalTotals = classifiedPeriods
+      .filter((period) => !period.isScaleAnomaly && Number(period.total || 0) > 0)
+      .map((period) => Number(period.total || 0));
+    const median = scaleAnomalyBaseline(
+      normalTotals.length
+        ? normalTotals
+        : classifiedPeriods.map((period) => Number(period.total || 0)).filter((value) => value > 0),
+    );
+    if (median <= 0) return null;
+
+    const groups = [];
+    let current = null;
+    classifiedPeriods.forEach((period) => {
+      if (period.isScaleAnomaly) {
+        if (!current) current = { labels: [period.label], periods: [period] };
+        else {
+          current.labels.push(period.label);
+          current.periods.push(period);
+        }
+        return;
+      }
+      if (current) {
+        groups.push(current);
+        current = null;
+      }
+    });
+    if (current) groups.push(current);
+
+    return groups.map((group) => {
+      const labels = group.labels;
+      const rangeLabel = labels.length === 1 ? labels[0] : `${labels[0]}–${labels[labels.length - 1]}`;
+      const maxTotal = Math.max(...group.periods.map((period) => Number(period.total || 0)));
+      const multiplier = maxTotal / median;
+      const multStr = multiplier >= 10
+        ? String(Math.round(multiplier))
+        : multiplier.toFixed(1).replace(".", ",");
+
+      let topSection = "";
+      let topShare = 0;
+      group.periods.forEach((period) => {
+        if (Number(period.topShare || 0) >= topShare) {
+          topShare = Number(period.topShare || 0);
+          topSection = period.topSection || "";
+        }
+      });
+      return `${rangeLabel}: ×${multStr} к медиане, топ ${costSectionLabel(topSection)} ${percentFormatter.format(topShare)}%`;
+    }).join(" · ");
+  }
+
+  function computeMomKpi(trendRows) {
+    if (state.chartPeriod !== "month") {
+      return { label: "MoM", value: "—", tone: "sky" };
+    }
+
+    const rows = classifyValueSeriesScaleAnomaly(trimTrailingZeroTrendRows(trendRows));
+    if (rows.length < 2) {
+      return { label: "MoM", value: "—", tone: "sky" };
+    }
+
+    const prev = rows[rows.length - 2];
+    const last = rows[rows.length - 1];
+    const prevVal = Number(prev.value || 0);
+    const lastVal = Number(last.value || 0);
+    const normalValues = rows
+      .filter((row) => !row.isScaleAnomaly && Number(row.value || 0) > 0)
+      .map((row) => Number(row.value));
+    const normalMedian = medianPositive(normalValues);
+
+    if (prev.isScaleAnomaly || last.isScaleAnomaly) {
+      if (normalMedian > 0 && lastVal > 0) {
+        const delta = ((lastVal - normalMedian) / normalMedian) * 100;
+        const sign = delta >= 0 ? "+" : "−";
+        return {
+          label: "MoM",
+          value: `н/д · ${sign}${percentFormatter.format(Math.abs(delta))}% к медиане`,
+          tone: "amber",
+        };
+      }
+      return { label: "MoM", value: "н/д (выброс)", tone: "amber" };
+    }
+
+    if (!prevVal) {
+      return { label: "MoM", value: "—", tone: "sky" };
+    }
+    const delta = ((lastVal - prevVal) / prevVal) * 100;
+    const sign = delta >= 0 ? "+" : "−";
+    return {
+      label: "MoM",
+      value: `${sign}${percentFormatter.format(Math.abs(delta))}%`,
+      tone: delta >= 0 ? "sky" : "rose",
+    };
+  }
+
+  function trimTrailingZeroTrendRows(rows) {
+    const copy = rows.map((row) => ({ ...row }));
+    while (copy.length && Number(copy[copy.length - 1].value || 0) === 0) {
+      copy.pop();
+    }
+    return copy;
   }
 
   const MONTH_HEADER_SHORT = {
@@ -417,6 +657,8 @@
     expandedIds: new Set(),
     taxBucketFilter: "all",
     chartPeriod: "month",
+    costStructureMode: "share",
+    costStructureBreakout: "normal",
     tablePeriod: "month",
     rowById: {},
     rowByName: {},
@@ -472,6 +714,11 @@
     return scenarios.length === 2 && scenarios.includes("Факт БУ") && scenarios.includes("Факт НУ");
   }
 
+  function renderScenarioValueOnly(value, row = null) {
+    const rowName = typeof row === "string" ? row : row?.name || "";
+    return formatPlAmount(rowName, value, row);
+  }
+
   function renderScenarioDuo(label, value, row = null) {
     const rowName = typeof row === "string" ? row : row?.name || "";
     return `
@@ -482,14 +729,14 @@
   }
 
   function renderBuhNuCell(valuesByMonth, months, row = null) {
-    const rowName = typeof row === "string" ? row : row?.name || "";
     const buh = sumScenarioValues(valuesByMonth, months, "Факт БУ");
     const nu = sumScenarioValues(valuesByMonth, months, "Факт НУ");
     return `
       <div class="cell-plan-fact cell-plan-fact--duo">
-        <div class="cell-scenario-duo">
-          ${renderScenarioDuo("БУ", buh, row)}
-          ${renderScenarioDuo("НУ", nu, row)}
+        <div class="cell-scenario-duo cell-scenario-duo--inline">
+          ${renderScenarioValueOnly(buh, row)}
+          <span class="cell-plan-fact__divider">/</span>
+          ${renderScenarioValueOnly(nu, row)}
         </div>
       </div>`;
   }
@@ -580,18 +827,55 @@
     return `${selected.length} сценария`;
   }
 
-  function scenarioHeaderTitle(columnTitle) {
+  function shortScenarioLabel(scenario) {
+    if (scenario === "Факт БУ") return "Факт";
+    if (scenario === "Факт НУ") return "НУ";
+    return scenario;
+  }
+
+  function planFactDuoLabels() {
     const selected = orderedSelectedScenarios();
-    if (!selected.length) return columnTitle;
+    const factScenario = primaryDisplayFactScenario(selected);
+    const planScenario = selected.find(isPlanLikeScenario);
+    return {
+      plan: planScenario || "План",
+      fact: shortScenarioLabel(factScenario || "Факт БУ"),
+    };
+  }
+
+  function scenarioDuoSubtitle() {
+    const selected = orderedSelectedScenarios();
     if (isBuhNuPair(selected)) {
-      return `${columnTitle} — БУ / НУ`;
+      return "БУ / НУ";
     }
     if (
       selected.length === 2
       && primaryDisplayFactScenario(selected)
       && selected.some(isPlanLikeScenario)
     ) {
-      return `${columnTitle} — план / факт`;
+      const { plan, fact } = planFactDuoLabels();
+      return `${plan} / ${fact}`;
+    }
+    return null;
+  }
+
+  function scenarioColumnHeader(columnTitle) {
+    const subtitle = scenarioDuoSubtitle();
+    if (!subtitle) {
+      return columnTitle;
+    }
+    return `
+      <span class="col-header-title">${columnTitle}</span>
+      <span class="col-header-scenarios">${subtitle}</span>
+    `;
+  }
+
+  function scenarioHeaderTitle(columnTitle) {
+    const selected = orderedSelectedScenarios();
+    if (!selected.length) return columnTitle;
+    const subtitle = scenarioDuoSubtitle();
+    if (subtitle) {
+      return `${columnTitle} — ${subtitle}`;
     }
     if (selected.length === 1) {
       return `${columnTitle} — ${selected[0]}`;
@@ -621,21 +905,7 @@
   }
 
   function tableTotalHeaderTitle() {
-    const selected = orderedSelectedScenarios();
-    if (isBuhNuPair(selected)) {
-      return "Итого (БУ / НУ)";
-    }
-    if (
-      selected.length === 2
-      && primaryDisplayFactScenario(selected)
-      && selected.some(isPlanLikeScenario)
-    ) {
-      return "Итого (план / факт)";
-    }
-    if (selected.length === 1) {
-      return "Итого";
-    }
-    return scenarioHeaderTitle("Итого");
+    return scenarioColumnHeader("Итого");
   }
 
   function syncScenarioPickerUi() {
@@ -739,6 +1009,13 @@
     const num = Number(value || 0);
     if (!Number.isFinite(num)) return "—";
     return String(Math.round(num));
+  }
+
+  function revenueDrillAmount(pair) {
+    const nu = Number(pair?.nu || 0);
+    const buh = Number(pair?.buh || 0);
+    if (Math.abs(nu) > 1e-9) return nu;
+    return buh;
   }
 
   function lineScenarioAmount(pair) {
@@ -846,17 +1123,19 @@
   }
 
   function revenueCostRowHtml(node, pathKey, depth) {
-    const revenue = lineScenarioAmount(node.revenue);
+    const revenue = revenueDrillAmount(node.revenue);
     const cost = lineScenarioAmount(node.cost);
-    const profit = lineScenarioAmount(node.profit);
-    const margin = lineScenarioAmount(node.margin);
+    const profit = revenue - cost;
+    const margin = revenue ? (profit / revenue) * 100 : 0;
     if (revenue === 0 && cost === 0) return "";
 
     const expandable = !!node.expandable && (node.children || []).length > 0;
     const isExpanded = expandable && drillExpandState.expandedIds.has(pathKey);
     const indent = 8 + depth * 18;
     const qty = Number(node.quantity || 0);
-    const qtyLabel = Number.isInteger(qty) ? String(qty) : qty.toLocaleString("ru-RU", { maximumFractionDigits: 2 });
+    const qtyLabel = qty > 0
+      ? (Number.isInteger(qty) ? String(qty) : qty.toLocaleString("ru-RU", { maximumFractionDigits: 0 }))
+      : "—";
     const chevron = expandable
       ? `<button type="button" class="row-chevron inline-flex h-5 w-5 items-center justify-center rounded text-slate-500 hover:bg-slate-100" data-drill-expand="${pathKey}" aria-label="${isExpanded ? "Свернуть" : "Раскрыть"}">
            <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
@@ -1201,16 +1480,31 @@
     }
 
     periods = periods.filter((period) => period.total > 0);
-    periods = enrichCostStructurePeriods(periods, allSections);
+    const allClassified = classifyCostPeriods(periods);
+    const scaleAnomalyCount = allClassified.filter((period) => period.isScaleAnomaly).length;
+
+    periods = allClassified;
+    if (scaleAnomalyCount > 0) {
+      periods = filterCostPeriodsBreakout(periods, state.costStructureBreakout);
+    }
 
     const activeSections = allSections.filter((name) =>
       periods.some((period) => Number(period.sections[name] || 0) > 0),
     );
 
+    const shareMode = state.costStructureMode === "share";
+    const topSectionPool = allClassified.filter((period) => !period.isScaleAnomaly);
+    const topSectionSource = topSectionPool.length ? topSectionPool : allClassified;
+
     return {
       sections: activeSections,
       allSections,
       periods,
+      allClassified,
+      scaleAnomalyCount,
+      scaleAnomalyBanner: buildScaleAnomalyBanner(allClassified),
+      topSectionSource,
+      shareMode,
       labels: periods.map((period) => period.label),
       totals: periods.map((period) => period.total),
       sectionSeries: activeSections.map((name) => {
@@ -1226,7 +1520,11 @@
           values: periods.map((period) => {
             const actual = Number(period.sections[name] || 0);
             if (actual <= 0) return null;
-            return Number(period.visualSections?.[name] ?? actual);
+            if (shareMode) {
+              const total = Number(period.total || 0);
+              return total > 0 ? (actual / total) * 100 : null;
+            }
+            return actual;
           }),
         };
       }),
@@ -1486,9 +1784,9 @@
       return `
         <div class="cell-plan-fact cell-plan-fact--duo">
           <div class="cell-scenario-duo cell-scenario-duo--inline">
-            ${renderScenarioDuo("План", plan, row)}
+            ${renderScenarioValueOnly(plan, row)}
             <span class="cell-plan-fact__divider">/</span>
-            ${renderScenarioDuo("Факт", fact, row)}
+            ${renderScenarioValueOnly(fact, row)}
           </div>
           <span class="pct ${tone}">${percentFormatter.format(ratio)}%</span>
         </div>
@@ -1522,11 +1820,11 @@
     const columns = getTablePeriodColumns();
     head.innerHTML = `
       <th class="text-left col-indicator">Показатели</th>
-      <th class="text-right col-total" title="${scenarioHeaderTitle("Итого")}">${tableTotalHeaderTitle()}</th>
+      <th class="text-center col-total" title="${scenarioHeaderTitle("Итого")}">${tableTotalHeaderTitle()}</th>
       ${columns
         .map((column) => {
           const title = scenarioHeaderTitle(column.title);
-          return `<th class="text-right col-month" title="${title}">${column.label}</th>`;
+          return `<th class="text-center col-month" title="${title}">${scenarioColumnHeader(column.label)}</th>`;
         })
         .join("")}
     `;
@@ -1565,7 +1863,7 @@
           ? `<span class="row-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor">${chevronIcon}</svg></span>`
           : `<span class="row-chevron is-placeholder" aria-hidden="true"></span>`;
         const monthCells = columns
-          .map((column) => `<td class="text-right col-month${drillCellClass(row)}"${renderDrillCell(column.key, row)}>${renderScenarioCell(row.values, column.months, row)}</td>`)
+          .map((column) => `<td class="text-center col-month${drillCellClass(row)}"${renderDrillCell(column.key, row)}>${renderScenarioCell(row.values, column.months, row)}</td>`)
           .join("");
         const depthClass = `is-depth-${Math.min(depth, 6)}`;
         const levelClass = row.level === 1 ? "is-level-1" : "is-child";
@@ -1584,7 +1882,7 @@
                 <span class="row-name">${row.name}</span>
               </div>
             </td>
-            <td class="text-right col-total${drillCellClass(row)}"${renderDrillCell("total", row)}>${renderScenarioCell(row.values, almabiData.months, row)}</td>
+            <td class="text-center col-total${drillCellClass(row)}"${renderDrillCell("total", row)}>${renderScenarioCell(row.values, almabiData.months, row)}</td>
             ${monthCells}
           </tr>
         `;
@@ -1866,123 +2164,341 @@
     };
   }
 
-  let overviewChart;
+  let revenueTrendChart;
+  let marginStructureChart;
   let costStructureChart;
 
-  const overviewValueLabels = {
-    id: "overviewValueLabels",
+  function chartTooltipBase() {
+    return {
+      backgroundColor: CHART_PALETTE.tooltipBg,
+      titleColor: "#F8FAFC",
+      bodyColor: "#E2E8F0",
+      footerColor: "#94A3B8",
+      padding: 14,
+      cornerRadius: 10,
+      boxPadding: 6,
+    };
+  }
+
+  function renderKpiChip(label, value, tone = "sky") {
+    const toneClass = tone === "amber"
+      ? "bg-amber-50 text-amber-900 ring-amber-200"
+      : tone === "rose"
+        ? "bg-rose-50 text-rose-900 ring-rose-200"
+        : "bg-sky-50 text-sky-900 ring-sky-200";
+    return `<span class="almabi-chart-kpi ${toneClass}"><span class="almabi-chart-kpi__label">${label}</span><span class="almabi-chart-kpi__value">${value}</span></span>`;
+  }
+
+  function updateRevenueChartKpis(metrics) {
+    const trendNode = document.querySelector("[data-revenue-trend-kpi]");
+    const marginNode = document.querySelector("[data-margin-structure-kpi]");
+    const costNode = document.querySelector("[data-cost-structure-kpi]");
+    const subtitleNode = document.querySelector("[data-cost-structure-subtitle]");
+    const scaleBannerNode = document.querySelector("[data-cost-structure-scale-banner]");
+
+    const trendRows = trimTrailingZeroTrendRows(metrics.revenue);
+    let peak = null;
+    trendRows.forEach((row) => {
+      const value = Number(row.value || 0);
+      if (value > 0 && (!peak || value > peak.value)) {
+        peak = { month: row.month, value };
+      }
+    });
+
+    const mom = computeMomKpi(metrics.revenue);
+
+    if (trendNode) {
+      trendNode.innerHTML = [
+        renderKpiChip("Итого", formatCompactRu(metrics.revenueTotal)),
+        renderKpiChip(mom.label, mom.value, mom.tone),
+        peak ? renderKpiChip("Пик", `${peak.month} · ${formatCompactRu(peak.value)}`, "amber") : "",
+      ].filter(Boolean).join("");
+    }
+
+    if (marginNode) {
+      marginNode.innerHTML = [
+        renderKpiChip("Маржа", `${percentFormatter.format(metrics.margin)}%`),
+        renderKpiChip("Себестоимость", formatCompactRu(metrics.costTotal), "rose"),
+      ].join("");
+    }
+
+    const model = metrics.costStructure;
+    if (costNode && model) {
+      const topSource = model.topSectionSource || model.allClassified || model.periods || [];
+      let topSection = "—";
+      let topValue = 0;
+      topSource.forEach((period) => {
+        Object.entries(period.sections || {}).forEach(([name, raw]) => {
+          const value = Number(raw || 0);
+          if (value > topValue) {
+            topValue = value;
+            topSection = costSectionLabel(name);
+          }
+        });
+      });
+      const chips = [
+        renderKpiChip("Итого", formatCompactRu(model.totals.reduce((sum, value) => sum + Number(value || 0), 0))),
+        topValue ? renderKpiChip("Топ-статья", topSection) : "",
+      ];
+      if (model.scaleAnomalyCount > 0) {
+        chips.push(renderKpiChip("Выбросы", String(model.scaleAnomalyCount), "amber"));
+      }
+      costNode.innerHTML = chips.filter(Boolean).join("");
+    }
+
+    if (subtitleNode) {
+      subtitleNode.textContent = model?.shareMode
+        ? "Доли статей в %; scale-выбросы — баннер и фильтр"
+        : "Абсолютные суммы; фильтр «Выбросы» — scale-аномалии";
+    }
+
+    const breakoutGroup = document.querySelector("[data-cost-structure-breakout-group]");
+    if (breakoutGroup) {
+      const showBreakout = (model?.scaleAnomalyCount || 0) > 0;
+      breakoutGroup.classList.toggle("hidden", !showBreakout);
+      breakoutGroup.classList.toggle("flex", showBreakout);
+    }
+
+    if (scaleBannerNode) {
+      const showBanner = model?.shareMode && model?.scaleAnomalyBanner;
+      scaleBannerNode.textContent = showBanner ? model.scaleAnomalyBanner : "";
+      scaleBannerNode.classList.toggle("hidden", !showBanner);
+    }
+  }
+
+  function makeRevenueTrendChart(canvasId, metrics) {
+    const context = document.getElementById(canvasId);
+    if (!context) return null;
+
+    const trendRows = trimTrailingZeroTrendRows(metrics.revenue);
+    const labels = trendRows.map((row) => row.month);
+    const values = trendRows.map((row) => {
+      const raw = Number(row.value || 0);
+      return raw === 0 ? null : raw;
+    });
+    const periodSuffix = state.chartPeriod === "quarter" ? "кв." : "мес.";
+
+    let peakIndex = -1;
+    let peakValue = 0;
+    values.forEach((value, index) => {
+      if (value != null && value > peakValue) {
+        peakValue = value;
+        peakIndex = index;
+      }
+    });
+
+    const revenuePeakAnnotation = {
+      id: "revenuePeakAnnotation",
+      afterDatasetsDraw(chart) {
+        if (peakIndex < 0) return;
+        const meta = chart.getDatasetMeta(0);
+        const point = meta?.data?.[peakIndex];
+        if (!point) return;
+        const ctx = chart.ctx;
+        const label = `${labels[peakIndex]} · ${formatCompactRu(peakValue)}`;
+        ctx.save();
+        ctx.font = "600 11px system-ui, sans-serif";
+        ctx.fillStyle = "#0369A1";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "bottom";
+        ctx.fillText(label, point.x, point.y - 10);
+        ctx.restore();
+      },
+    };
+
+    return new Chart(context, {
+      type: "line",
+      data: {
+        labels,
+        datasets: [
+          {
+            label: "Выручка",
+            data: values,
+            spanGaps: false,
+            borderColor: CHART_PALETTE.revenue.stroke,
+            backgroundColor: (ctx) => {
+              const { chart } = ctx;
+              const { ctx: canvasCtx, chartArea } = chart;
+              if (!chartArea) return "rgba(224, 242, 254, 0.15)";
+              const gradient = canvasCtx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+              gradient.addColorStop(0, "rgba(56, 189, 248, 0.12)");
+              gradient.addColorStop(1, "rgba(224, 242, 254, 0.02)");
+              return gradient;
+            },
+            fill: true,
+            tension: 0,
+            borderWidth: 2.5,
+            pointRadius: values.map((value) => (value == null ? 0 : 4)),
+            pointHoverRadius: 6,
+            pointBackgroundColor: "#FFFFFF",
+            pointBorderColor: CHART_PALETTE.revenue.point,
+            pointBorderWidth: 2,
+          },
+        ],
+      },
+      plugins: [revenuePeakAnnotation],
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            ...chartTooltipBase(),
+            filter(item) {
+              return item.parsed.y != null;
+            },
+            callbacks: {
+              title(items) {
+                return `${periodSuffix} ${items[0]?.label || ""}`;
+              },
+              label(context) {
+                const raw = Number(trendRows[context.dataIndex]?.value || 0);
+                const total = Number(metrics.revenueTotal || 0);
+                const share = total > 0 ? (raw / total) * 100 : 0;
+                return `Выручка: ${formatCompactRu(raw)} (${percentFormatter.format(share)}% от итога)`;
+              },
+              footer(items) {
+                return [`Итого: ${formatCompactRu(metrics.revenueTotal)}`];
+              },
+            },
+          },
+        },
+        scales: {
+          x: {
+            grid: { display: false },
+            ticks: { color: CHART_PALETTE.tick, font: { size: 11, weight: "600" } },
+          },
+          y: {
+            beginAtZero: true,
+            grid: { color: CHART_PALETTE.grid, drawBorder: false },
+            ticks: {
+              color: CHART_PALETTE.tick,
+              callback: (value) => formatCompactRu(value),
+            },
+          },
+        },
+      },
+    });
+  }
+
+  const marginStructureBarLabels = {
+    id: "marginStructureBarLabels",
     afterDatasetsDraw(chart) {
+      const metaList = chart.$marginStructureMeta;
+      if (!metaList?.length) return;
       const ctx = chart.ctx;
       ctx.save();
-      ctx.font = "600 10px system-ui, sans-serif";
       ctx.textAlign = "center";
-      ctx.textBaseline = "bottom";
+      ctx.textBaseline = "middle";
+
       chart.data.datasets.forEach((dataset, datasetIndex) => {
+        if (dataset.type === "line") return;
         const meta = chart.getDatasetMeta(datasetIndex);
         meta.data.forEach((bar, index) => {
-          const value = dataset.data[index];
-          if (value == null || !bar || Math.abs(bar.height) < 18) return;
-          const raw = value * state.divisor;
-          ctx.fillStyle = datasetIndex === 0 ? "#047857" : datasetIndex === 1 ? "#c2410c" : "#0369a1";
-          ctx.fillText(compactMoney(raw), bar.x, bar.y - 4);
+          if (!bar || bar.hidden) return;
+          const share = Number(dataset.data[index] || 0);
+          if (share < MARGIN_BAR_LABEL_MIN_SHARE) return;
+
+          const pctLabel = `${percentFormatter.format(share)}%`;
+          ctx.font = "700 10px system-ui, sans-serif";
+          ctx.lineWidth = 3;
+          ctx.strokeStyle = "rgba(15, 23, 42, 0.35)";
+          ctx.fillStyle = "#ffffff";
+          const x = bar.x;
+          const y = bar.y + bar.height / 2;
+          ctx.strokeText(pctLabel, x, y);
+          ctx.fillText(pctLabel, x, y);
         });
       });
       ctx.restore();
     },
   };
 
-  function compactMoney(value) {
-    const abs = Math.abs(Number(value || 0));
-    if (abs >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(1)} млрд`;
-    if (abs >= 1_000_000) return `${(value / 1_000_000).toFixed(1)} млн`;
-    if (abs >= 1_000) return `${(value / 1_000).toFixed(0)} тыс`;
-    return numberFormatter.format(scaled(value));
-  }
-
-  function makeOverviewChart(canvasId, metrics) {
+  function makeMarginStructureChart(canvasId, metrics) {
     const context = document.getElementById(canvasId);
     if (!context) return null;
 
-    const revScaled = metrics.revenue.map((row) => scaled(row.value));
-    const costScaled = metrics.cost.map((row) => scaled(row.value));
-    const profitScaled = metrics.profit.map((row) => scaled(row.value));
+    const trimmed = trimTrailingZeroChartSeries(metrics.revenue, metrics.cost);
+    const labels = trimmed.revenue.map((row) => row.month);
+    const costPct = [];
+    const marginPct = [];
+    const marginLine = [];
+    const rawMeta = [];
+
+    trimmed.revenue.forEach((row, index) => {
+      const revenue = Number(row.value || 0);
+      const cost = Number(trimmed.cost[index]?.value || 0);
+      const profit = revenue - cost;
+      if (revenue <= 0) {
+        costPct.push(0);
+        marginPct.push(0);
+        marginLine.push(null);
+        rawMeta.push({ revenue, cost, profit, margin: 0 });
+        return;
+      }
+      const costShare = Math.max(0, Math.min(100, (cost / revenue) * 100));
+      const marginShare = Math.max(0, (profit / revenue) * 100);
+      costPct.push(costShare);
+      marginPct.push(marginShare);
+      marginLine.push((profit / revenue) * 100);
+      rawMeta.push({ revenue, cost, profit, margin: (profit / revenue) * 100 });
+    });
+
     const periodSuffix = state.chartPeriod === "quarter" ? "кв." : "мес.";
 
-    const overviewTooltip = {
-      backgroundColor: "#0f172a",
-      titleColor: "#f8fafc",
-      bodyColor: "#e2e8f0",
-      footerColor: "#94a3b8",
-      padding: 14,
-      cornerRadius: 10,
-      filter(item) {
-        return item.parsed.y !== null && item.parsed.y !== undefined;
-      },
-      callbacks: {
-        title(items) {
-          return `${periodSuffix} ${items[0]?.label || ""}`;
-        },
-        label(context) {
-          const label = context.dataset.label ? `${context.dataset.label}: ` : "";
-          return `${label}${numberFormatter.format(context.parsed.y ?? 0)}`;
-        },
-        footer(items) {
-          const index = items[0]?.dataIndex ?? 0;
-          const revenue = Number(metrics.revenue[index]?.value || 0);
-          const cost = Number(metrics.cost[index]?.value || 0);
-          const profit = revenue - cost;
-          const margin = revenue ? (profit / revenue) * 100 : 0;
-          return [
-            `Прибыль: ${formatMoney(profit)}`,
-            `Маржа: ${percentFormatter.format(margin)}%`,
-          ];
-        },
-      },
-    };
-
-    const summaryTitle = [
-      `Выручка ${formatMoney(metrics.revenueTotal)}`,
-      `Себестоимость ${formatMoney(metrics.costTotal)}`,
-      `Прибыль ${formatMoney(metrics.profitTotal)} (${percentFormatter.format(metrics.margin)}%)`,
-    ].join("  ·  ");
-
-    return new Chart(context, {
+    const chart = new Chart(context, {
       type: "bar",
       data: {
-        labels: metrics.revenue.map((row) => row.month),
+        labels,
         datasets: [
           {
-            label: "Выручка",
-            data: revScaled,
-            stack: "revenue",
-            backgroundColor: "rgba(16, 185, 129, 0.92)",
-            maxBarThickness: 44,
-            borderRadius: 6,
-            borderSkipped: false,
-          },
-          {
+            type: "bar",
             label: "Себестоимость",
-            data: costScaled,
-            stack: "pnl",
-            backgroundColor: "rgba(249, 115, 22, 0.92)",
-            maxBarThickness: 44,
+            data: costPct,
+            stack: "share",
+            backgroundColor: CHART_PALETTE.cost.fill,
+            borderColor: CHART_PALETTE.cost.border,
+            borderWidth: 1,
             borderRadius: 0,
-            borderSkipped: false,
+            maxBarThickness: 52,
+            order: 2,
           },
           {
-            label: "Валовая прибыль",
-            data: profitScaled,
-            stack: "pnl",
-            backgroundColor: metrics.profit.map((row) => (
-              Number(row.value || 0) >= 0 ? "rgba(14, 165, 233, 0.92)" : "rgba(244, 63, 94, 0.92)"
+            type: "bar",
+            label: "Валовая маржа",
+            data: marginPct,
+            stack: "share",
+            backgroundColor: rawMeta.map((item) => (
+              item.profit >= 0 ? CHART_PALETTE.margin.fill : CHART_PALETTE.loss.fill
             )),
-            maxBarThickness: 44,
-            borderRadius: 6,
-            borderSkipped: false,
+            borderColor: rawMeta.map((item) => (
+              item.profit >= 0 ? CHART_PALETTE.margin.border : CHART_PALETTE.loss.border
+            )),
+            borderWidth: 1,
+            borderRadius: { topLeft: 6, topRight: 6 },
+            maxBarThickness: 52,
+            order: 2,
+          },
+          {
+            type: "line",
+            label: "Маржа %",
+            data: marginLine,
+            yAxisID: "yMargin",
+            borderColor: "#0F172A",
+            backgroundColor: "transparent",
+            borderWidth: 2,
+            pointRadius: 3,
+            pointHoverRadius: 5,
+            pointBackgroundColor: "#FFFFFF",
+            pointBorderColor: "#0F172A",
+            tension: 0.25,
+            spanGaps: false,
+            order: 1,
           },
         ],
       },
-      plugins: [overviewValueLabels],
+      plugins: [marginStructureBarLabels],
       options: {
         responsive: true,
         maintainAspectRatio: false,
@@ -1990,17 +2506,10 @@
         datasets: {
           bar: {
             categoryPercentage: 0.62,
-            barPercentage: 0.88,
+            barPercentage: 0.9,
           },
         },
         plugins: {
-          title: {
-            display: true,
-            text: summaryTitle,
-            color: "#475569",
-            font: { size: 12, weight: "600" },
-            padding: { bottom: 12 },
-          },
           legend: {
             display: true,
             position: "bottom",
@@ -2010,62 +2519,83 @@
               usePointStyle: true,
               pointStyle: "rectRounded",
               color: "#475569",
-              font: { size: 12, weight: "600" },
+              font: { size: 11, weight: "600" },
             },
           },
-          tooltip: overviewTooltip,
+          tooltip: {
+            ...chartTooltipBase(),
+            callbacks: {
+              title(items) {
+                return `${periodSuffix} ${items[0]?.label || ""}`;
+              },
+              label(context) {
+                if (context.dataset.type === "line") {
+                  const meta = rawMeta[context.dataIndex];
+                  return meta ? `Маржа: ${percentFormatter.format(meta.margin)}%` : "";
+                }
+                const meta = rawMeta[context.dataIndex];
+                if (!meta?.revenue) return `${context.dataset.label}: —`;
+                if (context.datasetIndex === 0) {
+                  return `Себестоимость: ${formatCompactRu(meta.cost)} (${percentFormatter.format(context.parsed.y)}%)`;
+                }
+                return `Валовая прибыль: ${formatCompactRu(meta.profit)} (${percentFormatter.format(meta.margin)}%)`;
+              },
+              footer(items) {
+                const meta = rawMeta[items[0]?.dataIndex ?? 0];
+                if (!meta?.revenue) return [];
+                return [`Выручка: ${formatCompactRu(meta.revenue)}`];
+              },
+            },
+          },
         },
         scales: {
           x: {
             stacked: true,
             grid: { display: false },
-            ticks: { color: "#64748b", font: { size: 12, weight: "600" } },
+            ticks: { color: CHART_PALETTE.tick, font: { size: 11, weight: "600" } },
           },
           y: {
             stacked: true,
-            beginAtZero: true,
-            grid: { color: "#eef2f7", drawBorder: false },
+            min: 0,
+            max: 100,
+            grid: { color: CHART_PALETTE.grid, drawBorder: false },
             ticks: {
-              color: "#94a3b8",
-              callback: (value) => numberFormatter.format(value),
+              color: CHART_PALETTE.tick,
+              callback: (value) => `${value}%`,
+            },
+          },
+          yMargin: {
+            position: "right",
+            min: 0,
+            max: 100,
+            grid: { drawOnChartArea: false },
+            ticks: {
+              color: "#64748B",
+              callback: (value) => `${value}%`,
             },
           },
         },
       },
     });
+    chart.$marginStructureMeta = rawMeta;
+    return chart;
   }
 
-  const costStructureShareLabels = {
-    id: "costStructureShareLabels",
-    afterDatasetsDraw(chart) {
-      if (chart.config.type !== "bar" || chart.config.options.indexAxis === "y") return;
+  const costStructureAnomalyBadges = {
+    id: "costStructureAnomalyBadges",
+    afterDraw(chart) {
+      const flags = chart.$costStructureAnomalies;
+      if (!flags?.length) return;
       const ctx = chart.ctx;
+      const xScale = chart.scales.x;
       ctx.save();
+      ctx.font = "600 10px system-ui, sans-serif";
+      ctx.fillStyle = "#B45309";
       ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      chart.data.datasets.forEach((dataset, datasetIndex) => {
-        const meta = chart.getDatasetMeta(datasetIndex);
-        meta.data.forEach((bar, index) => {
-          const value = dataset.data[index];
-          if (value == null || value === 0 || !bar) return;
-          const barHeight = Math.abs(bar.height);
-          if (barHeight < 14) return;
-
-          const actual = chart.$costStructureActuals?.[datasetIndex]?.[index];
-          const total = chart.$costStructureTotals?.[index] || 0;
-          const share = total && actual != null ? (actual / total) * 100 : 0;
-          const label = formatStructureShareOnChart(share);
-          if (!label) return;
-
-          const fontSize = Math.min(12, Math.max(9, Math.round(barHeight / 2.6)));
-          ctx.font = `600 ${fontSize}px system-ui, sans-serif`;
-          ctx.lineWidth = 3;
-          ctx.strokeStyle = "rgba(15, 23, 42, 0.45)";
-          ctx.fillStyle = "#ffffff";
-          const textY = bar.y + bar.height / 2;
-          ctx.strokeText(label, bar.x, textY);
-          ctx.fillText(label, bar.x, textY);
-        });
+      flags.forEach((flag, index) => {
+        if (!flag) return;
+        const x = xScale.getPixelForValue(index);
+        ctx.fillText("⚠", x, chart.chartArea.bottom + 18);
       });
       ctx.restore();
     },
@@ -2078,15 +2608,20 @@
     const labels = model.labels || [];
     const totals = (model.totals || []).map((value) => Number(value || 0));
     const sectionSeries = model.sectionSeries || [];
+    const periods = model.periods || [];
+    const shareMode = Boolean(model.shareMode);
 
     if (!labels.length || !sectionSeries.length) {
       return new Chart(context, {
         type: "bar",
-        data: { labels: ["—"], datasets: [{ data: [0], backgroundColor: "#e2e8f0" }] },
+        data: { labels: ["Нет данных"], datasets: [{ data: [0], backgroundColor: "#e2e8f0" }] },
         options: {
           responsive: true,
           maintainAspectRatio: false,
-          plugins: { legend: { display: false }, tooltip: { enabled: false } },
+          plugins: {
+            legend: { display: false },
+            tooltip: { enabled: false },
+          },
           scales: { x: { display: false }, y: { display: false } },
         },
       });
@@ -2094,7 +2629,7 @@
 
     const datasets = sectionSeries.map((section, index) => ({
       label: section.label || costSectionLabel(section.name),
-      data: section.values.map((value) => (value == null ? null : scaled(Number(value)))),
+      data: section.values.map((value) => (value == null ? null : Number(value))),
       stack: "cost",
       backgroundColor: section.color || COST_SECTION_COLORS[index % COST_SECTION_COLORS.length],
       maxBarThickness: 64,
@@ -2104,11 +2639,12 @@
       borderWidth: 1.5,
     }));
     const actualValuesMatrix = sectionSeries.map((section) => section.actualValues || []);
+    const anomalyFlags = periods.map((period) => period.isScaleAnomaly);
 
     const chart = new Chart(context, {
       type: "bar",
       data: { labels, datasets },
-      plugins: [costStructureShareLabels],
+      plugins: [costStructureAnomalyBadges],
       options: {
         responsive: true,
         maintainAspectRatio: false,
@@ -2133,31 +2669,44 @@
             },
           },
           tooltip: {
-            backgroundColor: "#0f172a",
-            titleColor: "#f8fafc",
-            bodyColor: "#e2e8f0",
-            padding: 12,
-            cornerRadius: 8,
+            ...chartTooltipBase(),
             filter(item) {
               return item.parsed.y !== null && item.parsed.y !== undefined && item.parsed.y !== 0;
             },
             callbacks: {
               title(items) {
                 const suffix = state.chartPeriod === "quarter" ? "квартал" : "месяц";
-                return `${suffix}: ${items[0]?.label || ""}`;
+                const index = items[0]?.dataIndex ?? 0;
+                const period = periods[index];
+                let title = `${suffix}: ${items[0]?.label || ""}`;
+                if (period?.isScaleAnomaly) {
+                  title += " · выброс масштаба";
+                }
+                return title;
               },
               label(context) {
-                const actual = chart.$costStructureActuals?.[context.datasetIndex]?.[context.dataIndex];
-                const total = chart.$costStructureTotals?.[context.dataIndex] || 0;
+                const sectionName = sectionSeries[context.datasetIndex]?.name || context.dataset.label;
+                const actual = actualValuesMatrix[context.datasetIndex]?.[context.dataIndex];
+                const total = totals[context.dataIndex] || 0;
                 const rawValue = Number(actual || 0);
                 const share = total ? (rawValue / total) * 100 : 0;
-                return `${context.dataset.label}: ${formatMoney(rawValue)} (${formatStructureShare(share)})`;
+                const period = periods[context.dataIndex];
+                let line = `${costSectionLabel(sectionName)}: ${formatCompactRu(rawValue)} (${formatStructureShare(share)})`;
+                if (period?.isConcentrated && sectionName === period.topSection) {
+                  line += ` · концентрация ${percentFormatter.format(period.topShare)}%`;
+                }
+                return line;
               },
               footer(items) {
                 const index = items[0]?.dataIndex ?? 0;
-                const total = chart.$costStructureTotals?.[index] || 0;
-                if (!total) return [];
-                return [`Итого: ${numberFormatter.format(scaled(total))}`];
+                const total = totals[index] || 0;
+                const period = periods[index];
+                const lines = [];
+                if (total) lines.push(`Итого: ${formatCompactRu(total)}`);
+                if (period?.isConcentrated && period.topSection) {
+                  lines.push(`Концентрация: ${costSectionLabel(period.topSection)} ${percentFormatter.format(period.topShare)}%`);
+                }
+                return lines;
               },
             },
           },
@@ -2166,15 +2715,25 @@
           x: {
             stacked: true,
             grid: { display: false },
-            ticks: { color: "#64748b", font: { size: 12, weight: "600" } },
+            ticks: {
+              color: "#64748b",
+              font: { size: 12, weight: "600" },
+              callback(value) {
+                const label = labels[value] || labels[Number(value)] || "";
+                const index = typeof value === "number" ? value : labels.indexOf(label);
+                if (anomalyFlags[index]) return `${label} ⚠`;
+                return label;
+              },
+            },
           },
           y: {
             stacked: true,
             beginAtZero: true,
+            max: shareMode ? 100 : undefined,
             grid: { color: "#eef2f7", drawBorder: false },
             ticks: {
               color: "#94a3b8",
-              callback: (value) => numberFormatter.format(value),
+              callback: (value) => (shareMode ? `${value}%` : formatCompactRu(value)),
             },
           },
         },
@@ -2182,16 +2741,54 @@
     });
     chart.$costStructureTotals = totals;
     chart.$costStructureActuals = actualValuesMatrix;
+    chart.$costStructureAnomalies = anomalyFlags;
     return chart;
   }
 
   function renderCharts() {
-    if (overviewChart) overviewChart.destroy();
+    if (revenueTrendChart) revenueTrendChart.destroy();
+    if (marginStructureChart) marginStructureChart.destroy();
     if (costStructureChart) costStructureChart.destroy();
 
     const metrics = buildChartMetrics();
-    overviewChart = makeOverviewChart("almabiOverviewChart", metrics);
+    updateRevenueChartKpis(metrics);
+    revenueTrendChart = makeRevenueTrendChart("almabiRevenueTrendChart", metrics);
+    marginStructureChart = makeMarginStructureChart("almabiMarginStructureChart", metrics);
     costStructureChart = makeCostStructureChart("almabiCostStructureChart", metrics.costStructure);
+  }
+
+  function syncCostStructureModeButtons() {
+    document.querySelectorAll("[data-cost-structure-mode]").forEach((button) => {
+      const active = (button.dataset.costStructureMode || "share") === state.costStructureMode;
+      button.classList.toggle("is-active", active);
+    });
+  }
+
+  function syncCostStructureBreakoutButtons() {
+    document.querySelectorAll("[data-cost-structure-breakout]").forEach((button) => {
+      const active = (button.dataset.costStructureBreakout || "normal") === state.costStructureBreakout;
+      button.classList.toggle("is-active", active);
+    });
+  }
+
+  function initCostStructureControls() {
+    document.querySelectorAll("[data-cost-structure-mode]").forEach((button) => {
+      button.addEventListener("click", () => {
+        state.costStructureMode = button.dataset.costStructureMode || "share";
+        syncCostStructureModeButtons();
+        syncCostStructureBreakoutButtons();
+        renderCharts();
+      });
+    });
+    document.querySelectorAll("[data-cost-structure-breakout]").forEach((button) => {
+      button.addEventListener("click", () => {
+        state.costStructureBreakout = button.dataset.costStructureBreakout || "normal";
+        syncCostStructureBreakoutButtons();
+        renderCharts();
+      });
+    });
+    syncCostStructureModeButtons();
+    syncCostStructureBreakoutButtons();
   }
 
   function syncTablePeriodButtons() {
@@ -2334,7 +2931,7 @@
     renderSummary();
     renderContractorCards();
     renderMoneyAttributes();
-    if (document.getElementById("almabiOverviewChart")) {
+    if (document.getElementById("almabiRevenueTrendChart")) {
       renderCharts();
     }
   }
@@ -2400,6 +2997,7 @@
   initDashboardToolbar();
   initCellDrillModal();
   initChartPeriodToggle();
+  initCostStructureControls();
   initTablePeriodToggle();
   renderAll();
 

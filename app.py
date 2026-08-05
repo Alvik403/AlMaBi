@@ -205,12 +205,14 @@ def api_almabi_upload_bundle(
     buh_file: UploadFile | None = File(None),
     realization_file: UploadFile | None = File(None),
     cost_file: UploadFile | None = File(None),
+    cost_nu_file: UploadFile | None = File(None),
     plan_forecast_file: UploadFile | None = File(None),
 ) -> JSONResponse:
     files = {
         "buh": buh_file,
         "realization": realization_file,
         "cost": cost_file,
+        "cost_nu": cost_nu_file,
     }
     try:
         payload = store_almabi_upload_bundle(

@@ -89,7 +89,7 @@
                     <div class="mt-2 space-y-1 text-xs font-medium text-brand-700">
                       {% for export_key, export_name in almabi_data_context.upload_files.items() %}
                       <p class="truncate">
-                        {% if export_key == 'buh' %}Бух.регистр{% elif export_key == 'realization' %}Реализация{% elif export_key == 'cost' %}Себестоимость{% else %}{{ export_key }}{% endif %}:
+                        {% if export_key == 'buh' %}Бух.регистр{% elif export_key == 'realization' %}Реализация{% elif export_key == 'cost' %}Себестоимость{% elif export_key == 'cost_nu' %}Себестоимость НУ{% else %}{{ export_key }}{% endif %}:
                         {{ export_name }}
                       </p>
                       {% endfor %}
@@ -117,6 +117,10 @@
                     <label class="block text-xs text-gray-600">
                       <span class="font-semibold text-gray-800">Себестоимость *</span>
                       <input name="cost_file" type="file" accept=".xlsx" data-almabi-export-input="cost" class="mt-1 block w-full text-sm text-gray-600 file:mr-3 file:rounded-lg file:border-0 file:bg-brand-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-brand-700 hover:file:bg-brand-100" />
+                    </label>
+                    <label class="block text-xs text-gray-600">
+                      <span class="font-semibold text-gray-800">Себестоимость НУ</span>
+                      <input name="cost_nu_file" type="file" accept=".xlsx" data-almabi-export-input="cost_nu" class="mt-1 block w-full text-sm text-gray-600 file:mr-3 file:rounded-lg file:border-0 file:bg-brand-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-brand-700 hover:file:bg-brand-100" />
                     </label>
                     <label class="block text-xs text-gray-600">
                       <span class="font-semibold text-gray-800">План / прогноз</span>

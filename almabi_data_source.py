@@ -23,6 +23,7 @@ _EXPORT_FIELD_NAMES = {
     "buh": "buh_file",
     "realization": "realization_file",
     "cost": "cost_file",
+    "cost_nu": "cost_nu_file",
 }
 
 
@@ -82,7 +83,7 @@ def almabi_data_context(request: Request, settings: Settings) -> dict[str, Any]:
     return {
         "source": "upload",
         "title": "Выгрузки AlMaBi",
-        "description": "Выгрузки 1С: бухрегистр, реализация, себестоимость и план/прогноз.",
+        "description": "Выгрузки 1С: бухрегистр, реализация, себестоимость (БУ/НУ) и план/прогноз.",
         "sources": [],
         "upload_file_name": None,
         "upload_files": upload_status["loaded_exports"],

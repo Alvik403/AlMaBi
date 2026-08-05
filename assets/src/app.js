@@ -44,12 +44,13 @@ function initSidebar() {
   });
 }
 
-const ALMABI_EXPORT_ORDER = ["buh", "realization", "cost"];
+const ALMABI_EXPORT_ORDER = ["buh", "realization", "cost", "cost_nu"];
 const ALMABI_REQUIRED_EXPORTS = ["buh", "realization", "cost"];
 const ALMABI_EXPORT_LABELS = {
   buh: "Бух.регистр",
   realization: "Реализация",
   cost: "Себестоимость",
+  cost_nu: "Себестоимость НУ",
 };
 
 function initAlmabiDataSourceMenu() {

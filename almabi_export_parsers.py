@@ -91,6 +91,17 @@ class RealizationRow:
 
 
 @dataclass(frozen=True)
+class CostNuRow:
+    document: str
+    nomenclature: str
+    account: str
+    calc_article: str
+    quantity: float
+    amount_nu: float
+    month: str | None
+
+
+@dataclass(frozen=True)
 class CostRow:
     document: str
     nomenclature: str
@@ -111,6 +122,7 @@ class ParsedExports:
     buh: list[BuhRow] = field(default_factory=list)
     realization: list[RealizationRow] = field(default_factory=list)
     cost: list[CostRow] = field(default_factory=list)
+    cost_nu: list[CostNuRow] = field(default_factory=list)
 
 
 def classify_buh_section(account_dt: str, account_kt: str) -> str | None:
@@ -379,9 +391,67 @@ def parse_cost(path: Path) -> list[CostRow]:
     return parsed
 
 
+def _sparse_header_map(header_row: tuple[object, ...]) -> dict[str, int]:
+    mapping: dict[str, int] = {}
+    for index, value in enumerate(header_row):
+        key = normalize_header(value)
+        if key:
+            mapping[key] = index
+    return mapping
+
+
+def _is_cost_nu_header(mapping: dict[str, int]) -> bool:
+    return "стоимость (ну)" in mapping and "документ отгрузки" in mapping
+
+
+def parse_cost_nu(path: Path) -> list[CostNuRow]:
+    """Выгрузка «Себестоимость НУ» — разреженная шапка, колонка «Стоимость (НУ)»."""
+    from almabi_excel_utils import read_workbook_rows
+
+    rows = read_workbook_rows(path)
+    header_idx: int | None = None
+    col_map: dict[str, int] = {}
+    for index, row in enumerate(rows):
+        mapping = _sparse_header_map(row)
+        if _is_cost_nu_header(mapping):
+            header_idx = index
+            col_map = mapping
+            break
+    if header_idx is None:
+        return []
+
+    def _cell(row: tuple[object, ...], key: str) -> object:
+        column = col_map.get(key)
+        if column is None or column >= len(row):
+            return None
+        return row[column]
+
+    parsed: list[CostNuRow] = []
+    for row in rows[header_idx + 1 :]:
+        document = normalize_text(_cell(row, "документ отгрузки"))
+        if not document or "итого" in document.casefold():
+            continue
+        amount = parse_amount(_cell(row, "стоимость (ну)"))
+        if not amount:
+            continue
+        parsed.append(
+            CostNuRow(
+                document=document,
+                nomenclature=normalize_text(_cell(row, "продукция")),
+                account=normalize_text(_cell(row, "счет")) or "20",
+                calc_article=normalize_text(_cell(row, "статья калькуляции")) or "Сырье и материалы",
+                quantity=parse_amount(_cell(row, "количество продаж")),
+                amount_nu=amount,
+                month=_resolve_month(document, _cell(row, "дата")),
+            )
+        )
+    return parsed
+
+
 def parse_exports(paths: dict[str, Path]) -> ParsedExports:
     return ParsedExports(
         buh=parse_buh_register(paths["buh"]) if "buh" in paths else [],
         realization=parse_realization(paths["realization"]) if "realization" in paths else [],
         cost=parse_cost(paths["cost"]) if "cost" in paths else [],
+        cost_nu=parse_cost_nu(paths["cost_nu"]) if "cost_nu" in paths else [],
     )

@@ -145,6 +145,36 @@ def test_build_revenue_cost_drill_pairs_nomenclature_lines():
     assert leaves[1]["profit"]["buh"] == 150_000
 
 
+def test_build_revenue_cost_drill_uses_ex_vat_revenue_amount():
+    drill = _build_revenue_cost_drill(
+        [
+            _fact(
+                kpi_l1="Выручка",
+                nomenclature="Комплект А",
+                amount_buh=1_220_000,
+                amount_nu=1_000_000,
+                quantity=3,
+            ),
+        ],
+        [
+            _fact(
+                kpi_l1="Себестоимость",
+                nomenclature="Комплект А",
+                amount_buh=-400_000,
+                amount_nu=-400_000,
+                quantity=3,
+            ),
+        ],
+    )
+    line = drill["total"]["lines"][0]
+    assert line["revenue"]["buh"] == 1_000_000
+    assert line["revenue"]["nu"] == 1_000_000
+    assert line["revenue"]["buh"] != 1_220_000
+    assert line["cost"]["buh"] == 400_000
+    assert line["profit"]["buh"] == 600_000
+    assert line["quantity"] == 3
+
+
 def test_summary_rows_include_drill_only_for_allowed_kpis():
     rows = _build_summary_rows(
         [

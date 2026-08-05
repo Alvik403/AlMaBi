@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 
 from almabi_test_builder import load_almabi_dashboard_from_exports
 from almabi_file_validation import validate_almabi_export
@@ -855,3 +855,134 @@ def test_parse_cost_short_tail_keeps_trailing_data_rows(tmp_path: Path):
 def _workbook_bytes(factory, path: Path) -> bytes:
     factory(path)
     return path.read_bytes()
+
+
+def test_parse_cost_nu_sparse_header(tmp_path: Path):
+    from almabi_export_parsers import parse_cost_nu
+
+    path = tmp_path / "cost-nu.xlsx"
+    workbook = Workbook()
+    sheet = workbook.active
+    header = ["Продукция"] + [None] * 10 + [
+        "Документ отгрузки",
+        None,
+        "Количество продаж",
+        None,
+        None,
+        None,
+        None,
+        "Стоимость (НУ)",
+    ]
+    data = ["Комплект А"] + [None] * 10 + [
+        "Реализация 001 от 15.01.2026",
+        None,
+        2,
+        None,
+        None,
+        None,
+        None,
+        150_000,
+    ]
+    sheet.append(header)
+    sheet.append(data)
+    workbook.save(path)
+
+    rows = parse_cost_nu(path)
+
+    assert len(rows) == 1
+    assert rows[0].nomenclature == "Комплект А"
+    assert rows[0].amount_nu == 150_000
+    assert rows[0].month == "Январь"
+
+
+def _create_cost_nu_workbook(path: Path, *, document: str, amount_nu: float, nomenclature: str = "Лицензия ПО") -> None:
+    workbook = Workbook()
+    sheet = workbook.active
+    header = ["Продукция"] + [None] * 10 + [
+        "Документ отгрузки",
+        None,
+        "Количество продаж",
+        None,
+        None,
+        None,
+        None,
+        "Стоимость (НУ)",
+    ]
+    data = [nomenclature] + [None] * 10 + [document, None, 2, None, None, None, None, amount_nu]
+    sheet.append(header)
+    sheet.append(data)
+    workbook.save(path)
+
+
+def test_cost_fact_nu_uses_cost_nu_export(tmp_path: Path):
+    from almabi_export_parsers import parse_exports
+    from almabi_test_pipeline import build_test_facts
+
+    document = "Реализация 001 от 15.01.2026"
+    buh_path = tmp_path / "buh.xlsx"
+    cost_path = tmp_path / "cost.xlsx"
+    cost_nu_path = tmp_path / "cost-nu.xlsx"
+
+    workbook = Workbook()
+    sheet = workbook.active
+    _pad_rows(sheet, 8)
+    sheet.append(
+        ["Документ", "Счет Дт", "Счет Кт", "Субконто1 Кт", "Сумма", "Сумма НУ Дт", "Сумма НУ Кт", "Дата"]
+    )
+    sheet.append([document, "90.02.1", "43", "Лицензия ПО", 200_000, 0, 150_000, "15.01.2026"])
+    sheet.append(["Итого"])
+    workbook.save(buh_path)
+
+    create_cost_workbook(cost_path, document=document, quantity=2)
+    cost_wb = load_workbook(cost_path)
+    cost_wb.active["G7"] = 200_000
+    cost_wb.save(cost_path)
+
+    _create_cost_nu_workbook(cost_nu_path, document=document, amount_nu=150_000)
+
+    facts = build_test_facts(
+        parse_exports({"buh": buh_path, "cost": cost_path, "cost_nu": cost_nu_path}),
+        cost_path=cost_path,
+    ).facts
+    cost_facts = [fact for fact in facts if fact.kpi_l1 == "Себестоимость"]
+
+    assert len(cost_facts) == 1
+    assert cost_facts[0].amount_buh == -200_000
+    assert cost_facts[0].amount_nu == -150_000
+
+
+def test_cost_fact_nu_zero_when_no_exact_nu_match(tmp_path: Path):
+    from almabi_export_parsers import parse_exports
+    from almabi_test_pipeline import build_test_facts
+
+    document = "Реализация 001 от 15.01.2026"
+    buh_path = tmp_path / "buh.xlsx"
+    cost_path = tmp_path / "cost.xlsx"
+    cost_nu_path = tmp_path / "cost-nu.xlsx"
+
+    workbook = Workbook()
+    sheet = workbook.active
+    _pad_rows(sheet, 8)
+    sheet.append(
+        ["Документ", "Счет Дт", "Счет Кт", "Субконто1 Кт", "Сумма", "Сумма НУ Дт", "Сумма НУ Кт", "Дата"]
+    )
+    sheet.append([document, "90.02.1", "43", "Лицензия ПО", 200_000, 200_000, 999_999, "15.01.2026"])
+    sheet.append(["Итого"])
+    workbook.save(buh_path)
+
+    create_cost_workbook(cost_path, document=document, quantity=2)
+    _create_cost_nu_workbook(
+        cost_nu_path,
+        document="Реализация 999 от 15.01.2026",
+        amount_nu=150_000,
+    )
+
+    facts = build_test_facts(
+        parse_exports({"buh": buh_path, "cost": cost_path, "cost_nu": cost_nu_path}),
+        cost_path=cost_path,
+    ).facts
+    cost_facts = [fact for fact in facts if fact.kpi_l1 == "Себестоимость"]
+
+    assert len(cost_facts) == 1
+    assert cost_facts[0].amount_buh == -400_000
+    assert cost_facts[0].amount_nu == 0.0

@@ -50,6 +50,7 @@ OUTPUT_COLUMNS = (
     "Группа проектов",
     "Направление",
     "Счет",
+    "Статья калькуляции",
     "Сумма",
     "Основной раздел",
 )
@@ -62,6 +63,7 @@ GROUP_COLUMNS = (
     "Группа проектов",
     "Направление",
     "Счет",
+    "Статья калькуляции",
 )
 
 
@@ -202,6 +204,7 @@ def _cost_row_with_project(cost: _CostPreparedRow, project: dict[str, object] | 
     return {
         "Номенклатура": cost.nomenclature,
         "Счет": cost.account,
+        "Статья калькуляции": cost.calc_article,
         "Документ": cost.document,
         "Количество": cost.quantity,
         "Сумма": cost.amount,
@@ -244,6 +247,7 @@ def _combine_with_projects(
             {
                 "Номенклатура": normalize_text(project.get("Номенклатура")),
                 "Счет": None,
+                "Статья калькуляции": None,
                 "Документ": normalize_text(project.get("Документ")),
                 "Количество": None,
                 "Сумма": amount,

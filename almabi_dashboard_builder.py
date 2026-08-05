@@ -147,6 +147,16 @@ def _build_drill_data(items: list[Fact]) -> dict[str, Any]:
     }
 
 
+def _revenue_amount_for_drill(fact: Fact) -> float:
+    """Выручка в расшифровке — без НДС (сумма НУ); для прочих KPI — БУ."""
+    if fact.kpi_l1 != "Выручка":
+        return float(fact.amount_buh or 0)
+    nu = float(fact.amount_nu or 0)
+    if abs(nu) > 1e-9:
+        return nu
+    return float(fact.amount_buh or 0)
+
+
 def _revenue_cost_line_metrics(
     *,
     name: str,
@@ -200,16 +210,15 @@ def _build_revenue_cost_leaf_lines(rev_subset: list[Fact], cost_subset: list[Fac
     )
     for fact in rev_subset:
         name = (fact.nomenclature or "").strip() or (fact.contract or "").strip() or "Без наименования"
-        grouped[name]["revenue_buh"] += float(fact.amount_buh or 0)
-        grouped[name]["revenue_nu"] += float(fact.amount_nu or 0)
-        grouped[name]["rev_quantity"] += float(fact.quantity or 0)
+        rev_amount = _revenue_amount_for_drill(fact)
+        grouped[name]["revenue_buh"] += rev_amount
+        grouped[name]["revenue_nu"] += rev_amount
+        grouped[name]["rev_quantity"] = max(grouped[name]["rev_quantity"], float(fact.quantity or 0))
     for fact in cost_subset:
         name = (fact.nomenclature or "").strip() or (fact.contract or "").strip() or "Без наименования"
         grouped[name]["cost_buh"] += abs(float(fact.amount_buh or 0))
         grouped[name]["cost_nu"] += abs(float(fact.amount_nu or 0))
-        # Количество продаж часто дублируется на нескольких статьях калькуляции — берём max.
-        if fact.quantity:
-            grouped[name]["cost_quantity"] = max(grouped[name]["cost_quantity"], float(fact.quantity))
+        grouped[name]["cost_quantity"] = max(grouped[name]["cost_quantity"], float(fact.quantity or 0))
 
     lines = [
         _revenue_cost_line_metrics(
@@ -292,11 +301,12 @@ def _build_revenue_cost_drill(
 
     def _payload(rev_subset: list[Fact], cost_subset: list[Fact]) -> dict[str, Any]:
         tree = _build_revenue_cost_tree(rev_subset, cost_subset, list(path))
+        lines = _build_revenue_cost_leaf_lines(rev_subset, cost_subset)
         return {
             "type": "revenue_cost",
             "path": list(path),
             "tree": tree,
-            "lines": _build_revenue_cost_leaf_lines(rev_subset, cost_subset),
+            "lines": lines,
         }
 
     return {

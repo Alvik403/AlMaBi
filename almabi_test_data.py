@@ -10,6 +10,9 @@ from almabi_test_builder import build_empty_test_dashboard, load_test_dashboard_
 from settings import Settings
 from starlette.requests import Request
 
+# Меняйте при правках пайплайна НУ — сбрасывает in-memory кэш дашборда.
+PIPELINE_BUILD_ID = "cost_nu_etalon_reconcile_v3"
+
 _dashboard_cache: dict[tuple[tuple[str, str, int, int], ...], dict[str, Any]] = {}
 
 
@@ -19,13 +22,23 @@ def _file_signature(path: Path) -> tuple[str, int, int]:
 
 
 def _dashboard_cache_key(upload_paths: dict[str, Path], plan_forecast_path: Path | None) -> tuple[tuple[str, str, int, int], ...]:
-    parts = [
+    parts: list[tuple[str, str, int, int]] = [("pipeline", PIPELINE_BUILD_ID, 0, 0)]
+    parts.extend(
         (export_type, *_file_signature(path))
         for export_type, path in sorted(upload_paths.items())
-    ]
+    )
     if plan_forecast_path:
         parts.append(("plan_forecast", *_file_signature(plan_forecast_path)))
     return tuple(parts)
+
+
+def _april_cost_nu_from_dashboard(data: dict[str, Any]) -> float | None:
+    for row in data.get("summary_rows") or []:
+        if row.get("name") != "Себестоимость":
+            continue
+        values = (row.get("values") or {}).get("Факт НУ") or {}
+        return float(values.get("Апрель") or 0)
+    return None
 
 
 def resolve_almabi_dashboard_data(request: Request, settings: Settings) -> dict[str, Any]:
@@ -61,6 +74,8 @@ def resolve_almabi_dashboard_data(request: Request, settings: Settings) -> dict[
         _dashboard_cache.clear()
         _dashboard_cache[cache_key] = cached
     data = deepcopy(cached)
+    april_cost_nu = _april_cost_nu_from_dashboard(data)
+    cost_nu_loaded = "cost_nu" in upload_paths
     meta = dict(data.get("meta") or {})
     meta.update(
         {
@@ -68,8 +83,16 @@ def resolve_almabi_dashboard_data(request: Request, settings: Settings) -> dict[
             "title": "BI",
             "description": "Структура «Уровни для дашборда» + join направления как в Power Query.",
             "levels_spec": "fixtures/almabi_dashboard_levels.json",
+            "pipeline_build_id": PIPELINE_BUILD_ID,
+            "cost_nu_loaded": cost_nu_loaded,
+            "april_cost_nu": april_cost_nu,
         }
     )
+    if not cost_nu_loaded:
+        meta.setdefault("warnings", [])
+        warning = "Файл «Себестоимость НУ» не загружен — колонка «Факт НУ» по себестоимости будет нулевой."
+        if warning not in meta["warnings"]:
+            meta["warnings"].insert(0, warning)
     data["meta"] = meta
     return data
 

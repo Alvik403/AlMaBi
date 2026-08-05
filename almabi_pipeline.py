@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
-from almabi_excel_utils import MONTH_NAMES, analytics_value, document_match_keys, tax_bucket
+from almabi_excel_utils import MONTH_NAMES, analytics_value, document_match_keys, normalize_text, tax_bucket
 from almabi_export_parsers import (
     BuhRow,
+    CostNuRow,
     CostRow,
     ParsedExports,
     RealizationRow,
@@ -14,6 +15,7 @@ from almabi_export_parsers import (
     parse_exports,
 )
 from almabi_project_index import ProjectMeta, build_project_index, lookup_project
+from almabi_pq_common import nomenclature_key
 from almabi_realization_lookup import build_realization_index, resolve_realization_match
 
 OTHER_PNL_SECTIONS = frozenset({"Прочие доходы", "Прочие расходы"})
@@ -48,6 +50,7 @@ class Fact:
     cost_section: str = ""
     cost_account: str = ""
     expense_article: str = ""
+    document: str = ""
     tax_type: str = ""
     contractor: str = ""
     quantity: float = 0.0
@@ -436,6 +439,623 @@ def _lookup_cost_quantity(
     return best
 
 
+def _lookup_cost_quantity_by_nomenclature(
+    nomenclature: str,
+    qty_lookup: dict[tuple[str, str], float],
+) -> float:
+    name = (nomenclature or "").casefold()
+    if not name:
+        return 0.0
+    return max((qty for (_doc, nom), qty in qty_lookup.items() if nom == name), default=0.0)
+
+
+@dataclass
+class CostNuAllocator:
+    """Построчное сопоставление выгрузки «Себестоимость НУ» без суммирования в lookup."""
+
+    _rows: list[CostNuRow]
+    _pool: dict[tuple[str, str], list[int]]
+    _consumed: set[int] = field(default_factory=set)
+
+    @classmethod
+    def from_rows(cls, rows: list[CostNuRow]) -> CostNuAllocator:
+        pool: dict[tuple[str, str], list[int]] = defaultdict(list)
+        for index, row in enumerate(rows):
+            nom = nomenclature_key(row.nomenclature)
+            if not nom:
+                continue
+            if float(row.amount_nu or 0) <= 0:
+                continue
+            for key in document_match_keys(row.document):
+                pool[(key, nom)].append(index)
+        return cls(_rows=list(rows), _pool=dict(pool))
+
+    def _available_indices(self, document: str, nomenclature: str) -> list[int]:
+        name = nomenclature_key(nomenclature)
+        if not name or not document:
+            return []
+        seen: set[int] = set()
+        indices: list[int] = []
+        for key in document_match_keys(document):
+            for index in self._pool.get((key, name), []):
+                if index not in self._consumed and index not in seen:
+                    seen.add(index)
+                    indices.append(index)
+        return indices
+
+    def allocate_for_cost_match(
+        self,
+        *,
+        document: str,
+        nomenclature: str,
+        cost_match: CostRow | None,
+        cost_matches: list[CostRow | None],
+        amount_buh: float,
+    ) -> float:
+        lookup_doc = normalize_text(cost_match.document if cost_match and cost_match.document else document)
+        nom = normalize_text(
+            (cost_match.nomenclature if cost_match and cost_match.nomenclature else nomenclature) or ""
+        )
+        available = self._available_indices(lookup_doc, nom)
+        if not available:
+            return 0.0
+
+        active_matches = [match for match in cost_matches if match is not None]
+        if cost_match is not None and len(active_matches) > 1:
+            sorted_matches = sorted(
+                active_matches,
+                key=lambda match: (
+                    -abs(float(match.amount or 0)),
+                    normalize_text(match.document),
+                    nomenclature_key(match.nomenclature),
+                ),
+            )
+            try:
+                slot = sorted_matches.index(cost_match)
+            except ValueError:
+                slot = 0
+            sorted_indices = sorted(available, key=lambda index: -float(self._rows[index].amount_nu))
+            if slot >= len(sorted_indices):
+                return 0.0
+            chosen = sorted_indices[slot]
+        elif len(available) == 1:
+            chosen = available[0]
+        else:
+            hint = abs(float(cost_match.amount if cost_match else amount_buh or 0))
+            if hint > 0:
+                chosen = min(available, key=lambda index: abs(float(self._rows[index].amount_nu) - hint))
+            else:
+                chosen = max(available, key=lambda index: float(self._rows[index].amount_nu))
+
+        self._consumed.add(chosen)
+        return float(self._rows[chosen].amount_nu)
+
+    def allocate_for_cost_row(self, row: CostRow) -> float:
+        amount = self.allocate_for_cost_match(
+            document=row.document,
+            nomenclature=row.nomenclature,
+            cost_match=row,
+            cost_matches=[row],
+            amount_buh=-abs(float(row.amount or 0)),
+        )
+        return -amount if amount > 0 else 0.0
+
+
+def _cost_nu_match_defaults(account: str, calc_article: str) -> tuple[str, str]:
+    return (
+        normalize_text(account or "20").casefold(),
+        normalize_text(calc_article or "Сырье и материалы").casefold(),
+    )
+
+
+def _dedupe_cost_nu_rows(rows: list[CostNuRow]) -> list[CostNuRow]:
+    """Исключить точные дубли строк файла «Себестоимость НУ» (включая отрицательные/сторno)."""
+    seen: set[tuple] = set()
+    deduped: list[CostNuRow] = []
+    for row in rows:
+        amount = float(row.amount_nu or 0)
+        if not row.month or amount == 0:
+            continue
+        nom = nomenclature_key(row.nomenclature)
+        if not nom:
+            continue
+        acct, article = _cost_nu_match_defaults(row.account, row.calc_article)
+        key = (
+            row.month,
+            tuple(sorted(document_match_keys(row.document))),
+            nom,
+            acct,
+            article,
+            round(amount, 2),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(row)
+    return deduped
+
+
+def _build_cost_nu_exact_pool(rows: list[CostNuRow]) -> dict[tuple[str, str, str, str, str], list[int]]:
+    """Пул строк НУ по ключу (месяц, документ, продукция, счёт, статья) для 1:1 сопоставления."""
+    pool: dict[tuple[str, str, str, str, str], list[int]] = defaultdict(list)
+    for index, row in enumerate(rows):
+        amount = float(row.amount_nu or 0)
+        if amount == 0 or not row.month:
+            continue
+        nom = nomenclature_key(row.nomenclature)
+        if not nom:
+            continue
+        acct, article = _cost_nu_match_defaults(row.account, row.calc_article)
+        for doc_key in document_match_keys(row.document):
+            pool[(row.month, doc_key, nom, acct, article)].append(index)
+    return dict(pool)
+
+
+def _consume_cost_nu_exact(
+    pool: dict[tuple[str, str, str, str, str], list[int]],
+    rows: list[CostNuRow],
+    consumed: set[int],
+    *,
+    month: str,
+    document: str,
+    nomenclature: str,
+    account: str,
+    calc_article: str,
+) -> float | None:
+    nom = nomenclature_key(nomenclature)
+    if not nom or not document or not month:
+        return None
+    acct, article = _cost_nu_match_defaults(account, calc_article)
+    for doc_key in document_match_keys(document):
+        key = (month, doc_key, nom, acct, article)
+        for index in pool.get(key, []):
+            if index not in consumed:
+                consumed.add(index)
+                return float(rows[index].amount_nu or 0)
+    return None
+
+
+def _consume_cost_nu_by_doc_nom(
+    pool: dict[tuple[str, str, str, str, str], list[int]],
+    rows: list[CostNuRow],
+    consumed: set[int],
+    *,
+    month: str,
+    document: str,
+    nomenclature: str,
+    amount_hint: float,
+) -> float | None:
+    """Fallback: месяц + документ + продукция, выбор строки НУ по близости суммы к БУ."""
+    nom = nomenclature_key(nomenclature)
+    if not nom or not document or not month:
+        return None
+    candidates: list[int] = []
+    for doc_key in document_match_keys(document):
+        for key, indices in pool.items():
+            if key[0] != month or key[1] != doc_key or key[2] != nom:
+                continue
+            for index in indices:
+                if index not in consumed:
+                    candidates.append(index)
+    if not candidates:
+        return None
+    hint = abs(float(amount_hint or 0))
+    if hint > 0 and len(candidates) > 1:
+        chosen = min(candidates, key=lambda index: abs(float(rows[index].amount_nu or 0) - hint))
+    else:
+        chosen = candidates[0]
+    consumed.add(chosen)
+    return float(rows[chosen].amount_nu or 0)
+
+
+def _monthly_deduped_cost_nu_totals(rows: list[CostNuRow]) -> dict[str, float]:
+    totals: dict[str, float] = defaultdict(float)
+    for row in _dedupe_cost_nu_rows(rows):
+        if row.month:
+            totals[row.month] += float(row.amount_nu or 0)
+    return dict(totals)
+
+
+def _monthly_buh_cost_nu_targets(buh_rows: list[BuhRow]) -> dict[str, float]:
+    """Эталон: помесячная себестoимость НУ из бухрегистра (90.02)."""
+    totals: dict[str, float] = defaultdict(float)
+    for row in buh_rows:
+        section = classify_buh_section(row.account_dt, row.account_kt)
+        if section != "Себестоимость" or not row.month:
+            continue
+        totals[row.month] += _amount_nu_for_section(section, row.amount_nu_dt, row.amount_nu_kt)
+    return {month: abs(value) for month, value in totals.items()}
+
+
+def _add_signed_nu_to_fact(facts: list[Fact], index: int, raw_nu: float) -> None:
+    fact = facts[index]
+    facts[index] = replace(fact, amount_nu=float(fact.amount_nu or 0) + _signed_cost_nu_amount(raw_nu))
+
+
+def _assign_orphan_nu_by_document(
+    facts: list[Fact],
+    deduped: list[CostNuRow],
+    consumed: set[int],
+    cost_indices: list[int],
+) -> int:
+    """Нераспределённые строки НУ → факты того же документа (суммирование на факт)."""
+    assigned = 0
+    for nu_index, nu_row in enumerate(deduped):
+        if nu_index in consumed or not nu_row.month:
+            continue
+        doc_keys = document_match_keys(nu_row.document)
+        fact_candidates = [
+            index
+            for index in cost_indices
+            if facts[index].month == nu_row.month
+            and document_match_keys(facts[index].document) & doc_keys
+        ]
+        if not fact_candidates:
+            continue
+        nu_nom = nomenclature_key(nu_row.nomenclature)
+        nu_acct, nu_article = _cost_nu_match_defaults(nu_row.account, nu_row.calc_article)
+        best_index = fact_candidates[0]
+        best_score = (-1, -1.0)
+        for index in fact_candidates:
+            fact = facts[index]
+            fact_nom = nomenclature_key(fact.nomenclature)
+            fact_acct, fact_article = _cost_nu_match_defaults(fact.cost_account, fact.expense_article)
+            nom_match = int(fact_nom == nu_nom)
+            article_match = int(fact_article == nu_article)
+            acct_match = int(fact_acct == nu_acct or fact_acct in {"20", "25"} and nu_acct == "20")
+            score = (nom_match + article_match + acct_match, abs(float(fact.amount_buh or 0)))
+            if score > best_score:
+                best_score = score
+                best_index = index
+        _add_signed_nu_to_fact(facts, best_index, float(nu_row.amount_nu or 0))
+        consumed.add(nu_index)
+        assigned += 1
+    return assigned
+
+
+def _reconcile_cost_nu_monthly_totals(
+    facts: list[Fact],
+    deduped: list[CostNuRow],
+    cost_indices: list[int],
+) -> dict[str, float]:
+    """Добить сумму НУ по документам до файла «Себестoимость НУ» (только где есть факты БУ)."""
+    nu_by_doc_month: dict[tuple[str, frozenset[str]], float] = defaultdict(float)
+    for row in deduped:
+        if not row.month:
+            continue
+        amount = float(row.amount_nu or 0)
+        if amount == 0:
+            continue
+        doc_keys = document_match_keys(row.document)
+        if not doc_keys:
+            continue
+        nu_by_doc_month[(row.month, doc_keys)] += amount
+
+    facts_by_doc_month: dict[tuple[str, frozenset[str]], list[int]] = defaultdict(list)
+    for index in cost_indices:
+        fact = facts[index]
+        if not fact.month or not fact.document:
+            continue
+        doc_keys = document_match_keys(fact.document)
+        if not doc_keys:
+            continue
+        facts_by_doc_month[(fact.month, doc_keys)].append(index)
+
+    adjustments: dict[str, float] = defaultdict(float)
+    for group, indices in facts_by_doc_month.items():
+        month, _doc_keys = group
+        file_total = nu_by_doc_month.get(group, 0.0)
+        if abs(file_total) < 0.01:
+            continue
+        unique_indices = sorted(set(indices))
+        bi_total = sum(-float(facts[index].amount_nu or 0) for index in unique_indices)
+        gap = float(file_total) - bi_total
+        if abs(gap) < 0.01:
+            continue
+        weights = [abs(float(facts[index].amount_buh or 0)) for index in unique_indices]
+        weight_sum = sum(weights)
+        if weight_sum <= 0:
+            weights = [1.0] * len(unique_indices)
+            weight_sum = float(len(unique_indices))
+        assigned = 0.0
+        for pos, index in enumerate(unique_indices):
+            if pos == len(unique_indices) - 1:
+                share = gap - assigned
+            else:
+                share = gap * (weights[pos] / weight_sum)
+                assigned += share
+            fact = facts[index]
+            facts[index] = replace(fact, amount_nu=float(fact.amount_nu or 0) - share)
+        adjustments[month] += gap
+    return dict(adjustments)
+
+
+def _reconcile_cost_nu_to_buh_register(
+    facts: list[Fact],
+    cost_indices: list[int],
+    buh_targets: dict[str, float],
+) -> dict[str, float]:
+    """Финальная сверка с бухрегистром 90.02 — только по фактам, где NU уже назначен."""
+    adjustments: dict[str, float] = defaultdict(float)
+    for month, target in buh_targets.items():
+        indices = [index for index in cost_indices if facts[index].month == month]
+        if not indices:
+            continue
+        bi_total = sum(-float(facts[index].amount_nu or 0) for index in indices)
+        gap = float(target) - bi_total
+        if abs(gap) < 0.01:
+            continue
+        weighted = [
+            index
+            for index in indices
+            if abs(float(facts[index].amount_nu or 0)) >= 0.01
+        ]
+        if not weighted:
+            continue
+        weights = [abs(float(facts[index].amount_buh or 0)) for index in weighted]
+        weight_sum = sum(weights)
+        if weight_sum <= 0:
+            weights = [abs(float(facts[index].amount_nu or 0)) for index in weighted]
+            weight_sum = sum(weights)
+        if weight_sum <= 0:
+            weights = [1.0] * len(weighted)
+            weight_sum = float(len(weighted))
+        assigned = 0.0
+        for pos, index in enumerate(weighted):
+            if pos == len(weighted) - 1:
+                share = gap - assigned
+            else:
+                share = gap * (weights[pos] / weight_sum)
+                assigned += share
+            fact = facts[index]
+            facts[index] = replace(fact, amount_nu=float(fact.amount_nu or 0) - share)
+        adjustments[month] = gap
+    return dict(adjustments)
+
+
+def _signed_cost_nu_amount(raw_amount: float) -> float:
+    """Сумма НУ на факте себестoимости — отрицательная для расхода, как amount_buh."""
+    if raw_amount > 0:
+        return -raw_amount
+    return raw_amount
+
+
+def _apply_cost_nu_to_buh_facts(
+    facts: list[Fact],
+    cost_nu_rows: list[CostNuRow],
+    buh_rows: list[BuhRow] | None = None,
+) -> dict[str, int | float | dict[str, float]]:
+    """НУ: 1:1 → fallback → orphan по документу → файл НУ → бухрегистр 90.02."""
+    deduped = _dedupe_cost_nu_rows(cost_nu_rows)
+    pool = _build_cost_nu_exact_pool(deduped)
+    consumed: set[int] = set()
+    cost_indices = [index for index, fact in enumerate(facts) if fact.kpi_l1 == "Себестоимость"]
+    stats: dict[str, int | float | dict[str, float]] = {
+        "matched_exact": 0,
+        "matched_fallback": 0,
+        "matched_orphan_doc": 0,
+        "unmatched": 0,
+        "orphan_nu": 0,
+        "monthly_adjustments": {},
+        "buh_register_adjustments": {},
+    }
+
+    for index in cost_indices:
+        facts[index] = replace(facts[index], amount_nu=0.0)
+
+    for index in cost_indices:
+        fact = facts[index]
+        raw_nu = _consume_cost_nu_exact(
+            pool,
+            deduped,
+            consumed,
+            month=fact.month,
+            document=fact.document,
+            nomenclature=fact.nomenclature,
+            account=fact.cost_account,
+            calc_article=fact.expense_article,
+        )
+        if raw_nu is None and fact.cost_account.strip() == "25":
+            raw_nu = _consume_cost_nu_exact(
+                pool,
+                deduped,
+                consumed,
+                month=fact.month,
+                document=fact.document,
+                nomenclature=fact.nomenclature,
+                account="20",
+                calc_article=fact.expense_article,
+            )
+        if raw_nu is not None:
+            facts[index] = replace(fact, amount_nu=_signed_cost_nu_amount(raw_nu))
+            stats["matched_exact"] += 1
+            continue
+        raw_nu = _consume_cost_nu_by_doc_nom(
+            pool,
+            deduped,
+            consumed,
+            month=fact.month,
+            document=fact.document,
+            nomenclature=fact.nomenclature,
+            amount_hint=fact.amount_buh,
+        )
+        if raw_nu is not None:
+            facts[index] = replace(fact, amount_nu=_signed_cost_nu_amount(raw_nu))
+            stats["matched_fallback"] += 1
+
+    stats["matched_orphan_doc"] = _assign_orphan_nu_by_document(
+        facts, deduped, consumed, cost_indices
+    )
+    stats["monthly_adjustments"] = _reconcile_cost_nu_monthly_totals(
+        facts, deduped, cost_indices
+    )
+    if buh_rows:
+        stats["buh_register_adjustments"] = _reconcile_cost_nu_to_buh_register(
+            facts,
+            cost_indices,
+            _monthly_buh_cost_nu_targets(buh_rows),
+        )
+
+    for index in cost_indices:
+        if abs(float(facts[index].amount_nu or 0)) < 0.01:
+            stats["unmatched"] += 1
+
+    stats["orphan_nu"] = len(deduped) - len(consumed)
+    stats["matched"] = (
+        int(stats["matched_exact"])
+        + int(stats["matched_fallback"])
+        + int(stats["matched_orphan_doc"])
+    )
+    return stats
+
+
+def _build_cost_nu_amount_lookup(cost_nu_rows: list[CostNuRow]) -> dict[tuple[str, str], float]:
+    lookup: dict[tuple[str, str], float] = {}
+    for row in cost_nu_rows:
+        nomenclature = nomenclature_key(row.nomenclature)
+        if not nomenclature:
+            continue
+        amount = float(row.amount_nu or 0)
+        if amount <= 0:
+            continue
+        for key in document_match_keys(row.document):
+            pair = (key, nomenclature)
+            lookup[pair] = lookup.get(pair, 0.0) + amount
+    return lookup
+
+
+def _lookup_cost_nu_amount(
+    document: str,
+    nomenclature: str,
+    lookup: dict[tuple[str, str], float],
+) -> float:
+    name = nomenclature_key(nomenclature)
+    if not name or not document:
+        return 0.0
+    best = 0.0
+    for key in document_match_keys(document):
+        best = max(best, float(lookup.get((key, name), 0.0)))
+    if best > 0:
+        return best
+    return 0.0
+
+
+def _resolve_cost_nu_via_cost_rows(
+    *,
+    document: str,
+    nomenclature: str,
+    cost_rows: list[CostRow],
+    cost_nu_lookup: dict[tuple[str, str], float],
+) -> float:
+    """Подбор суммы только из файла НУ через строки себестоимости (документ + номенклатура)."""
+    buh_keys = document_match_keys(document)
+    buh_nom = nomenclature_key(nomenclature)
+    seen: set[tuple[str, str]] = set()
+    candidates: list[float] = []
+    for cost_row in cost_rows:
+        if not (document_match_keys(cost_row.document) & buh_keys):
+            continue
+        if buh_nom and nomenclature_key(cost_row.nomenclature) != buh_nom:
+            continue
+        pair = (normalize_text(cost_row.document), nomenclature_key(cost_row.nomenclature))
+        if pair in seen:
+            continue
+        seen.add(pair)
+        nu_amount = _lookup_cost_nu_amount(cost_row.document, cost_row.nomenclature, cost_nu_lookup)
+        if nu_amount > 0:
+            candidates.append(nu_amount)
+    if not candidates:
+        return 0.0
+    if len(candidates) == 1:
+        return candidates[0]
+    if buh_nom:
+        return sum(candidates)
+    return 0.0
+
+
+def resolve_cost_fact_amount_nu(
+    *,
+    amount_buh: float,
+    document: str,
+    nomenclature: str,
+    cost_match: CostRow | None,
+    cost_matches: list[CostRow | None],
+    cost_nu_allocator: CostNuAllocator | None = None,
+    cost_nu_lookup: dict[tuple[str, str], float] | None = None,
+    cost_rows: list[CostRow] | None = None,
+) -> float:
+    """Факт НУ по себестоимости — только из выгрузки «Себестоимость НУ»."""
+    if cost_nu_allocator is None and not cost_nu_lookup:
+        return 0.0
+
+    if cost_nu_allocator is not None:
+        amount = cost_nu_allocator.allocate_for_cost_match(
+            document=document,
+            nomenclature=nomenclature,
+            cost_match=cost_match,
+            cost_matches=cost_matches,
+            amount_buh=amount_buh,
+        )
+        if amount <= 0 and cost_rows:
+            buh_keys = document_match_keys(document)
+            buh_nom = nomenclature_key(nomenclature)
+            seen_pairs: set[tuple[str, str]] = set()
+            for cost_row in cost_rows:
+                if not (document_match_keys(cost_row.document) & buh_keys):
+                    continue
+                if buh_nom and nomenclature_key(cost_row.nomenclature) != buh_nom:
+                    continue
+                pair = (normalize_text(cost_row.document), nomenclature_key(cost_row.nomenclature))
+                if pair in seen_pairs:
+                    continue
+                seen_pairs.add(pair)
+                amount = cost_nu_allocator.allocate_for_cost_match(
+                    document=document,
+                    nomenclature=nomenclature,
+                    cost_match=cost_row,
+                    cost_matches=[cost_row],
+                    amount_buh=amount_buh,
+                )
+                if amount > 0:
+                    break
+        return -amount if amount > 0 else 0.0
+
+    lookup_doc = normalize_text(cost_match.document if cost_match and cost_match.document else document)
+    nom = normalize_text(
+        (cost_match.nomenclature if cost_match and cost_match.nomenclature else nomenclature) or ""
+    )
+    total_nu = _lookup_cost_nu_amount(lookup_doc, nom, cost_nu_lookup or {})
+    if total_nu <= 0 and cost_rows:
+        total_nu = _resolve_cost_nu_via_cost_rows(
+            document=document,
+            nomenclature=nomenclature,
+            cost_rows=cost_rows,
+            cost_nu_lookup=cost_nu_lookup or {},
+        )
+    if total_nu <= 0:
+        return 0.0
+    active_matches = [match for match in cost_matches if match is not None]
+    if cost_match is not None and len(active_matches) > 1:
+        total_buh = sum(abs(float(match.amount or 0)) for match in active_matches)
+        if total_buh > 0:
+            share = abs(float(cost_match.amount or 0)) / total_buh
+            return -total_nu * share
+    return -total_nu
+
+
+def _cost_nu_amount_for_cost_row(
+    row: CostRow,
+    cost_nu_allocator: CostNuAllocator | None = None,
+    cost_nu_lookup: dict[tuple[str, str], float] | None = None,
+) -> float:
+    if cost_nu_allocator is not None:
+        return cost_nu_allocator.allocate_for_cost_row(row)
+    if not cost_nu_lookup:
+        return 0.0
+    total_nu = _lookup_cost_nu_amount(row.document, row.nomenclature, cost_nu_lookup)
+    return -total_nu if total_nu > 0 else 0.0
+
+
 def resolve_quantity_from_cost(
     *,
     document: str,
@@ -454,7 +1074,10 @@ def resolve_quantity_from_cost(
         lookup = _build_cost_quantity_lookup(cost_rows)
     if not lookup:
         return 0.0
-    return _lookup_cost_quantity(document, nomenclature, lookup)
+    by_document = _lookup_cost_quantity(document, nomenclature, lookup)
+    if by_document > 0:
+        return by_document
+    return _lookup_cost_quantity_by_nomenclature(nomenclature, lookup)
 
 
 def _lookup_cost_row(
@@ -518,6 +1141,7 @@ def _append_fact(
     cost_section: str = "",
     cost_account: str = "",
     expense_article: str = "",
+    document: str = "",
     tax_type: str = "",
     contractor: str = "",
     quantity: float = 0.0,
@@ -541,6 +1165,7 @@ def _append_fact(
             cost_section=cost_section,
             cost_account=cost_account,
             expense_article=expense_article,
+            document=document,
             tax_type=tax_type or "Общие условия налогообложения",
             contractor=contractor,
             quantity=float(quantity or 0),
@@ -663,13 +1288,15 @@ def _append_file_fallback_facts(
                 kpi_l1="Себестоимость",
                 month=row.month,
                 amount_buh=-abs(row.amount),
-                amount_nu=-abs(row.amount),
+                amount_nu=0.0,
                 direction=project.direction,
                 project_group=project.project_group,
                 project=project.project,
                 contract=_lookup_contract(row.document, doc_contract),
                 nomenclature=row.nomenclature,
+                document=row.document,
                 cost_section=row.cost_section,
+                cost_account=row.account,
                 expense_article=row.calc_article,
                 tax_type=doc_tax.get(row.document, "Общие условия налогообложения"),
                 contractor=_lookup_contractor(row.document, doc_contractor),
@@ -724,6 +1351,10 @@ def build_facts(exports: ParsedExports) -> PipelineResult:
 
     if not exports.cost:
         warnings.append("Файл себестоимости не загружен — себестоимость будет взята из бухрегистра.")
+    elif not exports.cost_nu:
+        warnings.append(
+            "Файл «Себестоимость НУ» не загружен — факт НУ по себестоимости будет нулевым."
+        )
 
     saw_revenue = False
     saw_cost = False
@@ -750,13 +1381,22 @@ def build_facts(exports: ParsedExports) -> PipelineResult:
                 prefer_cost_chain=section == "Себестоимость",
             )
 
+        lookup_document = (
+            cost_match.document
+            if cost_match and cost_match.document
+            else row.document
+        )
+
         amount_buh = _amount_buh_for_section(
             section,
             row,
             cost_match,
             duplicate_cost_key=_is_duplicate_cost_buh_key(duplicate_cost_buh_keys, row),
         )
-        amount_nu = _amount_nu_for_section(section, row.amount_nu_dt, row.amount_nu_kt)
+        if section == "Себестоимость":
+            amount_nu = 0.0
+        else:
+            amount_nu = _amount_nu_for_section(section, row.amount_nu_dt, row.amount_nu_kt)
 
         fallback_project = lookup_project(
             row.document,
@@ -822,6 +1462,7 @@ def build_facts(exports: ParsedExports) -> PipelineResult:
                 if cost_match and section == "Себестоимость" and cost_match.calc_article
                 else row.expense_article
             ),
+            "document": lookup_document,
             "contractor": contractor,
             "quantity": quantity,
         }
@@ -838,7 +1479,7 @@ def build_facts(exports: ParsedExports) -> PipelineResult:
             pnl_kwargs = {
                 key: value
                 for key, value in fact_kwargs.items()
-                if key not in ("cost_section", "cost_account", "expense_article")
+                if key not in ("cost_section", "cost_account", "expense_article", "document")
             }
             _append_other_pnl_fact(
                 facts,
@@ -870,6 +1511,9 @@ def build_facts(exports: ParsedExports) -> PipelineResult:
         include_revenue=not saw_revenue,
         include_cost=not saw_cost,
     )
+
+    if exports.cost_nu:
+        _apply_cost_nu_to_buh_facts(facts, exports.cost_nu, exports.buh)
 
     month_order = list(MONTH_NAMES.values())
     months = sorted({fact.month for fact in facts}, key=month_order.index)

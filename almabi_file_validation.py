@@ -8,13 +8,14 @@ from openpyxl import load_workbook
 from almabi_excel_utils import normalize_header
 
 
-EXPORT_TYPES = ("buh", "realization", "cost")
+EXPORT_TYPES = ("buh", "realization", "cost", "cost_nu")
 REQUIRED_EXPORT_TYPES = ("buh", "realization", "cost")
 
 EXPORT_LABELS = {
     "buh": "Бух.регистр",
     "realization": "Реализация",
     "cost": "Себестоимость",
+    "cost_nu": "Себестоимость НУ",
 }
 
 
@@ -55,6 +56,8 @@ def _joined_headers(cells: list[str]) -> str:
 def guess_export_type_from_filename(filename: str) -> str | None:
     normalized = Path(filename).name.casefold()
     if any(token in normalized for token in ("себест", "cost", "себестоим")):
+        if any(token in normalized for token in (" ну", "-ну", "_nu", " nu")) or normalized.endswith("ну"):
+            return "cost_nu"
         return "cost"
     if any(token in normalized for token in ("реализ", "realiz", "выручк")):
         return "realization"
@@ -65,6 +68,8 @@ def guess_export_type_from_filename(filename: str) -> str | None:
 
 def _detect_export_type(cells: list[str]) -> str | None:
     joined = _joined_headers(cells)
+    if "стоимость (ну)" in joined and "документ отгрузки" in joined:
+        return "cost_nu"
     if ("документ отгрузки" in joined or ("продукция" in joined and "себестоимость" in joined)) and (
         "себестоимость (бухг" in joined or "себестоимость (регл" in joined or "себестоимость полная" in joined
     ):
