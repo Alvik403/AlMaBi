@@ -145,6 +145,47 @@ def test_build_revenue_cost_drill_pairs_nomenclature_lines():
     assert leaves[1]["profit"]["buh"] == 150_000
 
 
+def test_build_revenue_cost_drill_merges_oez_nomenclature_variants():
+    drill = _build_revenue_cost_drill(
+        [
+            _fact(
+                kpi_l1="Выручка",
+                direction="Услуги",
+                nomenclature="ОЭЗ Работы по техническому обслуживанию",
+                amount_buh=12_000_000,
+                amount_nu=10_000_000,
+                quantity=1,
+            ),
+        ],
+        [
+            _fact(
+                kpi_l1="Себестоимость",
+                direction="Услуги",
+                nomenclature="ОЭЗ (ппу) Работы по техническому обслуживанию, ремонту ппу",
+                amount_buh=-4_289_833,
+                amount_nu=-4_289_833,
+                quantity=1,
+            ),
+            _fact(
+                kpi_l1="Себестоимость",
+                direction="Услуги",
+                nomenclature="ОЭЗ Работы по техническому обслуживанию",
+                amount_buh=-2_711_292,
+                amount_nu=-2_711_292,
+                quantity=1,
+            ),
+        ],
+    )
+
+    lines = drill["total"]["lines"]
+    assert len(lines) == 1
+    line = lines[0]
+    assert line["name"] == "ОЭЗ Работы по техническому обслуживанию"
+    assert line["revenue"]["buh"] == 10_000_000
+    assert line["cost"]["buh"] == 4_289_833 + 2_711_292
+    assert line["quantity"] == 1
+
+
 def test_build_revenue_cost_drill_uses_ex_vat_revenue_amount():
     drill = _build_revenue_cost_drill(
         [

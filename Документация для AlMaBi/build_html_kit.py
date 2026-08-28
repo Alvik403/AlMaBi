@@ -155,8 +155,6 @@ def main() -> None:
   <div class="wrap">
     <header class="hero">
       <h1>Документация Al Ma BI</h1>
-      <p>Полный комплект: архитектура, модель данных Excel/P&amp;L, API, развёртывание, ИБ.</p>
-      <p>Репозиторий: https://github.com/Alvik403/AlMaBi.git · Дата комплекта: июль 2026</p>
     </header>
     <nav class="toc">
       <h2>Содержание</h2>
@@ -165,7 +163,6 @@ def main() -> None:
       </ol>
     </nav>
     {chr(10).join(sections)}
-    <footer class="note">Сгенерировано из markdown в папке «Документация для AlMaBi».</footer>
   </div>
 </body>
 </html>

@@ -21,60 +21,47 @@
 
   <div class="charts-page__layout">
     <aside class="charts-sidebar">
-      <div class="charts-sidebar__section">
+      <div class="charts-sidebar__section" data-server-filter-panel>
         <div class="charts-sidebar__head">
-          <span class="charts-sidebar__title">Год</span>
-          <span class="charts-sidebar__actions">
-            <button type="button" class="charts-sidebar__icon-btn" data-filter-select-all="year" title="Выбрать все" aria-label="Выбрать все">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
-            </button>
-            <button type="button" class="charts-sidebar__icon-btn" data-filter-clear-group="year" title="Сбросить" aria-label="Сбросить">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
-            </button>
-          </span>
+          <span class="charts-sidebar__title">Фильтры</span>
         </div>
-        <div class="charts-sidebar__list">
-          <button type="button" class="charts-sidebar__item is-active" data-filter-year data-filter-value="2025">2025</button>
-          <button type="button" class="charts-sidebar__item" data-filter-year data-filter-value="2024">2024</button>
+        {% set chart_filters = [("direction", "Направление"), ("project_group", "Группа проектов"), ("project", "Проект"), ("contract", "Договор")] %}
+        {% for query_key, label in chart_filters %}
+        {% set payload_key = "projectGroup" if query_key == "project_group" else query_key %}
+        <label class="mb-3 block">
+          <span class="charts-sidebar__title">{{ label }}</span>
+          <select data-server-filter="{{ query_key }}" class="mt-1 w-full rounded-md border border-gray-200 bg-white px-2 py-2 text-xs text-gray-700">
+            {% for option in dashboard.filters[payload_key] %}
+            <option value="{% if loop.first %}{% else %}{{ option }}{% endif %}">{{ option }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        {% endfor %}
+        <div class="almabi-select almabi-select--period mb-3" data-period-picker>
+          <button type="button" class="almabi-select__trigger" aria-haspopup="dialog" aria-expanded="false" data-period-trigger>
+            <span class="almabi-select__label">Период</span>
+            <span class="almabi-select__value" data-period-summary>Все месяцы</span>
+          </button>
+          <svg class="almabi-select__chevron" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+          </svg>
+          <div class="almabi-select__menu hidden" data-period-menu>
+            <p class="almabi-period-hint" data-period-pick-hint>Сначала начало, затем конец. Год можно переключить</p>
+            <div class="almabi-period-year-nav" data-period-year-nav>
+              <button type="button" class="almabi-period-year-nav__btn" data-period-year-prev aria-label="Предыдущий год">‹</button>
+              <span class="almabi-period-year-nav__label" data-period-year-label></span>
+              <button type="button" class="almabi-period-year-nav__btn" data-period-year-next aria-label="Следующий год">›</button>
+            </div>
+            <div class="almabi-select__options" data-period-calendar></div>
+            <div class="almabi-period-actions">
+              <button type="button" class="almabi-select__all" data-period-clear>Сбросить период</button>
+            </div>
+          </div>
         </div>
-      </div>
-
-      <div class="charts-sidebar__section">
-        <div class="charts-sidebar__head">
-          <span class="charts-sidebar__title">Квартал</span>
-          <span class="charts-sidebar__actions">
-            <button type="button" class="charts-sidebar__icon-btn" data-filter-select-all="quarter" title="Выбрать все" aria-label="Выбрать все">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
-            </button>
-            <button type="button" class="charts-sidebar__icon-btn" data-filter-clear-group="quarter" title="Сбросить" aria-label="Сбросить">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
-            </button>
-          </span>
-        </div>
-        <div class="charts-sidebar__grid charts-sidebar__grid--2">
-          {% for quarter, label in [("Q1", "Кв-л1"), ("Q2", "Кв-л2"), ("Q3", "Кв-л3"), ("Q4", "Кв-л4")] %}
-          <button type="button" class="charts-sidebar__item" data-filter-quarter data-filter-value="{{ quarter }}">{{ label }}</button>
-          {% endfor %}
-        </div>
-      </div>
-
-      <div class="charts-sidebar__section">
-        <div class="charts-sidebar__head">
-          <span class="charts-sidebar__title">Месяц</span>
-          <span class="charts-sidebar__actions">
-            <button type="button" class="charts-sidebar__icon-btn" data-filter-select-all="month" title="Выбрать все" aria-label="Выбрать все">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
-            </button>
-            <button type="button" class="charts-sidebar__icon-btn" data-filter-clear-group="month" title="Сбросить" aria-label="Сбросить">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
-            </button>
-          </span>
-        </div>
-        <div class="charts-sidebar__grid charts-sidebar__grid--2">
-          {% for month in dashboard.months %}
-          <button type="button" class="charts-sidebar__item" data-filter-month data-filter-value="{{ month }}">{{ month[:3] | lower }}.</button>
-          {% endfor %}
-        </div>
+        <p class="text-xs text-sky-700" data-server-filter-hint>Диапазон: с начала — до конца</p>
+        <p class="mt-2 hidden text-xs font-semibold text-sky-700" data-server-filter-loading>Обновляем данные…</p>
+        <p class="mt-2 hidden text-xs font-semibold text-rose-700" data-server-filter-error role="alert"></p>
+        <button type="button" class="charts-sidebar__item mt-3 w-full" data-server-filter-reset>Сбросить</button>
       </div>
 
       <div class="charts-sidebar__section charts-sidebar__section--divider">
@@ -177,6 +164,6 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<script type="module" src="/static/dist/chart_vendor.js"></script>
 <script src="/static/dist/charts_page.js" defer></script>
 {% endblock %}

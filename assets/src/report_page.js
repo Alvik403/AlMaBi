@@ -1,5 +1,6 @@
 const TAX_PRIVILEGED = "Льготные проекты";
 const TAX_NON_PRIVILEGED = "Нельготные проекты";
+const CSRF_TOKEN = document.querySelector('meta[name="csrf-token"]')?.content || "";
 const TAX_FILTER_MAP = {
   privileged: TAX_PRIVILEGED,
   non_privileged: TAX_NON_PRIVILEGED,
@@ -446,7 +447,11 @@ function initReportPage(root) {
     button.disabled = true;
     if (status) status.textContent = "Загрузка и сборка отчёта…";
     try {
-      const response = await fetch(uploadUrl, { method: "POST", body: new FormData(form) });
+      const response = await fetch(uploadUrl, {
+        method: "POST",
+        headers: { "X-CSRF-Token": CSRF_TOKEN },
+        body: new FormData(form),
+      });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.detail || "Ошибка загрузки");
       window.location.reload();

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -12,16 +13,27 @@ from almabi_dashboard_builder import (
     _chart_cost_structure,
     _chart_cost_structure_from_pq_rows,
     _chart_series,
+    _collect_filter_tree,
     _collect_filter_values,
     _empty_cost_structure,
+    normalize_summary_periods,
+    period_labels,
+    periods_from_facts,
+    calendar_periods_for_years,
 )
-from almabi_excel_utils import tax_bucket
+from almabi_excel_utils import normalize_text, tax_bucket
 from almabi_pipeline import Fact
 from almabi_test_pipeline import TestPipelineResult, run_test_pipeline
 
 from almabi_test_levels import build_test_summary_rows, empty_chart_series
 
 TAX_BUCKET_OPTIONS = ("Льготные проекты", "Нельготные проекты")
+FACT_DIMENSION_FILTERS = {
+    "direction": ("direction", "направления"),
+    "project_group": ("project_group", "группы проектов"),
+    "project": ("project", "проекта"),
+    "contract": ("contract", "договора"),
+}
 
 CONSOLIDATED_KPI_ORDER = (
     "Выручка",
@@ -72,6 +84,87 @@ def filter_facts_by_tax_bucket(facts: list[Fact], bucket: str) -> list[Fact]:
     return [fact for fact in facts if tax_bucket(fact.tax_type) == bucket]
 
 
+def split_filter_values(value: str | list[str] | tuple[str, ...] | None) -> list[str]:
+    if value is None:
+        return []
+    parts = value if isinstance(value, (list, tuple)) else [value]
+    unique: list[str] = []
+    seen: set[str] = set()
+    for part in parts:
+        for item in str(part).split(","):
+            normalized = normalize_text(item)
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            unique.append(normalized)
+    unique.sort(key=lambda item: item.casefold())
+    return unique
+
+
+def join_filter_values(value: str | list[str] | tuple[str, ...] | None) -> str:
+    return ",".join(split_filter_values(value))
+
+
+def filter_facts_by_dimensions_and_period(
+    facts: list[Fact],
+    *,
+    direction: str | list[str] | None = None,
+    project_group: str | list[str] | None = None,
+    project: str | list[str] | None = None,
+    contract: str | list[str] | None = None,
+    period_from: str | None = None,
+    period_to: str | None = None,
+    apply_period: bool = True,
+    validate_values: bool = True,
+) -> list[Fact]:
+    """Фильтровать сырые Fact до агрегации dashboard."""
+    dimension_values = {
+        "direction": set(split_filter_values(direction)),
+        "project_group": set(split_filter_values(project_group)),
+        "project": set(split_filter_values(project)),
+        "contract": set(split_filter_values(contract)),
+    }
+    period_from = normalize_text(period_from)
+    period_to = normalize_text(period_to)
+    for name, value in (("period_from", period_from), ("period_to", period_to)):
+        if value and not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", value):
+            raise ValueError(f"{name} должен быть в формате YYYY-MM")
+    if period_from and period_to and period_from > period_to:
+        raise ValueError("period_from не может быть позже period_to")
+
+    if validate_values:
+        for query_name, values in dimension_values.items():
+            if not values:
+                continue
+            fact_field, label = FACT_DIMENSION_FILTERS[query_name]
+            available = {
+                normalize_text(getattr(fact, fact_field, ""))
+                for fact in facts
+                if normalize_text(getattr(fact, fact_field, ""))
+            }
+            unknown = sorted(values - available)
+            if unknown:
+                raise ValueError(f"Неизвестное значение {label}: «{unknown[0]}»")
+
+    filtered: list[Fact] = []
+    for fact in facts:
+        if any(
+            values and normalize_text(getattr(fact, FACT_DIMENSION_FILTERS[name][0], "")) not in values
+            for name, values in dimension_values.items()
+        ):
+            continue
+        if apply_period and (period_from or period_to):
+            period = normalize_text(getattr(fact, "period", ""))
+            if not period:
+                continue
+            if period_from and period < period_from:
+                continue
+            if period_to and period > period_to:
+                continue
+        filtered.append(fact)
+    return filtered
+
+
 def _build_summary_by_tax(
     facts: list[Fact],
     *,
@@ -79,7 +172,8 @@ def _build_summary_by_tax(
     forecast_facts: list[Fact] | None = None,
     pq_cost_rows: list[dict[str, object]] | None = None,
 ) -> dict[str, list[dict[str, Any]]]:
-    return {
+    periods = periods_from_facts(facts, plan_facts, forecast_facts)
+    result = {
         "all": build_test_summary_rows_from_facts(
             facts,
             plan_facts=plan_facts,
@@ -95,31 +189,42 @@ def _build_summary_by_tax(
             for bucket in TAX_BUCKET_OPTIONS
         },
     }
+    for rows in result.values():
+        normalize_summary_periods(rows, periods)
+    return result
 
 
 def _build_charts_by_tax(
     facts: list[Fact],
     *,
     pq_cost_rows: list[dict[str, object]] | None = None,
+    periods: list[str] | None = None,
 ) -> dict[str, dict[str, list[dict[str, Any]]]]:
+    active_periods = periods or periods_from_facts(facts)
     all_structure = (
-        _chart_cost_structure_from_pq_rows(pq_cost_rows)
+        _chart_cost_structure_from_pq_rows(pq_cost_rows, periods=active_periods)
         if pq_cost_rows
-        else _chart_cost_structure(facts)
+        else _chart_cost_structure(facts, periods=active_periods)
     )
     charts: dict[str, dict[str, list[dict[str, Any]]]] = {
         "all": {
-            "revenue_by_month": _chart_series(facts, "Выручка"),
-            "cost_by_month": _chart_series(facts, "Себестоимость"),
+            "revenue_by_month": _chart_series(facts, "Выручка", periods=active_periods),
+            "cost_by_month": _chart_series(facts, "Себестоимость", periods=active_periods),
             "cost_structure_by_month": all_structure,
         }
     }
     for bucket in TAX_BUCKET_OPTIONS:
         bucket_facts = filter_facts_by_tax_bucket(facts, bucket)
         charts[bucket] = {
-            "revenue_by_month": _chart_series(bucket_facts, "Выручка"),
-            "cost_by_month": _chart_series(bucket_facts, "Себестоимость"),
-            "cost_structure_by_month": _chart_cost_structure(bucket_facts),
+            "revenue_by_month": _chart_series(
+                bucket_facts, "Выручка", periods=active_periods
+            ),
+            "cost_by_month": _chart_series(
+                bucket_facts, "Себестоимость", periods=active_periods
+            ),
+            "cost_structure_by_month": _chart_cost_structure(
+                bucket_facts, periods=active_periods
+            ),
         }
     return charts
 
@@ -134,13 +239,19 @@ def build_test_dashboard_from_pipeline(
 ) -> dict[str, Any]:
     result = pipeline.result
     audit = pipeline.audit
+    periods = periods_from_facts(result.facts, plan_facts, forecast_facts)
+    selectable_periods = calendar_periods_for_years(periods)
     summary_by_tax = _build_summary_by_tax(
         result.facts,
         plan_facts=plan_facts,
         forecast_facts=forecast_facts,
         pq_cost_rows=pipeline.pq_cost_rows,
     )
-    charts_by_tax = _build_charts_by_tax(result.facts, pq_cost_rows=pipeline.pq_cost_rows)
+    charts_by_tax = _build_charts_by_tax(
+        result.facts,
+        pq_cost_rows=pipeline.pq_cost_rows,
+        periods=periods,
+    )
     summary_rows = summary_by_tax["all"]
     consolidated_by_tax = _build_consolidated_by_tax(summary_by_tax)
     revenue_chart = charts_by_tax["all"]["revenue_by_month"]
@@ -149,7 +260,9 @@ def build_test_dashboard_from_pipeline(
     contractor_cards = build_contractor_cards(contractor_details)
     audit_summary = audit.to_dict()["summary"]
     dashboard = {
-        "months": MONTHS,
+        "months": periods,
+        "periods": periods,
+        "period_labels": period_labels(selectable_periods),
         "scenarios": SCENARIOS,
         "units": UNITS,
         "filters": _collect_filter_values(
@@ -157,6 +270,13 @@ def build_test_dashboard_from_pipeline(
             plan_facts=plan_facts,
             forecast_facts=forecast_facts,
         ),
+        "filter_tree": _collect_filter_tree(
+            result.facts,
+            plan_facts=plan_facts,
+            forecast_facts=forecast_facts,
+        ),
+        "available_periods": selectable_periods,
+        "data_periods": periods,
         "summary_rows": summary_rows,
         "summary_by_tax": summary_by_tax,
         "consolidated_by_tax": consolidated_by_tax,
@@ -166,6 +286,7 @@ def build_test_dashboard_from_pipeline(
             result.facts,
             summary_rows,
             plan_facts=plan_facts,
+            periods=periods,
         ),
         "tax_bucket_options": ["all", *TAX_BUCKET_OPTIONS],
         "contractor_details": contractor_details,
@@ -180,13 +301,13 @@ def build_test_dashboard_from_pipeline(
             "parsed": bool(result.facts),
             "upload_files": upload_names,
             "warnings": result.warnings,
+            "periods": periods,
+            "period_labels": period_labels(periods),
             "pipeline": "test_pq",
             "message": "Тест BI: группировка и join как в Power Query «Свод_нов».",
             "audit": {
                 "run_id": audit.run_id,
-                "report_path": str(pipeline.audit_path) if pipeline.audit_path else None,
-                "latest_path": str(pipeline.audit_path.parent / "audit-latest.json") if pipeline.audit_path else None,
-                "jsonl_path": str(pipeline.audit_path.parent / "audit-latest.jsonl") if pipeline.audit_path else None,
+                "detail_written": pipeline.audit_path is not None,
                 "summary": audit_summary,
             },
         },
@@ -256,6 +377,9 @@ def build_empty_test_dashboard() -> dict[str, Any]:
             "quarter": ["Все кварталы", "Q1", "Q2", "Q3", "Q4"],
             "month": ["Все месяцы", *MONTHS],
         },
+        "filter_tree": [],
+        "available_periods": list(MONTHS),
+        "data_periods": list(MONTHS),
         "summary_rows": build_test_summary_rows(),
         "summary_by_tax": {
             "all": build_test_summary_rows(),

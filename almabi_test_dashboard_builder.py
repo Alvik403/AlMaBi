@@ -18,9 +18,12 @@ from almabi_dashboard_builder import (
     _merge_signed_fact_groups,
     _month_totals_from_nodes,
     _month_values,
+    normalize_summary_periods,
+    periods_from_facts,
 )
+from almabi_excel_utils import period_label
 from almabi_pipeline import Fact
-from almabi_mock_data import MONTHS, SCENARIOS
+from almabi_mock_data import SCENARIOS
 
 TEST_REVENUE_PATH = ["direction", "project_group", "project", "contract"]
 TEST_COST_PATH = ["cost_section", "direction", "project_group", "project"]
@@ -80,33 +83,44 @@ def _append_cost_structure_gap_child(
     """Строка «Прочее»: только расхождение KPI buh (L1) и суммы разделов PQ после распределения."""
     del pq_cost_rows
     children = list(cost_node.get("children") or [])
+    periods = dashboard_builder._ordered_period_keys(
+        {
+            period
+            for scenario_values in (cost_node.get("values") or {}).values()
+            for period in scenario_values
+        }
+    )
     gap_values: dict[str, dict[str, float]] = {
-        scenario: {month: 0.0 for month in MONTHS} for scenario in SCENARIOS
+        scenario: {period: 0.0 for period in periods} for scenario in SCENARIOS
     }
     has_gap = False
     for scenario in ("Факт БУ", "Факт НУ"):
-        for month in MONTHS:
-            parent = float(cost_node["values"][scenario].get(month, 0) or 0)
-            child_sum = sum(float(child["values"][scenario].get(month, 0) or 0) for child in children)
+        for period in periods:
+            parent = float(cost_node["values"][scenario].get(period, 0) or 0)
+            child_sum = sum(
+                float(child["values"][scenario].get(period, 0) or 0)
+                for child in children
+            )
             gap = parent - child_sum
-            gap_values[scenario][month] = gap
+            gap_values[scenario][period] = gap
             if abs(gap) > 0.005:
                 has_gap = True
     if not has_gap:
         return
 
     residual_facts: list[Fact] = []
-    for month in MONTHS:
-        gap_val = gap_values["Факт БУ"][month]
+    for period in periods:
+        gap_val = gap_values["Факт БУ"][period]
         if abs(gap_val) > 0.005:
             residual_facts.append(
                 Fact(
                     kpi_l1="Себестоимость",
-                    month=month,
+                    month=period_label(period, fallback=period),
                     amount_buh=gap_val,
-                    amount_nu=gap_values["Факт НУ"][month],
+                    amount_nu=gap_values["Факт НУ"][period],
                     cost_section="Разница buh / cost",
                     nomenclature="—",
+                    period=period if len(period) == 7 and period[4] == "-" else None,
                 )
             )
     gap_children = (
@@ -156,6 +170,7 @@ def _build_test_kpi_node(
             tax_type=fact.tax_type,
             contractor=fact.contractor,
             quantity=fact.quantity,
+            period=fact.period,
         )
         for fact in items
     ]
@@ -348,4 +363,5 @@ def build_test_summary_rows_from_facts(
         )
     )
 
+    normalize_summary_periods(nodes, periods_from_facts(facts, plan_facts, forecast_facts))
     return nodes

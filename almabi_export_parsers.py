@@ -15,6 +15,7 @@ from almabi_excel_utils import (
     parse_date,
     parse_date_from_text,
     read_sheet_rows,
+    resolve_period_key,
     resolve_column_map,
 )
 
@@ -76,6 +77,7 @@ class BuhRow:
     project: str
     nomenclature_kt: str
     contractor: str
+    period: str | None = None
 
 
 @dataclass(frozen=True)
@@ -88,6 +90,7 @@ class RealizationRow:
     revenue: float
     month: str | None
     contract: str = ""
+    period: str | None = None
 
 
 @dataclass(frozen=True)
@@ -99,6 +102,7 @@ class CostNuRow:
     quantity: float
     amount_nu: float
     month: str | None
+    period: str | None = None
 
 
 @dataclass(frozen=True)
@@ -115,6 +119,7 @@ class CostRow:
     project_group: str = "Без группы"
     project: str = "Без проекта"
     contract: str = ""
+    period: str | None = None
 
 
 @dataclass
@@ -265,6 +270,8 @@ def parse_buh_register(path: Path) -> list[BuhRow]:
         amount_nu_kt = parse_amount(cell_value(row, column_map, "сумма ну кт", "sum nu kt"))
         if not amount_buh and not amount_nu_dt and not amount_nu_kt:
             continue
+        raw_date = cell_value(row, column_map, "дата", "date")
+        period = resolve_period_key(raw_date, document)
 
         parsed.append(
             BuhRow(
@@ -274,7 +281,7 @@ def parse_buh_register(path: Path) -> list[BuhRow]:
                 amount_buh=amount_buh,
                 amount_nu_dt=amount_nu_dt,
                 amount_nu_kt=amount_nu_kt,
-                month=month_name(parse_date(cell_value(row, column_map, "дата", "date"))),
+                month=month_name(parse_date(raw_date)) or month_name(parse_date_from_text(document)),
                 tax_type=_extract_tax_type(column_map, row),
                 expense_article=_extract_expense_article(column_map, row),
                 contract=_extract_contract(column_map, row),
@@ -283,6 +290,7 @@ def parse_buh_register(path: Path) -> list[BuhRow]:
                 ),
                 nomenclature_kt=_extract_nomenclature_kt(column_map, row),
                 contractor=_extract_contractor(column_map, row),
+                period=period,
             )
         )
     return parsed
@@ -307,8 +315,8 @@ def _map_realization_headers(headers: list[str]) -> dict[str, int]:
     return resolve_column_map(headers, aliases)
 
 
-def _resolve_month(document: str, raw_date: object) -> str | None:
-    return month_name(parse_date(raw_date)) or month_name(parse_date_from_text(document))
+def _resolve_date(document: str, raw_date: object):
+    return parse_date(raw_date) or parse_date_from_text(document)
 
 
 def parse_realization(path: Path) -> list[RealizationRow]:
@@ -321,6 +329,7 @@ def parse_realization(path: Path) -> list[RealizationRow]:
         revenue = parse_amount(cell_value(row, column_map, "выручка"))
         if not document or not revenue:
             continue
+        parsed_date = _resolve_date(document, cell_value(row, column_map, "дата"))
         direction, project_group, project = _read_project_fields(row, column_map)
         parsed.append(
             RealizationRow(
@@ -330,8 +339,9 @@ def parse_realization(path: Path) -> list[RealizationRow]:
                 project_group=project_group,
                 direction=direction,
                 revenue=revenue,
-                month=_resolve_month(document, cell_value(row, column_map, "дата")),
+                month=month_name(parsed_date),
                 contract=normalize_text(cell_value(row, column_map, "договор", "contract")),
+                period=resolve_period_key(parsed_date),
             )
         )
     return parsed
@@ -371,6 +381,7 @@ def parse_cost(path: Path) -> list[CostRow]:
             continue
         account = normalize_text(cell_value(row, column_map, "счет")) or "20"
         calc_article = normalize_text(cell_value(row, column_map, "статья калькуляции")) or "Сырье и материалы"
+        parsed_date = _resolve_date(document, cell_value(row, column_map, "дата"))
         direction, project_group, project = _read_project_fields(row, column_map)
         parsed.append(
             CostRow(
@@ -380,12 +391,13 @@ def parse_cost(path: Path) -> list[CostRow]:
                 calc_article=calc_article,
                 quantity=parse_amount(cell_value(row, column_map, "количество")),
                 amount=amount,
-                month=_resolve_month(document, cell_value(row, column_map, "дата")),
+                month=month_name(parsed_date),
                 cost_section=classify_cost_section_pq(calc_article, account),
                 direction=direction,
                 project_group=project_group,
                 project=project,
                 contract=normalize_text(cell_value(row, column_map, "договор", "contract")),
+                period=resolve_period_key(parsed_date),
             )
         )
     return parsed
@@ -434,6 +446,7 @@ def parse_cost_nu(path: Path) -> list[CostNuRow]:
         amount = parse_amount(_cell(row, "стоимость (ну)"))
         if not amount:
             continue
+        parsed_date = _resolve_date(document, _cell(row, "дата"))
         parsed.append(
             CostNuRow(
                 document=document,
@@ -442,7 +455,8 @@ def parse_cost_nu(path: Path) -> list[CostNuRow]:
                 calc_article=normalize_text(_cell(row, "статья калькуляции")) or "Сырье и материалы",
                 quantity=parse_amount(_cell(row, "количество продаж")),
                 amount_nu=amount,
-                month=_resolve_month(document, _cell(row, "дата")),
+                month=month_name(parsed_date),
+                period=resolve_period_key(parsed_date),
             )
         )
     return parsed

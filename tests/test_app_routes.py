@@ -29,6 +29,21 @@ def test_almabi_dashboard_available(app_client):
     assert "Al Ma BI" in response.text
     assert "test_pq" in response.text
     assert "AlMaBi R&D" not in response.text
+    assert "data-period-picker" in response.text
+    assert 'data-filter-select="direction"' in response.text
+    assert 'data-filter-select="projectGroup"' in response.text
+    assert 'data-filter-select="project"' in response.text
+    assert 'data-filter-select="contract"' in response.text
+    assert "data-filter-search" in response.text
+    assert "data-filter-select-all" in response.text
+    assert "data-filter-chips" in response.text
+    assert "Выбрать все" in response.text
+    assert "data-period-trigger" in response.text
+    assert "data-period-calendar" in response.text
+    assert "data-period-year-nav" in response.text
+    assert "<select data-period-filter=" not in response.text
+    assert 'fetch(`/api/almabi/dashboard' in response.text
+    assert "AbortController" in response.text
 
 
 def test_almabi_charts_page_available(app_client):
@@ -42,6 +57,13 @@ def test_almabi_charts_page_available(app_client):
     assert "charts-sidebar" in response.text
     assert "charts-board" in response.text
     assert "charts_page.css" in response.text
+    assert response.text.count('data-server-filter="') == 4
+    assert "data-period-picker" in response.text
+    assert "data-period-year-nav" in response.text
+    assert "data-server-period" not in response.text
+    assert "data-filter-year" not in response.text
+    assert "data-filter-quarter" not in response.text
+    assert "data-filter-month" not in response.text
 
 
 def test_almabi_test_excel_page_available(app_client):

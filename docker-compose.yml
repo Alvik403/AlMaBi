@@ -10,14 +10,22 @@ services:
       - "18001:8000"
     environment:
       DEBUG: "true"
+      AUTH_ENABLED: "false"
       APP_PORT: "8000"
       UPLOADS_DIR: /app/uploads
       RUNTIME_DIR: /app/runtime
       LOGS_DIR: /app/logs
+      LOG_TO_FILES: "true"
     volumes:
-      - ./uploads:/app/uploads
-      - ./runtime:/app/runtime
-      - ./logs:/app/logs
+      # Named volumes: bind-mount ./uploads on Windows blocks uid 10001 (rename in .incoming).
+      - almabi_uploads:/app/uploads
+      - almabi_runtime:/app/runtime
+      - almabi_logs:/app/logs
     working_dir: /app
     # Без --reload: иначе watchfiles перезапускает сервер при каждой записи в ./logs
     command: ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+
+volumes:
+  almabi_uploads:
+  almabi_runtime:
+  almabi_logs:

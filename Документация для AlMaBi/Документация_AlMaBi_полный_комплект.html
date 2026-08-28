@@ -106,8 +106,6 @@ footer.note {
   <div class="wrap">
     <header class="hero">
       <h1>Документация Al Ma BI</h1>
-      <p>Полный комплект: архитектура, модель данных Excel/P&amp;L, API, развёртывание, ИБ.</p>
-      <p>Репозиторий: https://github.com/Alvik403/AlMaBi.git · Дата комплекта: июль 2026</p>
     </header>
     <nav class="toc">
       <h2>Содержание</h2>
@@ -125,72 +123,6 @@ footer.note {
     </nav>
     <section class="doc" id="00_Оглавление">
 <h1>Документация проекта «Al Ma BI»</h1>
-<p><strong>Версия продукта:</strong> текущая ветка разработки<br />
-<strong>Репозиторий:</strong> https://github.com/Alvik403/AlMaBi.git<br />
-<strong>Ветка:</strong> <code>dev</code> / <code>main</code><br />
-<strong>Дата комплекта:</strong> июль 2026  </p>
-<hr />
-<h2>Назначение комплекта</h2>
-<p>Набор документов описывает архитектуру, модель данных, развёртывание и меры информационной безопасности для:</p>
-<ul>
-<li>приёмочной проверки ИБ;</li>
-<li>передачи проекта в эксплуатацию;</li>
-<li>аудита и сопровождения.</li>
-</ul>
-<hr />
-<h2>Состав документов</h2>
-<table>
-<thead>
-<tr>
-<th>№</th>
-<th>Файл</th>
-<th>Содержание</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>01</td>
-<td><code>01_Описание_проекта.md</code></td>
-<td>Назначение, границы системы, пользователи, стек</td>
-</tr>
-<tr>
-<td>02</td>
-<td><code>02_Архитектура_приложения.md</code></td>
-<td>Компоненты, потоки данных, модули</td>
-</tr>
-<tr>
-<td>03</td>
-<td><code>03_Архитектура_хранилища.md</code></td>
-<td>Сессии, файловое хранилище, пути (без СУБД фактов)</td>
-</tr>
-<tr>
-<td>04</td>
-<td><code>04_API_и_маршруты.md</code></td>
-<td>HTTP API, HTML-страницы, мониторинг</td>
-</tr>
-<tr>
-<td>05</td>
-<td><code>05_Модель_данных_Excel.md</code></td>
-<td>Выгрузки 1С, join, P&amp;L, налоговые разрезы</td>
-</tr>
-<tr>
-<td>06</td>
-<td><code>06_Развертывание_и_эксплуатация.md</code></td>
-<td>Docker, env, порты, бэкапы, тесты</td>
-</tr>
-<tr>
-<td>07</td>
-<td><code>07_Документация_для_проверки_ИБ.md</code></td>
-<td>Паспорт ИБ, угрозы, контроли, остаточные риски</td>
-</tr>
-<tr>
-<td>08</td>
-<td><code>08_Чек_лист_проверки_ИБ.md</code></td>
-<td>Чек-лист для аудитора / администратора</td>
-</tr>
-</tbody>
-</table>
-<hr />
 <h2>Краткие технические характеристики</h2>
 <table>
 <thead>
@@ -222,7 +154,7 @@ footer.note {
 </tr>
 <tr>
 <td>Аутентификация</td>
-<td><strong>Не реализована</strong> (доступ открыт любому, кто достучался до порта)</td>
+<td>Не реализована (доступ открыт любому, кто достучался до порта)</td>
 </tr>
 <tr>
 <td>Порт по умолчанию</td>
@@ -231,34 +163,6 @@ footer.note {
 <tr>
 <td>Контейнер</td>
 <td><code>dashboard_web</code> (имя в compose)</td>
-</tr>
-</tbody>
-</table>
-<hr />
-<h2>Контакты / зоны ответственности (заполнить при передаче)</h2>
-<table>
-<thead>
-<tr>
-<th>Роль</th>
-<th>ФИО / подразделение</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Владелец продукта</td>
-<td></td>
-</tr>
-<tr>
-<td>Администратор сервера</td>
-<td></td>
-</tr>
-<tr>
-<td>Ответственный за ИБ</td>
-<td></td>
-</tr>
-<tr>
-<td>Разработчик / сопровождение</td>
-<td></td>
 </tr>
 </tbody>
 </table>
@@ -1071,12 +975,6 @@ curl -s -c cookies.txt -b cookies.txt \
 <li>Общая налоговая сторно-строка может наследовать льготный НО от зеркальной проводки.</li>
 <li>Если корзина налога БУ ≠ НУ → две Fact-строки (БУ-only и НУ-only).</li>
 </ul>
-<h2>5.11. Ограничения модели</h2>
-<ul>
-<li>Корректность цифр зависит от структуры выгрузок 1С и полноты аналитики.</li>
-<li>Нет версионирования фактов в БД — «версия» = набор файлов в сессии.</li>
-<li>PQ-название «Расходы на продажу» = UI «Коммерческие расходы».</li>
-</ul>
 </section>
 <section class="doc" id="06_Развертывание_и_эксплуатация">
 <h1>06. Развёртывание и эксплуатация</h1>
@@ -1258,13 +1156,46 @@ docker compose run --rm web pytest -q
 <li>Открыть Тест Excel и 1–2 KPI-отчёта.</li>
 <li>Проверить <code>/health</code> и <code>/ready</code>.</li>
 </ol>
+<h2>6.13. Файлы вне git и формат сумм</h2>
+<p><strong>Не коммитить</strong> (см. <code>.gitignore</code>):</p>
+<table>
+<thead>
+<tr>
+<th>Категория</th>
+<th>Пути</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Выгрузки 1С</td>
+<td><code>uploads/</code>, <code>*.xlsx</code> (кроме <code>fixtures/</code>)</td>
+</tr>
+<tr>
+<td>Логи</td>
+<td><code>logs/</code>, <code>*.log</code>, <code>debug-*.log</code></td>
+</tr>
+<tr>
+<td>Runtime / БД</td>
+<td><code>runtime/</code>, <code>*.sqlite3</code></td>
+</tr>
+<tr>
+<td>Секреты</td>
+<td><code>.env</code>, ключи, <code>credentials.json</code></td>
+</tr>
+<tr>
+<td>Документация</td>
+<td><code>Документация для AlMaBi/</code></td>
+</tr>
+<tr>
+<td>Кэш</td>
+<td><code>__pycache__/</code>, <code>.pytest_cache/</code>, <code>node_modules/</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Суммы:</strong> расчёты в pipeline — полная точность float; на экране — <strong>целые рубли</strong> (без копеек), только форматирование.</p>
 </section>
 <section class="doc" id="07_Документация_для_проверки_ИБ">
 <h1>07. Документация для проверки информационной безопасности</h1>
-<p><strong>Объект:</strong> Al Ma BI (AlMaBi)<br />
-<strong>Тип документа:</strong> паспорт ИБ / материалы для аудита<br />
-<strong>Классификация данных (уточнить владельцем):</strong> [ ] общедоступные [ ] внутренние [ ] конфиденциальные  </p>
-<hr />
 <h2>7.1. Краткое описание объекта защиты</h2>
 <p>Веб-приложение для построения управленческого P&amp;L по Excel-выгрузкам 1С. Развёртывается в Docker. Доступ предполагается во <strong>внутренней сети / VPN</strong>. Содержит финансовые/управленческие данные из загружаемых файлов (выручка, себестоимость, договоры, контрагенты, налоговые режимы).</p>
 <h2>7.2. Активы</h2>
@@ -1727,51 +1658,9 @@ docker compose run --rm web pytest -q
 </tr>
 </tbody>
 </table>
-<h2>7.9. Контакты для аудита (заполнить)</h2>
-<table>
-<thead>
-<tr>
-<th>Роль</th>
-<th>ФИО</th>
-<th>Контакт</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Владелец информации</td>
-<td></td>
-<td></td>
-</tr>
-<tr>
-<td>Администратор ИС</td>
-<td></td>
-<td></td>
-</tr>
-<tr>
-<td>Представитель ИБ</td>
-<td></td>
-<td></td>
-</tr>
-<tr>
-<td>Дата проверки</td>
-<td></td>
-<td></td>
-</tr>
-<tr>
-<td>Результат</td>
-<td>[ ] принято [ ] принято с замечаниями [ ] не принято</td>
-<td></td>
-</tr>
-</tbody>
-</table>
 </section>
 <section class="doc" id="08_Чек_лист_проверки_ИБ">
 <h1>08. Чек-лист проверки информационной безопасности</h1>
-<p><strong>Система:</strong> Al Ma BI (AlMaBi)<br />
-<strong>Проверяющий:</strong> <strong><em>_</em></strong><strong><em>_</em></strong><strong><em><br />
-<strong>Дата:</strong> </em></strong><strong><em>_</em></strong><strong><em>_</em></strong>  </p>
-<p>Отметки: ✅ выполнено / ❌ не выполнено / ➖ не применимо / 📝 замечание</p>
-<hr />
 <h2>A. Конфигурация и секреты</h2>
 <table>
 <thead>
@@ -2134,46 +2023,7 @@ docker compose run --rm web pytest -q
 </tr>
 </tbody>
 </table>
-<hr />
-<h2>Итог проверки</h2>
-<table>
-<thead>
-<tr>
-<th>Показатель</th>
-<th>Значение</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Критичных замечаний</td>
-<td></td>
-</tr>
-<tr>
-<td>Существенных замечаний</td>
-<td></td>
-</tr>
-<tr>
-<td>Рекомендаций</td>
-<td></td>
-</tr>
-<tr>
-<td>Решение</td>
-<td>[ ] ввод в эксплуатацию разрешён</td>
-</tr>
-<tr>
-<td></td>
-<td>[ ] разрешён после устранения</td>
-</tr>
-<tr>
-<td></td>
-<td>[ ] не разрешён</td>
-</tr>
-</tbody>
-</table>
-<p><strong>Подпись проверяющего:</strong> <strong><em>_</em></strong><strong><em>_</em></strong><strong><em><br />
-<strong>Подпись владельца системы:</strong> </em></strong><strong><em>_</em></strong><strong><em>_</em></strong>  </p>
 </section>
-    <footer class="note">Сгенерировано из markdown в папке «Документация для AlMaBi».</footer>
   </div>
 </body>
 </html>

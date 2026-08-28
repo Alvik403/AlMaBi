@@ -25,9 +25,31 @@ docker compose up --build -d
 - `DEBUG` — включает debug-режим приложения.
 - `APP_HOST`, `APP_PORT` — параметры запуска uvicorn.
 - `SESSION_SECRET` — ключ signed-cookie сессий.
+- `AUTH_ENABLED` — локальная аутентификация; в production должна быть включена.
+- `SESSION_HTTPS_ONLY`, `SESSION_MAX_AGE_SECONDS` — защищённая cookie и срок сессии.
+- `AUTH_DB` — SQLite с пользователями и отзывными сессиями.
+- `ALLOWED_HOSTS` — допустимые Host-заголовки через запятую.
+- `MAX_UPLOAD_BYTES`, `UPLOAD_QUOTA_BYTES` — лимит запроса и пользовательская квота.
 - `UPLOADS_DIR` — папка загруженных Excel-файлов AlMaBi.
 - `RUNTIME_DIR` — runtime-папка приложения.
 - `LOGS_DIR` — JSON-логи приложения и audit.
+
+При `AUTH_ENABLED=true` и `DEBUG=false` приложение не запускается со слабым
+`SESSION_SECRET` или без `SESSION_HTTPS_ONLY=true`.
+
+Первый администратор создаётся интерактивно:
+
+```bash
+python scripts/manage_users.py bootstrap admin
+```
+
+Дальнейшие пользователи управляются на `/admin/users` или командами
+`create`, `password`, `disable`, `list` этого скрипта. Роли: `viewer`
+(только чтение), `uploader` (чтение и загрузка), `admin` (полный доступ).
+Документация для службы безопасности и эксплуатации:
+
+- `docs/SECURITY_COMPLIANCE.md` — контроли, статус аудита, чек-лист sign-off СБ;
+- `docs/SECURITY_OPERATIONS.md` — production Docker, backup, rollout, retention.
 
 ## Входные файлы
 
@@ -48,6 +70,14 @@ npm run build
 ```
 
 В Docker сборка выполняется в отдельном frontend-stage. Compose не монтирует весь проект в `/app`, чтобы не затереть собранные `static/dist`.
+
+На Windows для `uploads`, `runtime` и `logs` используются **named volumes** (не `./uploads` с хоста): иначе пользователь `10001` в контейнере не может переименовывать файлы в `.incoming`. Чтобы подложить локальные Excel из `./uploads`:
+
+```bash
+docker compose run --rm -v "${PWD}/uploads:/seed:ro" web sh -c "cp -a /seed/. /app/uploads/ 2>/dev/null || true"
+```
+
+(или скопируйте файлы через UI загрузки в дашборде.)
 
 ## Тесты
 

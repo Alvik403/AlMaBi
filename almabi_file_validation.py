@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from zipfile import BadZipFile, ZipFile, is_zipfile
 
 from openpyxl import load_workbook
 
@@ -17,6 +18,10 @@ EXPORT_LABELS = {
     "cost": "Себестоимость",
     "cost_nu": "Себестоимость НУ",
 }
+
+MAX_XLSX_ENTRIES = 10_000
+MAX_XLSX_UNCOMPRESSED_BYTES = 1024 * 1024 * 1024
+MAX_XLSX_COMPRESSION_RATIO = 200
 
 
 @dataclass(frozen=True)
@@ -81,6 +86,29 @@ def _detect_export_type(cells: list[str]) -> str | None:
     return None
 
 
+def validate_xlsx_container(path: Path) -> None:
+    if not is_zipfile(path):
+        raise ValueError("Файл не является корректным XLSX-контейнером")
+    try:
+        with ZipFile(path) as archive:
+            entries = archive.infolist()
+            if len(entries) > MAX_XLSX_ENTRIES:
+                raise ValueError("XLSX содержит слишком много элементов")
+            names = {entry.filename for entry in entries}
+            if "[Content_Types].xml" not in names:
+                raise ValueError("XLSX не содержит обязательную структуру")
+            total_size = sum(entry.file_size for entry in entries)
+            total_compressed = sum(entry.compress_size for entry in entries)
+            if total_size > MAX_XLSX_UNCOMPRESSED_BYTES:
+                raise ValueError("Распакованный XLSX превышает безопасный лимит")
+            if total_compressed and total_size / total_compressed > MAX_XLSX_COMPRESSION_RATIO:
+                raise ValueError("XLSX имеет подозрительно высокий коэффициент сжатия")
+            if any(entry.flag_bits & 0x1 for entry in entries):
+                raise ValueError("Зашифрованные XLSX не поддерживаются")
+    except BadZipFile as exc:
+        raise ValueError("Повреждённый XLSX-контейнер") from exc
+
+
 def validate_almabi_export(path: Path, *, expected_type: str | None = None) -> AlmabiValidationResult:
     if path.suffix.casefold() != ".xlsx":
         raise ValueError("Поддерживаются только файлы .xlsx")
@@ -90,6 +118,7 @@ def validate_almabi_export(path: Path, *, expected_type: str | None = None) -> A
         raise ValueError("Файл пустой")
     if expected_type and expected_type not in EXPORT_TYPES:
         raise ValueError(f"Неизвестный тип выгрузки: {expected_type}")
+    validate_xlsx_container(path)
 
     try:
         workbook = load_workbook(path, read_only=True, data_only=True)

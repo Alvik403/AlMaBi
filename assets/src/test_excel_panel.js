@@ -8,6 +8,8 @@ function parseRows(root) {
   }
 }
 
+const CSRF_TOKEN = document.querySelector('meta[name="csrf-token"]')?.content || "";
+
 function parseColumns(root) {
   const script = root.querySelector("[data-test-excel-columns]");
   if (!script?.textContent) return [];
@@ -19,6 +21,15 @@ function parseColumns(root) {
 }
 
 const amountColumns = ["Сумма", "Сумма БУ", "Сумма НУ", "Себестоимость.Сумма"];
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
 
 function numeric(value) {
   const parsed = Number(value || 0);
@@ -105,7 +116,7 @@ function initPanel(root) {
           </td>
           ${columns
             .map((column) => {
-              const value = amountColumns.includes(column) ? formatMoney(row[column]) : String(row[column] ?? "");
+              const value = amountColumns.includes(column) ? formatMoney(row[column]) : escapeHtml(row[column]);
               const classes = amountColumns.includes(column) ? "text-right font-medium tabular-nums" : "";
               return `<td class="px-3 py-2 whitespace-nowrap ${classes}">${value}</td>`;
             })
@@ -161,7 +172,11 @@ function initPanel(root) {
       status.className = "mt-2 text-xs text-brand-700";
     }
     try {
-      const response = await fetch(root.dataset.uploadUrl, { method: "POST", body: formData });
+      const response = await fetch(root.dataset.uploadUrl, {
+        method: "POST",
+        headers: { "X-CSRF-Token": CSRF_TOKEN },
+        body: formData,
+      });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.detail || "Не удалось загрузить файл");
       window.location.reload();

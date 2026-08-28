@@ -119,6 +119,57 @@ def parse_date_from_text(value: object) -> date | None:
     return None
 
 
+def period_key_from_date(value: object) -> str | None:
+    """Вернуть фактический период даты в каноническом формате YYYY-MM."""
+    parsed = parse_date(value)
+    return parsed.strftime("%Y-%m") if parsed else None
+
+
+def period_key_from_text(value: object) -> str | None:
+    """Извлечь из текста полную дату и вернуть её период YYYY-MM."""
+    parsed = parse_date_from_text(value)
+    return parsed.strftime("%Y-%m") if parsed else None
+
+
+def resolve_period_key(date_value: object, fallback_text: object = None) -> str | None:
+    """Период из отдельной даты, затем fallback на дату внутри текста."""
+    return period_key_from_date(date_value) or period_key_from_text(fallback_text)
+
+
+def period_label(period: object, *, fallback: str = "") -> str:
+    """Отобразить YYYY-MM как «Январь 2026», сохранив безопасный fallback."""
+    text = normalize_text(period)
+    match = re.fullmatch(r"(\d{4})-(0[1-9]|1[0-2])", text)
+    if not match:
+        return fallback or text
+    return f"{MONTH_NAMES[int(match.group(2))]} {match.group(1)}"
+
+
+def period_sort_key(period: object, *, fallback: object = None) -> tuple[int, int, str]:
+    """Ключ хронологической сортировки; невалидные значения уходят в конец."""
+    for candidate in (period, fallback):
+        text = normalize_text(candidate)
+        match = re.fullmatch(r"(\d{4})-(0[1-9]|1[0-2])", text)
+        if match:
+            return int(match.group(1)), int(match.group(2)), ""
+    fallback_text = normalize_text(fallback)
+    month_number = next(
+        (number for number, name in MONTH_NAMES.items() if name.casefold() == fallback_text.casefold()),
+        None,
+    )
+    if month_number is not None:
+        return 9998, month_number, ""
+    return 9999, 13, normalize_text(period or fallback).casefold()
+
+
+def period_or_month(value: object) -> str:
+    """Ключ периода объекта с fallback для старых объектов без ``period``."""
+    period = normalize_text(getattr(value, "period", ""))
+    if period:
+        return period
+    return normalize_text(getattr(value, "month", ""))
+
+
 def resolve_column_map(headers: list[str], aliases: dict[str, tuple[str, ...]]) -> dict[str, int]:
     normalized_headers = [normalize_header(header) for header in headers]
     resolved: dict[str, int] = {}

@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from fastapi import HTTPException, Request, UploadFile
 
+from almabi_file_security import resolve_user_stored_xlsx, user_upload_dir
 from almabi_file_validation import validate_almabi_export
 from almabi_pq_buh_register import build_pq_buh_register_table, table_summary as buh_table_summary
 from almabi_pq_cost import build_pq_cost_table, table_summary as cost_table_summary
@@ -24,7 +25,9 @@ PROJECTS_FILTER_COLUMNS = ("Раздел", "Проект", "Группа про�
 BUH_FILTER_COLUMNS = ("Раздел", "Основной раздел", "Вид НО", "Проект", "Группа проектов", "Направление")
 
 
-def _upload_dir(settings: Settings) -> Path:
+def _upload_dir(settings: Settings, request: Request | None = None) -> Path:
+    if request is not None:
+        return user_upload_dir(request, settings.resolved_uploads_dir, "almabi_test_excel")
     path = settings.resolved_uploads_dir / "almabi_test_excel"
     path.mkdir(parents=True, exist_ok=True)
     return path
@@ -41,11 +44,15 @@ def _meta_from_session(request: Request, key: str) -> dict[str, str] | None:
     return {"original": str(original), "stored": str(stored_name)}
 
 
-def _path_from_meta(settings: Settings, meta: dict[str, str] | None) -> Path | None:
+def _path_from_meta(request: Request, settings: Settings, meta: dict[str, str] | None) -> Path | None:
     if meta is None:
         return None
-    path = _upload_dir(settings) / meta["stored"]
-    return path if path.exists() else None
+    return resolve_user_stored_xlsx(
+        request,
+        settings.resolved_uploads_dir,
+        "almabi_test_excel",
+        meta["stored"],
+    )
 
 
 def get_test_excel_revenue_meta(request: Request) -> dict[str, str] | None:
@@ -65,19 +72,19 @@ def get_test_excel_buh_meta(request: Request) -> dict[str, str] | None:
 
 
 def get_test_excel_revenue_path(request: Request, settings: Settings) -> Path | None:
-    return _path_from_meta(settings, get_test_excel_revenue_meta(request))
+    return _path_from_meta(request, settings, get_test_excel_revenue_meta(request))
 
 
 def get_test_excel_cost_path(request: Request, settings: Settings) -> Path | None:
-    return _path_from_meta(settings, get_test_excel_cost_meta(request))
+    return _path_from_meta(request, settings, get_test_excel_cost_meta(request))
 
 
 def get_test_excel_projects_path(request: Request, settings: Settings) -> Path | None:
-    return _path_from_meta(settings, get_test_excel_projects_meta(request))
+    return _path_from_meta(request, settings, get_test_excel_projects_meta(request))
 
 
 def get_test_excel_buh_path(request: Request, settings: Settings) -> Path | None:
-    return _path_from_meta(settings, get_test_excel_buh_meta(request))
+    return _path_from_meta(request, settings, get_test_excel_buh_meta(request))
 
 
 def _path_from_session_field(request: Request, settings: Settings, session_key: str, field: str) -> Path | None:
@@ -87,8 +94,12 @@ def _path_from_session_field(request: Request, settings: Settings, session_key: 
     stored_name = stored.get(field)
     if not stored_name:
         return None
-    path = _upload_dir(settings) / str(stored_name)
-    return path if path.exists() else None
+    return resolve_user_stored_xlsx(
+        request,
+        settings.resolved_uploads_dir,
+        "almabi_test_excel",
+        stored_name,
+    )
 
 
 def get_test_excel_cost_path_for_buh(request: Request, settings: Settings) -> Path | None:
@@ -110,8 +121,13 @@ def get_test_excel_projects_path_for_cost(request: Request, settings: Settings) 
     if isinstance(cost_meta, dict):
         projects_name = cost_meta.get("projects_stored")
         if projects_name:
-            path = _upload_dir(settings) / str(projects_name)
-            if path.exists():
+            path = resolve_user_stored_xlsx(
+                request,
+                settings.resolved_uploads_dir,
+                "almabi_test_excel",
+                projects_name,
+            )
+            if path is not None:
                 return path
     projects_path = get_test_excel_projects_path(request, settings)
     if projects_path is not None:
@@ -161,7 +177,7 @@ def _filter_options(rows: list[dict[str, object]], columns: tuple[str, ...]) -> 
 
 def load_test_excel_revenue_payload(request: Request, settings: Settings) -> dict[str, object]:
     meta = get_test_excel_revenue_meta(request)
-    path = _path_from_meta(settings, meta)
+    path = _path_from_meta(request, settings, meta)
     if meta is None or path is None:
         empty = _empty_payload(filter_columns=REVENUE_FILTER_COLUMNS)
         empty["summary"] = revenue_table_summary([])
@@ -180,7 +196,7 @@ def load_test_excel_revenue_payload(request: Request, settings: Settings) -> dic
 
 def load_test_excel_cost_payload(request: Request, settings: Settings) -> dict[str, object]:
     meta = get_test_excel_cost_meta(request)
-    path = _path_from_meta(settings, meta)
+    path = _path_from_meta(request, settings, meta)
     if meta is None or path is None:
         empty = _empty_payload(filter_columns=COST_FILTER_COLUMNS)
         empty["summary"] = cost_table_summary([])
@@ -212,7 +228,7 @@ def load_test_excel_cost_payload(request: Request, settings: Settings) -> dict[s
 
 def load_test_excel_projects_payload(request: Request, settings: Settings) -> dict[str, object]:
     meta = get_test_excel_projects_meta(request)
-    path = _path_from_meta(settings, meta)
+    path = _path_from_meta(request, settings, meta)
     if meta is None or path is None:
         empty = _empty_payload(filter_columns=PROJECTS_FILTER_COLUMNS)
         empty["summary"] = projects_table_summary([])
@@ -231,7 +247,7 @@ def load_test_excel_projects_payload(request: Request, settings: Settings) -> di
 
 def load_test_excel_buh_payload(request: Request, settings: Settings) -> dict[str, object]:
     meta = get_test_excel_buh_meta(request)
-    path = _path_from_meta(settings, meta)
+    path = _path_from_meta(request, settings, meta)
     if meta is None or path is None:
         empty = _empty_payload(filter_columns=BUH_FILTER_COLUMNS)
         empty["summary"] = buh_table_summary([])
@@ -320,7 +336,7 @@ async def _store_uploaded_file(
 
 
 async def store_test_excel_revenue_upload(request: Request, settings: Settings, file: UploadFile) -> dict[str, object]:
-    upload_dir = _upload_dir(settings)
+    upload_dir = _upload_dir(settings, request)
     try:
         original, stored_name, final_path = await _store_uploaded_file(
             upload=file,
@@ -359,7 +375,7 @@ async def store_test_excel_cost_upload(
     cost_file: UploadFile,
     projects_file: UploadFile | None = None,
 ) -> dict[str, object]:
-    upload_dir = _upload_dir(settings)
+    upload_dir = _upload_dir(settings, request)
     cost_final: Path | None = None
     projects_final: Path | None = None
     projects_original: str | None = None
@@ -421,7 +437,7 @@ async def store_test_excel_cost_upload(
 
 
 async def store_test_excel_projects_upload(request: Request, settings: Settings, file: UploadFile) -> dict[str, object]:
-    upload_dir = _upload_dir(settings)
+    upload_dir = _upload_dir(settings, request)
     try:
         original, stored_name, final_path = await _store_uploaded_file(
             upload=file,
@@ -461,7 +477,7 @@ async def store_test_excel_buh_upload(
     cost_file: UploadFile | None = None,
     revenue_file: UploadFile | None = None,
 ) -> dict[str, object]:
-    upload_dir = _upload_dir(settings)
+    upload_dir = _upload_dir(settings, request)
     buh_final: Path | None = None
     cost_final: Path | None = None
     revenue_final: Path | None = None

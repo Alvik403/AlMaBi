@@ -3,7 +3,8 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any
 
-from almabi_mock_data import MONTHS, _MONTHS_SHORT
+from almabi_dashboard_builder import _ordered_period_keys, period_labels, periods_from_facts
+from almabi_excel_utils import period_label
 from almabi_pipeline import Fact
 
 EXPENSE_KPI_NAMES = (
@@ -94,15 +95,27 @@ def build_expense_kpi_chart(summary_lookup: dict[str, dict[str, Any]]) -> list[d
         rows.append(
             {
                 "name": name,
-                "fact": sum(abs(float(fact.get(month, 0) or 0)) for month in MONTHS),
-                "plan": sum(abs(float(plan.get(month, 0) or 0)) for month in MONTHS),
+                "fact": sum(abs(float(value or 0)) for value in fact.values()),
+                "plan": sum(abs(float(value or 0)) for value in plan.values()),
             }
         )
     return rows
 
 
-def build_monthly_expense_series(summary_lookup: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
-    totals = {month: {"fact": 0.0, "plan": 0.0} for month in MONTHS}
+def build_monthly_expense_series(
+    summary_lookup: dict[str, dict[str, Any]],
+    *,
+    periods: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    active_periods = periods or _ordered_period_keys(
+        {
+            period
+            for node in summary_lookup.values()
+            for scenario_values in (node.get("values") or {}).values()
+            for period in scenario_values
+        }
+    )
+    totals = {period: {"fact": 0.0, "plan": 0.0} for period in active_periods}
     for name in EXPENSE_KPI_NAMES:
         node = summary_lookup.get(name)
         if not node:
@@ -110,17 +123,18 @@ def build_monthly_expense_series(summary_lookup: dict[str, dict[str, Any]]) -> l
         values = node.get("values") or {}
         fact = values.get("Факт БУ") or {}
         plan = values.get("План") or {}
-        for month in MONTHS:
-            totals[month]["fact"] += abs(float(fact.get(month, 0) or 0))
-            totals[month]["plan"] += abs(float(plan.get(month, 0) or 0))
+        for period in active_periods:
+            totals[period]["fact"] += abs(float(fact.get(period, 0) or 0))
+            totals[period]["plan"] += abs(float(plan.get(period, 0) or 0))
 
     return [
         {
-            "month": short,
-            "fact": totals[full]["fact"],
-            "plan": totals[full]["plan"],
+            "month": period_label(period, fallback=period),
+            "period": period,
+            "fact": totals[period]["fact"],
+            "plan": totals[period]["plan"],
         }
-        for full, short in zip(MONTHS, _MONTHS_SHORT, strict=True)
+        for period in active_periods
     ]
 
 
@@ -129,11 +143,14 @@ def build_analytics_charts(
     summary_rows: list[dict[str, Any]],
     *,
     plan_facts: list[Fact] | None = None,
+    periods: list[str] | None = None,
 ) -> dict[str, Any]:
+    active_periods = periods or periods_from_facts(facts, plan_facts)
     lookup = {row["name"]: row for row in summary_rows}
     direction = build_direction_charts(facts, plan_facts=plan_facts)
     return {
         **direction,
         "expense_kpis": build_expense_kpi_chart(lookup),
-        "expenses_by_month": build_monthly_expense_series(lookup),
+        "expenses_by_month": build_monthly_expense_series(lookup, periods=active_periods),
+        "period_labels": period_labels(active_periods),
     }

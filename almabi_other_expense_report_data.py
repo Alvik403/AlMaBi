@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from fastapi import HTTPException, Request, UploadFile
 
+from almabi_file_security import resolve_user_stored_xlsx
 from almabi_file_validation import validate_almabi_export
 from almabi_other_expense_report import DETAIL_COLUMNS, build_other_expense_report
 from almabi_test_excel_data import (
@@ -35,11 +36,10 @@ def _meta_from_session(request: Request) -> dict[str, str] | None:
     return {"original": str(original), "stored": str(stored_name)}
 
 
-def _path_from_meta(settings: Settings, meta: dict[str, str] | None) -> Path | None:
+def _path_from_meta(request: Request, settings: Settings, meta: dict[str, str] | None) -> Path | None:
     if meta is None:
         return None
-    path = test_excel_upload_dir(settings) / meta["stored"]
-    return path if path.exists() else None
+    return resolve_user_stored_xlsx(request, settings.resolved_uploads_dir, "almabi_test_excel", meta["stored"])
 
 
 def _path_from_session_field(request: Request, settings: Settings, field: str) -> Path | None:
@@ -49,12 +49,11 @@ def _path_from_session_field(request: Request, settings: Settings, field: str) -
     stored_name = stored.get(field)
     if not stored_name:
         return None
-    path = test_excel_upload_dir(settings) / str(stored_name)
-    return path if path.exists() else None
+    return resolve_user_stored_xlsx(request, settings.resolved_uploads_dir, "almabi_test_excel", stored_name)
 
 
 def _resolve_buh_path(request: Request, settings: Settings) -> Path | None:
-    path = _path_from_meta(settings, _meta_from_session(request))
+    path = _path_from_meta(request, settings, _meta_from_session(request))
     if path is not None:
         return path
     return get_test_excel_buh_path(request, settings)
@@ -195,7 +194,7 @@ async def store_other_expense_report_upload(
     cost_file: UploadFile | None = None,
     revenue_file: UploadFile | None = None,
 ) -> dict[str, object]:
-    upload_dir = test_excel_upload_dir(settings)
+    upload_dir = test_excel_upload_dir(settings, request)
     buh_final: Path | None = None
     cost_final: Path | None = None
     revenue_final: Path | None = None

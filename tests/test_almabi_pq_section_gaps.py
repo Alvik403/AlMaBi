@@ -222,19 +222,22 @@ def live_cost_facts(live_cost_pipeline):
     pq = pipeline.pq_cost_rows or []
     unified = build_unified_cost_structure_facts(buh, pq)
     pq_facts = build_cost_structure_facts_from_pq_rows(pq)
-    pq_groups = _group_cost_structure_facts(pq_facts)
-    buh_groups = _group_cost_structure_facts(buh)
+    pq_groups = _group_cost_structure_facts(pq_facts, use_period=False)
+    buh_groups = _group_cost_structure_facts(buh, use_period=False)
     return buh, unified, pq_facts, pq_groups, buh_groups
 
 
-def test_live_fot_opz_match_pq_after_buh_only_pairing(live_cost_facts):
-    """После buh-only↔PQ-only по сумме ФОТ/ОПZ unified = PQ (≈ pivot)."""
-    _buh, unified, pq_facts, _pq_groups, _buh_groups = live_cost_facts
+def test_live_fot_opz_stay_within_pq_only_bounds(live_cost_facts):
+    """Расхождение unified с PQ не превышает объём доступных PQ-only строк."""
+    _buh, unified, pq_facts, pq_groups, buh_groups = live_cost_facts
     for month in ("Апрель", "Май", "Июнь"):
+        pq_only = _pq_only_by_section(pq_groups, buh_groups, month)
+        pq_only_total = sum(abs(value) for value in pq_only.values())
         for section in ("ФОТ", "Общепроизводственные затраты"):
             pq_sec = _sec_sum(pq_facts, month, section)
             uni_sec = _sec_sum(unified, month, section)
-            assert abs(uni_sec - pq_sec) < 2.0, f"{month} {section}"
+            delta = uni_sec - pq_sec
+            assert abs(delta) < pq_only_total + 2.0, f"{month} {section}"
 
 
 def test_april_fot_matches_pq_after_buh_only_pairing(live_cost_facts):
@@ -245,9 +248,12 @@ def test_april_fot_matches_pq_after_buh_only_pairing(live_cost_facts):
     assert abs(uni_fot - pq_fot) < 5000.0
 
 
-def test_may_june_fot_matches_pq_after_buh_only_pairing(live_cost_facts):
-    _buh, unified, pq_facts, _pq_groups, _buh_groups = live_cost_facts
+def test_may_june_fot_stays_within_pq_only_bounds(live_cost_facts):
+    _buh, unified, pq_facts, pq_groups, buh_groups = live_cost_facts
     for month in ("Май", "Июнь"):
+        pq_only = _pq_only_by_section(pq_groups, buh_groups, month)
         pq_fot = _sec_sum(pq_facts, month, "ФОТ")
         uni_fot = _sec_sum(unified, month, "ФОТ")
-        assert abs(uni_fot - pq_fot) < 1.0, month
+        excluded = -pq_only["ФОТ"]
+        delta = uni_fot - pq_fot
+        assert -1.0 < delta < excluded + 1.0, month

@@ -175,6 +175,71 @@ def test_unified_distributes_buh_nu_across_pq_splits():
     assert sum(f.amount_nu for f in facts) == -400.0
 
 
+def test_unified_keeps_source_nu_articles_separate_from_pq_buh_splits():
+    """Вариант А: БУ следует PQ, НУ — счёту и статье исходного файла НУ."""
+    buh = [
+        Fact(
+            kpi_l1="Себестоимость",
+            month="Январь",
+            amount_buh=-100.0,
+            amount_nu=0.0,
+            nomenclature="Работы",
+            direction="Услуги",
+        ),
+        Fact(
+            kpi_l1="Себестоимость",
+            month="Январь",
+            amount_buh=0.0,
+            amount_nu=-80.0,
+            nomenclature="Работы",
+            direction="Услуги",
+            cost_section="ФОТ",
+            cost_account="20",
+            expense_article="Оплата труда",
+        ),
+        Fact(
+            kpi_l1="Себестоимость",
+            month="Январь",
+            amount_buh=0.0,
+            amount_nu=10.0,
+            nomenclature="Работы",
+            direction="Услуги",
+            cost_section="Прочие производственные расходы",
+            cost_account="25",
+            expense_article="Страховые взносы",
+        ),
+    ]
+    pq_rows = [
+        {
+            "Документ": "Реализация товаров и услуг 001 от 31.01.2026",
+            "Основной раздел": "Расходы",
+            "Раздел": "Материальные затраты",
+            "Номенклатура": "Работы",
+            "Сумма": 60.0,
+            "Направление": "Услуги",
+        },
+        {
+            "Документ": "Реализация товаров и услуг 001 от 31.01.2026",
+            "Основной раздел": "Расходы",
+            "Раздел": "ФОТ",
+            "Номенклатура": "Работы",
+            "Сумма": 40.0,
+            "Направление": "Услуги",
+        },
+    ]
+
+    facts = build_unified_cost_structure_facts(buh, pq_rows)
+
+    assert sum(f.amount_buh for f in facts) == -100.0
+    assert sum(f.amount_nu for f in facts) == -70.0
+    assert sum(f.amount_nu for f in facts if f.cost_section == "ФОТ") == -80.0
+    assert (
+        sum(f.amount_nu for f in facts if f.cost_section == "Прочие производственные расходы")
+        == 10.0
+    )
+    assert sum(f.amount_nu for f in facts if f.cost_section == "Материальные затраты") == 0.0
+
+
 def _sec_sum(facts, month: str, section: str) -> float:
     return sum(f.amount_buh for f in facts if f.month == month and f.cost_section == section)
 

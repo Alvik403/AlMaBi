@@ -1,18 +1,34 @@
 from __future__ import annotations
 
 import logging
+import secrets
 import time
 from typing import Any
 from urllib.parse import quote, urlencode
 from uuid import uuid4
 
-from fastapi import FastAPI, File, Request, UploadFile
+from fastapi import FastAPI, File, Form, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from almabi_auth import (
+    AuthMiddleware,
+    LoginThrottle,
+    SESSION_CSRF_KEY,
+    SESSION_TOKEN_KEY,
+    SESSION_USER_ID_KEY,
+)
+from almabi_auth_store import AuthStore, AuthStoreError, normalize_username
+from almabi_http_security import (
+    RequestBodyLimitMiddleware,
+    RequestTimeoutMiddleware,
+    SecurityHeadersMiddleware,
+)
 from almabi_data_source import (
+    adopt_latest_user_uploads,
     almabi_data_context,
     store_almabi_upload,
     store_almabi_upload_bundle,
@@ -27,7 +43,7 @@ from almabi_commercial_expense_report_data import load_commercial_expense_report
 from almabi_other_expense_report_data import load_other_expense_report_payload, store_other_expense_report_upload
 from almabi_other_income_report_data import load_other_income_report_payload, store_other_income_report_upload
 from almabi_revenue_report_data import load_revenue_report_payload, store_revenue_report_upload
-from almabi_test_data import resolve_almabi_dashboard_data
+from almabi_test_data import resolve_almabi_dashboard_api_data, resolve_almabi_dashboard_data
 from almabi_test_excel_data import (
     load_test_excel_buh_payload,
     load_test_excel_cost_payload,
@@ -46,10 +62,28 @@ from settings import BASE_DIR, get_settings
 settings = get_settings()
 configure_logging(settings)
 logger = logging.getLogger("almabi.app")
+auth_store = AuthStore(settings.resolved_auth_db)
+login_throttle = LoginThrottle()
 
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 app = FastAPI(title=APP_BRAND, docs_url="/api/docs", redoc_url="/api/redoc", openapi_url="/api/openapi.json")
-app.add_middleware(SessionMiddleware, secret_key=settings.session_secret, same_site="lax")
+app.add_middleware(
+    RequestBodyLimitMiddleware,
+    max_bytes=settings.max_upload_bytes,
+    uploads_dir=settings.resolved_uploads_dir,
+    quota_bytes=settings.upload_quota_bytes,
+)
+app.add_middleware(RequestTimeoutMiddleware, timeout_seconds=settings.request_timeout_seconds)
+app.add_middleware(SecurityHeadersMiddleware, hsts=settings.session_https_only)
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_host_list)
+app.add_middleware(AuthMiddleware, store=auth_store, enabled=settings.auth_enabled)
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.session_secret,
+    same_site="lax",
+    https_only=settings.session_https_only,
+    max_age=settings.session_max_age_seconds,
+)
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static"), check_dir=False), name="static")
 
 @app.middleware("http")
@@ -137,6 +171,9 @@ def template_url_for(request: Request):
 def templated(request: Request, template_name: str, context: dict[str, Any], status_code: int = 200) -> HTMLResponse:
     ctx = {
         "request": request,
+        "csp_nonce": getattr(request.state, "csp_nonce", ""),
+        "csrf_token": request.session.get(SESSION_CSRF_KEY, ""),
+        "current_user": getattr(request.state, "current_user", None),
         "url_for": template_url_for(request),
         "almabi_data_context": almabi_data_context(request, settings),
         "app_brand": APP_BRAND,
@@ -145,6 +182,194 @@ def templated(request: Request, template_name: str, context: dict[str, Any], sta
         **context,
     }
     return templates.TemplateResponse(request, template_name, ctx, status_code=status_code)
+
+
+def _auth_template(
+    request: Request,
+    template_name: str,
+    context: dict[str, Any],
+    status_code: int = 200,
+) -> HTMLResponse:
+    ctx = {
+        "request": request,
+        "app_brand": APP_BRAND,
+        "csp_nonce": getattr(request.state, "csp_nonce", ""),
+        "csrf_token": request.session.get(SESSION_CSRF_KEY, ""),
+        "current_user": getattr(request.state, "current_user", None),
+        **context,
+    }
+    return templates.TemplateResponse(request, template_name, ctx, status_code=status_code)
+
+
+def _safe_next(value: str | None) -> str:
+    if not value or not value.startswith("/") or value.startswith("//"):
+        return "/dashboard/almabi"
+    return value
+
+
+def _valid_csrf(request: Request, supplied: str) -> bool:
+    expected = request.session.get(SESSION_CSRF_KEY, "")
+    return bool(expected and supplied and secrets.compare_digest(str(expected), supplied))
+
+
+@app.get("/login", response_class=HTMLResponse, name="login")
+def login_page(request: Request, next: str | None = Query(default=None)):
+    if not settings.auth_enabled:
+        return RedirectResponse(url="/dashboard/almabi", status_code=303)
+    token = request.session.get(SESSION_TOKEN_KEY)
+    if isinstance(token, str) and auth_store.resolve_session(token) is not None:
+        return RedirectResponse(url=_safe_next(next), status_code=303)
+    request.session.setdefault(SESSION_CSRF_KEY, secrets.token_urlsafe(32))
+    return _auth_template(request, "login.html", {"next_url": _safe_next(next), "error": None})
+
+
+@app.post("/login", response_class=HTMLResponse)
+def login_submit(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+    csrf_token: str = Form(...),
+    next_url: str = Form(default="/dashboard/almabi"),
+):
+    if not settings.auth_enabled:
+        return RedirectResponse(url="/dashboard/almabi", status_code=303)
+    if not _valid_csrf(request, csrf_token):
+        return _auth_template(
+            request,
+            "login.html",
+            {"next_url": _safe_next(next_url), "error": "Сессия формы устарела. Повторите вход."},
+            status_code=403,
+        )
+    client_ip = request.client.host if request.client else "unknown"
+    throttle_key = f"{client_ip}:{username.strip().casefold()}"
+    retry_after = login_throttle.retry_after(throttle_key)
+    if retry_after:
+        return _auth_template(
+            request,
+            "login.html",
+            {
+                "next_url": _safe_next(next_url),
+                "error": f"Слишком много попыток. Повторите через {retry_after} сек.",
+            },
+            status_code=429,
+        )
+    user = auth_store.authenticate(username, password)
+    if user is None:
+        login_throttle.failure(throttle_key)
+        return _auth_template(
+            request,
+            "login.html",
+            {"next_url": _safe_next(next_url), "error": "Неверное имя пользователя или пароль."},
+            status_code=401,
+        )
+    login_throttle.success(throttle_key)
+    request.session.clear()
+    request.session[SESSION_TOKEN_KEY] = auth_store.create_session(
+        user.id,
+        settings.session_max_age_seconds,
+    )
+    request.session[SESSION_USER_ID_KEY] = user.id
+    request.session[SESSION_CSRF_KEY] = secrets.token_urlsafe(32)
+    adopt_latest_user_uploads(request, settings)
+    return RedirectResponse(url=_safe_next(next_url), status_code=303)
+
+
+@app.post("/logout")
+def logout(request: Request, csrf_token: str = Form(...)):
+    if not _valid_csrf(request, csrf_token):
+        return JSONResponse({"detail": "Invalid CSRF token"}, status_code=403)
+    token = request.session.get(SESSION_TOKEN_KEY)
+    if isinstance(token, str):
+        auth_store.revoke_session(token)
+    request.session.clear()
+    return RedirectResponse(url="/login", status_code=303)
+
+
+@app.get("/admin/users", response_class=HTMLResponse, name="admin_users")
+def admin_users(request: Request):
+    return _auth_template(
+        request,
+        "admin_users.html",
+        {"users": auth_store.list_users(), "error": None, "message": None},
+    )
+
+
+@app.post("/admin/users", response_class=HTMLResponse)
+def admin_create_user(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+    role: str = Form(...),
+    csrf_token: str = Form(...),
+):
+    if not _valid_csrf(request, csrf_token):
+        return JSONResponse({"detail": "Invalid CSRF token"}, status_code=403)
+    error = None
+    try:
+        if len(password) < 12:
+            raise ValueError("Пароль должен содержать не менее 12 символов")
+        auth_store.create_user(username, password, role)
+    except (AuthStoreError, ValueError) as exc:
+        error = str(exc)
+    return _auth_template(
+        request,
+        "admin_users.html",
+        {
+            "users": auth_store.list_users(),
+            "error": error,
+            "message": None if error else "Пользователь создан.",
+        },
+        status_code=400 if error else 201,
+    )
+
+
+@app.post("/admin/users/{username}/disable")
+def admin_disable_user(request: Request, username: str, csrf_token: str = Form(...)):
+    if not _valid_csrf(request, csrf_token):
+        return JSONResponse({"detail": "Invalid CSRF token"}, status_code=403)
+    try:
+        normalized_username = normalize_username(username)
+    except ValueError as exc:
+        return JSONResponse({"detail": str(exc)}, status_code=400)
+    current_user = getattr(request.state, "current_user", None)
+    if current_user is not None and current_user.username == normalized_username:
+        return JSONResponse({"detail": "Нельзя отключить текущего администратора"}, status_code=400)
+    target = next(
+        (user for user in auth_store.list_users() if user.username == normalized_username),
+        None,
+    )
+    if target and target.role == "admin":
+        active_admins = [
+            user
+            for user in auth_store.list_users(include_disabled=False)
+            if user.role == "admin"
+        ]
+        if len(active_admins) <= 1:
+            return JSONResponse({"detail": "Нельзя отключить последнего администратора"}, status_code=400)
+    try:
+        auth_store.disable_user(username)
+    except AuthStoreError as exc:
+        return JSONResponse({"detail": str(exc)}, status_code=404)
+    return RedirectResponse(url="/admin/users", status_code=303)
+
+
+@app.post("/account/password")
+def account_password(
+    request: Request,
+    current_password: str = Form(...),
+    new_password: str = Form(...),
+    csrf_token: str = Form(...),
+):
+    if not _valid_csrf(request, csrf_token):
+        return JSONResponse({"detail": "Invalid CSRF token"}, status_code=403)
+    user = getattr(request.state, "current_user", None)
+    if user is None or auth_store.authenticate(user.username, current_password) is None:
+        return JSONResponse({"detail": "Current password is invalid"}, status_code=403)
+    if len(new_password) < 12:
+        return JSONResponse({"detail": "Password must contain at least 12 characters"}, status_code=400)
+    auth_store.update_password(user.username, new_password)
+    request.session.clear()
+    return RedirectResponse(url="/login", status_code=303)
 
 
 @app.get("/health")
@@ -158,6 +383,7 @@ def ready() -> JSONResponse:
         "uploads_dir": False,
         "logs_dir": False,
         "runtime_dir": False,
+        "auth_store": not settings.auth_enabled,
     }
 
     uploads_dir = settings.resolved_uploads_dir
@@ -166,8 +392,14 @@ def ready() -> JSONResponse:
     checks["logs_dir"] = logs_dir.exists() and logs_dir.is_dir()
     runtime_dir = settings.resolved_runtime_dir
     checks["runtime_dir"] = runtime_dir.exists() and runtime_dir.is_dir()
+    if settings.auth_enabled:
+        try:
+            auth_store.init_schema()
+            checks["auth_store"] = settings.resolved_auth_db.is_file()
+        except Exception:
+            checks["auth_store"] = False
 
-    is_ready = bool(checks["uploads_dir"] and checks["logs_dir"] and checks["runtime_dir"])
+    is_ready = all(value is True for value in checks.values())
     return JSONResponse(
         {"status": "ready" if is_ready else "not_ready", "checks": checks},
         status_code=200 if is_ready else 503,
@@ -182,6 +414,32 @@ def index(request: Request):
 @app.get("/api/almabi/data-source")
 def api_almabi_data_source(request: Request) -> dict:
     return almabi_data_context(request, settings)
+
+
+@app.get("/api/almabi/dashboard")
+def api_almabi_dashboard(
+    request: Request,
+    direction: list[str] | None = Query(None),
+    project_group: list[str] | None = Query(None),
+    project: list[str] | None = Query(None),
+    contract: list[str] | None = Query(None),
+    period_from: str | None = None,
+    period_to: str | None = None,
+) -> JSONResponse:
+    try:
+        payload = resolve_almabi_dashboard_api_data(
+            request,
+            settings,
+            direction=direction,
+            project_group=project_group,
+            project=project,
+            contract=contract,
+            period_from=period_from,
+            period_to=period_to,
+        )
+    except ValueError as exc:
+        return JSONResponse({"detail": str(exc)}, status_code=400)
+    return JSONResponse(payload)
 
 
 @app.post("/api/almabi/files/upload")

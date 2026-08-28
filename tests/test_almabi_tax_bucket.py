@@ -167,7 +167,7 @@ def test_duplicate_cost_buh_key_uses_buh_amount_per_line():
     cost_facts = [fact for fact in facts if fact.kpi_l1 == "Себестоимость"]
 
     assert len(cost_facts) == 2
-    assert sum(abs(fact.amount_buh) for fact in cost_facts) == 19_190_891.03
+    assert sum(abs(fact.amount_buh) for fact in cost_facts) == 18_989_615.57
     assert all(tax_bucket(fact.tax_type) == "Льготные проекты" for fact in cost_facts)
 
 

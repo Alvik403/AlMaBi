@@ -4,7 +4,15 @@ from collections import defaultdict
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
-from almabi_excel_utils import MONTH_NAMES, analytics_value, document_match_keys, normalize_text, tax_bucket
+from almabi_excel_utils import (
+    MONTH_NAMES,
+    analytics_value,
+    document_match_keys,
+    normalize_text,
+    period_or_month,
+    period_sort_key,
+    tax_bucket,
+)
 from almabi_export_parsers import (
     BuhRow,
     CostNuRow,
@@ -12,6 +20,7 @@ from almabi_export_parsers import (
     ParsedExports,
     RealizationRow,
     classify_buh_section,
+    classify_cost_section_pq,
     parse_exports,
 )
 from almabi_project_index import ProjectMeta, build_project_index, lookup_project
@@ -54,6 +63,16 @@ class Fact:
     tax_type: str = ""
     contractor: str = ""
     quantity: float = 0.0
+    period: str | None = None
+
+
+def _same_period(left: object, right: object) -> bool:
+    """Сравнить фактический период, сохранив fallback для старых объектов."""
+    left_period = normalize_text(getattr(left, "period", ""))
+    right_period = normalize_text(getattr(right, "period", ""))
+    if left_period and right_period:
+        return left_period == right_period
+    return normalize_text(getattr(left, "month", "")) == normalize_text(getattr(right, "month", ""))
 
 
 @dataclass
@@ -127,7 +146,7 @@ def _build_other_pnl_section_has_nu(exports: ParsedExports) -> frozenset[tuple[s
             continue
         amount_nu = _amount_nu_for_section(section, row.amount_nu_dt, row.amount_nu_kt)
         if abs(amount_nu) >= 0.01:
-            keys.add((row.document, row.month, section))
+            keys.add((row.document, period_or_month(row), section))
     return frozenset(keys)
 
 
@@ -177,7 +196,7 @@ def _resolve_other_pnl_tax_type(
     if section not in OTHER_PNL_SECTIONS:
         return fallback
 
-    if section_has_nu is not None and (row.document, row.month, section) not in section_has_nu:
+    if section_has_nu is not None and (row.document, period_or_month(row), section) not in section_has_nu:
         return fallback
 
     amount_buh = abs(_amount_buh_for_section(section, row, None))
@@ -190,7 +209,7 @@ def _resolve_other_pnl_tax_type(
         and amount_nu >= 0.01
         and abs(amount_buh - amount_nu) <= 0.01
         and section_has_nu is not None
-        and (row.document, row.month, "Прочие доходы") not in section_has_nu
+        and (row.document, period_or_month(row), "Прочие доходы") not in section_has_nu
     ):
         return fallback
 
@@ -231,7 +250,7 @@ def _resolve_other_pnl_nu_tax_type(
         and amount_nu >= 0.01
         and abs(amount_buh - amount_nu) <= 0.01
         and section_has_nu is not None
-        and (row.document, row.month, "Прочие доходы") not in section_has_nu
+        and (row.document, period_or_month(row), "Прочие доходы") not in section_has_nu
     ):
         return row.tax_type or doc_tax.get(row.document, "Общие условия налогообложения")
 
@@ -255,7 +274,7 @@ def _resolve_other_pnl_nu_tax_type(
         return buh_tax
 
     for candidate in exports.buh:
-        if candidate.document != row.document or candidate.month != row.month:
+        if candidate.document != row.document or not _same_period(candidate, row):
             continue
         cand_section = classify_buh_section(candidate.account_dt, candidate.account_kt)
         if cand_section != section:
@@ -359,14 +378,7 @@ def _amount_buh_for_section(
 ) -> float:
     """Сумма БУ по правилам Power Query «Свод_нов» (со знаком)."""
     if section == "Себестоимость":
-        if cost_match is not None:
-            cost_amount = abs(cost_match.amount or 0)
-            buh_amount = abs(row.amount_buh or 0)
-            if duplicate_cost_key and buh_amount and cost_amount < buh_amount:
-                return -(buh_amount + cost_amount)
-            if cost_match.amount:
-                return -cost_match.amount
-            return 0.0
+        # Бухрегистр — источник суммы БУ; cost_match даёт только аналитику.
         return -row.amount_buh if row.amount_buh else 0.0
     if section in {"Прочие расходы", "Коммерческие расходы", "Управленческие расходы"}:
         return -row.amount_buh if row.amount_buh else 0.0
@@ -561,7 +573,7 @@ def _dedupe_cost_nu_rows(rows: list[CostNuRow]) -> list[CostNuRow]:
             continue
         acct, article = _cost_nu_match_defaults(row.account, row.calc_article)
         key = (
-            row.month,
+            period_or_month(row),
             tuple(sorted(document_match_keys(row.document))),
             nom,
             acct,
@@ -576,7 +588,7 @@ def _dedupe_cost_nu_rows(rows: list[CostNuRow]) -> list[CostNuRow]:
 
 
 def _build_cost_nu_exact_pool(rows: list[CostNuRow]) -> dict[tuple[str, str, str, str, str], list[int]]:
-    """Пул строк НУ по ключу (месяц, документ, продукция, счёт, статья) для 1:1 сопоставления."""
+    """Пул строк НУ по ключу (период, документ, продукция, счёт, статья) для 1:1."""
     pool: dict[tuple[str, str, str, str, str], list[int]] = defaultdict(list)
     for index, row in enumerate(rows):
         amount = float(row.amount_nu or 0)
@@ -587,7 +599,7 @@ def _build_cost_nu_exact_pool(rows: list[CostNuRow]) -> dict[tuple[str, str, str
             continue
         acct, article = _cost_nu_match_defaults(row.account, row.calc_article)
         for doc_key in document_match_keys(row.document):
-            pool[(row.month, doc_key, nom, acct, article)].append(index)
+            pool[(period_or_month(row), doc_key, nom, acct, article)].append(index)
     return dict(pool)
 
 
@@ -597,17 +609,19 @@ def _consume_cost_nu_exact(
     consumed: set[int],
     *,
     month: str,
+    period: str | None = None,
     document: str,
     nomenclature: str,
     account: str,
     calc_article: str,
 ) -> float | None:
     nom = nomenclature_key(nomenclature)
-    if not nom or not document or not month:
+    match_period = period or month
+    if not nom or not document or not match_period:
         return None
     acct, article = _cost_nu_match_defaults(account, calc_article)
     for doc_key in document_match_keys(document):
-        key = (month, doc_key, nom, acct, article)
+        key = (match_period, doc_key, nom, acct, article)
         for index in pool.get(key, []):
             if index not in consumed:
                 consumed.add(index)
@@ -621,27 +635,33 @@ def _consume_cost_nu_by_doc_nom(
     consumed: set[int],
     *,
     month: str,
+    period: str | None = None,
     document: str,
     nomenclature: str,
     amount_hint: float,
 ) -> float | None:
-    """Fallback: месяц + документ + продукция, выбор строки НУ по близости суммы к БУ."""
+    """Fallback: период + документ + продукция, выбор строки НУ по близости суммы к БУ."""
     nom = nomenclature_key(nomenclature)
-    if not nom or not document or not month:
+    match_period = period or month
+    if not nom or not document or not match_period:
         return None
     candidates: list[int] = []
     for doc_key in document_match_keys(document):
         for key, indices in pool.items():
-            if key[0] != month or key[1] != doc_key or key[2] != nom:
+            if key[0] != match_period or key[1] != doc_key or key[2] != nom:
                 continue
             for index in indices:
                 if index not in consumed:
                     candidates.append(index)
     if not candidates:
         return None
+    candidates = sorted(set(candidates))
     hint = abs(float(amount_hint or 0))
     if hint > 0 and len(candidates) > 1:
-        chosen = min(candidates, key=lambda index: abs(float(rows[index].amount_nu or 0) - hint))
+        chosen = min(
+            candidates,
+            key=lambda index: abs(abs(float(rows[index].amount_nu or 0)) - hint),
+        )
     else:
         chosen = candidates[0]
     consumed.add(chosen)
@@ -652,19 +672,19 @@ def _monthly_deduped_cost_nu_totals(rows: list[CostNuRow]) -> dict[str, float]:
     totals: dict[str, float] = defaultdict(float)
     for row in _dedupe_cost_nu_rows(rows):
         if row.month:
-            totals[row.month] += float(row.amount_nu or 0)
+            totals[period_or_month(row)] += float(row.amount_nu or 0)
     return dict(totals)
 
 
 def _monthly_buh_cost_nu_targets(buh_rows: list[BuhRow]) -> dict[str, float]:
-    """Эталон: помесячная себестoимость НУ из бухрегистра (90.02)."""
+    """Эталон: себестoимость НУ из бухрегистра (90.02) по фактическим периодам."""
     totals: dict[str, float] = defaultdict(float)
     for row in buh_rows:
         section = classify_buh_section(row.account_dt, row.account_kt)
         if section != "Себестоимость" or not row.month:
             continue
-        totals[row.month] += _amount_nu_for_section(section, row.amount_nu_dt, row.amount_nu_kt)
-    return {month: abs(value) for month, value in totals.items()}
+        totals[period_or_month(row)] += _amount_nu_for_section(section, row.amount_nu_dt, row.amount_nu_kt)
+    return {period: abs(value) for period, value in totals.items()}
 
 
 def _add_signed_nu_to_fact(facts: list[Fact], index: int, raw_nu: float) -> None:
@@ -677,6 +697,7 @@ def _assign_orphan_nu_by_document(
     deduped: list[CostNuRow],
     consumed: set[int],
     cost_indices: list[int],
+    matched_pairs: list[tuple[int, int]] | None = None,
 ) -> int:
     """Нераспределённые строки НУ → факты того же документа (суммирование на факт)."""
     assigned = 0
@@ -687,7 +708,7 @@ def _assign_orphan_nu_by_document(
         fact_candidates = [
             index
             for index in cost_indices
-            if facts[index].month == nu_row.month
+            if _same_period(facts[index], nu_row)
             and document_match_keys(facts[index].document) & doc_keys
         ]
         if not fact_candidates:
@@ -707,8 +728,14 @@ def _assign_orphan_nu_by_document(
             if score > best_score:
                 best_score = score
                 best_index = index
+        # Внутри одного документа совпадение номенклатуры уже однозначно;
+        # пустые счёт/статья в buh не должны оставлять строку NU сиротой.
+        if best_score[0] < 1 and len(fact_candidates) != 1:
+            continue
         _add_signed_nu_to_fact(facts, best_index, float(nu_row.amount_nu or 0))
         consumed.add(nu_index)
+        if matched_pairs is not None:
+            matched_pairs.append((nu_index, best_index))
         assigned += 1
     return assigned
 
@@ -729,7 +756,7 @@ def _reconcile_cost_nu_monthly_totals(
         doc_keys = document_match_keys(row.document)
         if not doc_keys:
             continue
-        nu_by_doc_month[(row.month, doc_keys)] += amount
+        nu_by_doc_month[(period_or_month(row), doc_keys)] += amount
 
     facts_by_doc_month: dict[tuple[str, frozenset[str]], list[int]] = defaultdict(list)
     for index in cost_indices:
@@ -739,7 +766,7 @@ def _reconcile_cost_nu_monthly_totals(
         doc_keys = document_match_keys(fact.document)
         if not doc_keys:
             continue
-        facts_by_doc_month[(fact.month, doc_keys)].append(index)
+        facts_by_doc_month[(period_or_month(fact), doc_keys)].append(index)
 
     adjustments: dict[str, float] = defaultdict(float)
     for group, indices in facts_by_doc_month.items():
@@ -777,8 +804,8 @@ def _reconcile_cost_nu_to_buh_register(
 ) -> dict[str, float]:
     """Финальная сверка с бухрегистром 90.02 — только по фактам, где NU уже назначен."""
     adjustments: dict[str, float] = defaultdict(float)
-    for month, target in buh_targets.items():
-        indices = [index for index in cost_indices if facts[index].month == month]
+    for period, target in buh_targets.items():
+        indices = [index for index in cost_indices if period_or_month(facts[index]) == period]
         if not indices:
             continue
         bi_total = sum(-float(facts[index].amount_nu or 0) for index in indices)
@@ -809,15 +836,69 @@ def _reconcile_cost_nu_to_buh_register(
                 assigned += share
             fact = facts[index]
             facts[index] = replace(fact, amount_nu=float(fact.amount_nu or 0) - share)
-        adjustments[month] = gap
+        adjustments[period] = gap
     return dict(adjustments)
+
+
+def _append_cost_nu_register_residuals(
+    facts: list[Fact],
+    cost_indices: list[int],
+    buh_targets: dict[str, float],
+) -> dict[str, float]:
+    """Сверка 90.02 отдельной строкой, без изменения matched-фактов."""
+    residuals: dict[str, float] = {}
+    for period, target in buh_targets.items():
+        matching_indices = [
+            index for index in cost_indices if period_or_month(facts[index]) == period
+        ]
+        current = sum(
+            -float(facts[index].amount_nu or 0)
+            for index in matching_indices
+        )
+        gap = float(target) - current
+        if abs(gap) < 0.01:
+            continue
+        facts.append(
+            Fact(
+                kpi_l1="Себестоимость",
+                month=(
+                    facts[matching_indices[0]].month
+                    if matching_indices
+                    else next(
+                        (
+                            name
+                            for number, name in MONTH_NAMES.items()
+                            if period.endswith(f"-{number:02d}")
+                        ),
+                        period,
+                    )
+                    if len(period) == 7 and period[4] == "-" and period[:4].isdigit()
+                    else period
+                ),
+                amount_buh=0.0,
+                amount_nu=-gap,
+                direction="Без направления",
+                project_group="Без группы",
+                project="Без проекта",
+                nomenclature="Сверка НУ с бухрегистром 90.02",
+                cost_section="Корректировка НУ",
+                expense_article="Сверка НУ с бухрегистром 90.02",
+                tax_type="Общие условия налогообложения",
+                period=(
+                    period
+                    if len(period) == 7 and period[4] == "-" and period[:4].isdigit()
+                    else None
+                ),
+            )
+        )
+        cost_indices.append(len(facts) - 1)
+        residuals[period] = gap
+    return residuals
 
 
 def _signed_cost_nu_amount(raw_amount: float) -> float:
     """Сумма НУ на факте себестoимости — отрицательная для расхода, как amount_buh."""
-    if raw_amount > 0:
-        return -raw_amount
-    return raw_amount
+    return -float(raw_amount or 0)
 
 
 def _apply_cost_nu_to_buh_facts(
@@ -830,6 +911,8 @@ def _apply_cost_nu_to_buh_facts(
     pool = _build_cost_nu_exact_pool(deduped)
     consumed: set[int] = set()
     cost_indices = [index for index, fact in enumerate(facts) if fact.kpi_l1 == "Себестоимость"]
+    original_cost_indices = list(cost_indices)
+    matched_pairs: list[tuple[int, int]] = []
     stats: dict[str, int | float | dict[str, float]] = {
         "matched_exact": 0,
         "matched_fallback": 0,
@@ -845,11 +928,13 @@ def _apply_cost_nu_to_buh_facts(
 
     for index in cost_indices:
         fact = facts[index]
+        consumed_before = set(consumed)
         raw_nu = _consume_cost_nu_exact(
             pool,
             deduped,
             consumed,
             month=fact.month,
+            period=fact.period,
             document=fact.document,
             nomenclature=fact.nomenclature,
             account=fact.cost_account,
@@ -861,6 +946,7 @@ def _apply_cost_nu_to_buh_facts(
                 deduped,
                 consumed,
                 month=fact.month,
+                period=fact.period,
                 document=fact.document,
                 nomenclature=fact.nomenclature,
                 account="20",
@@ -868,29 +954,42 @@ def _apply_cost_nu_to_buh_facts(
             )
         if raw_nu is not None:
             facts[index] = replace(fact, amount_nu=_signed_cost_nu_amount(raw_nu))
+            matched_row_indices = consumed - consumed_before
+            if len(matched_row_indices) == 1:
+                matched_pairs.append((matched_row_indices.pop(), index))
             stats["matched_exact"] += 1
+
+    # Fallback запускается только после всех exact-сопоставлений, чтобы не
+    # забрать строку НУ, предназначенную следующему точному факту.
+    for index in cost_indices:
+        fact = facts[index]
+        if abs(float(fact.amount_nu or 0)) >= 0.01:
             continue
+        consumed_before = set(consumed)
         raw_nu = _consume_cost_nu_by_doc_nom(
             pool,
             deduped,
             consumed,
             month=fact.month,
+            period=fact.period,
             document=fact.document,
             nomenclature=fact.nomenclature,
             amount_hint=fact.amount_buh,
         )
         if raw_nu is not None:
             facts[index] = replace(fact, amount_nu=_signed_cost_nu_amount(raw_nu))
+            matched_row_indices = consumed - consumed_before
+            if len(matched_row_indices) == 1:
+                matched_pairs.append((matched_row_indices.pop(), index))
             stats["matched_fallback"] += 1
 
     stats["matched_orphan_doc"] = _assign_orphan_nu_by_document(
-        facts, deduped, consumed, cost_indices
+        facts, deduped, consumed, cost_indices, matched_pairs
     )
-    stats["monthly_adjustments"] = _reconcile_cost_nu_monthly_totals(
-        facts, deduped, cost_indices
-    )
+    # Расхождения с файлом не размазываются по matched-фактам.
+    stats["monthly_adjustments"] = {}
     if buh_rows:
-        stats["buh_register_adjustments"] = _reconcile_cost_nu_to_buh_register(
+        stats["buh_register_adjustments"] = _append_cost_nu_register_residuals(
             facts,
             cost_indices,
             _monthly_buh_cost_nu_targets(buh_rows),
@@ -901,11 +1000,46 @@ def _apply_cost_nu_to_buh_facts(
             stats["unmatched"] += 1
 
     stats["orphan_nu"] = len(deduped) - len(consumed)
+    unallocated_by_month: dict[str, float] = defaultdict(float)
+    for row_index, row in enumerate(deduped):
+        if row_index not in consumed and row.month:
+            unallocated_by_month[period_or_month(row)] += float(row.amount_nu or 0)
+    stats["unallocated_by_month"] = dict(unallocated_by_month)
     stats["matched"] = (
         int(stats["matched_exact"])
         + int(stats["matched_fallback"])
         + int(stats["matched_orphan_doc"])
     )
+
+    # Вариант А: БУ остаётся на канонических фактах 90.02, а НУ хранится
+    # отдельными строками в исходном разрезе файла «Себестоимость НУ».
+    # Аналитика направления/проекта наследуется от сопоставленного факта БУ.
+    for index in original_cost_indices:
+        facts[index] = replace(facts[index], amount_nu=0.0)
+    for row_index, fact_index in matched_pairs:
+        row = deduped[row_index]
+        matched_fact = facts[fact_index]
+        facts.append(
+            Fact(
+                kpi_l1="Себестоимость",
+                month=row.month or matched_fact.month,
+                amount_buh=0.0,
+                amount_nu=_signed_cost_nu_amount(float(row.amount_nu or 0)),
+                direction=matched_fact.direction,
+                project_group=matched_fact.project_group,
+                project=matched_fact.project,
+                contract=matched_fact.contract,
+                nomenclature=row.nomenclature or matched_fact.nomenclature,
+                cost_section=classify_cost_section_pq(row.calc_article, row.account),
+                cost_account=row.account,
+                expense_article=row.calc_article,
+                document=row.document or matched_fact.document,
+                tax_type=matched_fact.tax_type,
+                contractor=matched_fact.contractor,
+                quantity=float(row.quantity or matched_fact.quantity or 0),
+                period=row.period or matched_fact.period,
+            )
+        )
     return stats
 
 
@@ -1131,6 +1265,7 @@ def _append_fact(
     *,
     kpi_l1: str,
     month: str | None,
+    period: str | None = None,
     amount_buh: float,
     amount_nu: float | None = None,
     direction: str = "",
@@ -1169,6 +1304,7 @@ def _append_fact(
             tax_type=tax_type or "Общие условия налогообложения",
             contractor=contractor,
             quantity=float(quantity or 0),
+            period=period,
         )
     )
 
@@ -1178,6 +1314,7 @@ def _append_other_pnl_fact(
     *,
     kpi_l1: str,
     month: str | None,
+    period: str | None = None,
     amount_buh: float,
     amount_nu: float,
     buh_tax_type: str,
@@ -1196,6 +1333,7 @@ def _append_other_pnl_fact(
     shared = {
         "kpi_l1": kpi_l1,
         "month": month,
+        "period": period,
         "direction": direction,
         "project_group": project_group,
         "project": project,
@@ -1259,6 +1397,7 @@ def _append_file_fallback_facts(
                 facts,
                 kpi_l1="Выручка",
                 month=row.month,
+                period=row.period,
                 amount_buh=row.revenue,
                 amount_nu=row.revenue,
                 direction=project.direction,
@@ -1287,6 +1426,7 @@ def _append_file_fallback_facts(
                 facts,
                 kpi_l1="Себестоимость",
                 month=row.month,
+                period=row.period,
                 amount_buh=-abs(row.amount),
                 amount_nu=0.0,
                 direction=project.direction,
@@ -1448,6 +1588,7 @@ def build_facts(exports: ParsedExports) -> PipelineResult:
         fact_kwargs = {
             "kpi_l1": section,
             "month": row.month,
+            "period": row.period,
             "amount_buh": amount_buh,
             "amount_nu": amount_nu,
             "direction": analytics.direction,
@@ -1479,7 +1620,7 @@ def build_facts(exports: ParsedExports) -> PipelineResult:
             pnl_kwargs = {
                 key: value
                 for key, value in fact_kwargs.items()
-                if key not in ("cost_section", "cost_account", "expense_article", "document")
+                if key not in ("cost_section", "cost_account", "document")
             }
             _append_other_pnl_fact(
                 facts,
@@ -1515,8 +1656,8 @@ def build_facts(exports: ParsedExports) -> PipelineResult:
     if exports.cost_nu:
         _apply_cost_nu_to_buh_facts(facts, exports.cost_nu, exports.buh)
 
-    month_order = list(MONTH_NAMES.values())
-    months = sorted({fact.month for fact in facts}, key=month_order.index)
+    ordered_facts = sorted(facts, key=lambda fact: period_sort_key(fact.period, fallback=fact.month))
+    months = list(dict.fromkeys(fact.month for fact in ordered_facts))
     if not facts:
         warnings.append("После обработки выгрузок не найдено строк с суммами по месяцам.")
 

@@ -91,15 +91,18 @@ function defaultVisibleCharts() {
 const state = {
   taxBucket: "all",
   unitDivisor: 1000,
-  selectedYears: new Set(["2025"]),
-  selectedQuarters: new Set(),
-  selectedMonths: new Set(),
   compareScenario: "План",
   visibleCharts: defaultVisibleCharts(),
+  periodFrom: "",
+  periodTo: "",
+  periodPicking: false,
+  periodHover: "",
+  periodViewYear: "",
 };
 
 const chartInstances = {};
 let donutChart = null;
+let dashboardData = null;
 
 function scaled(value) {
   return Number(value || 0) / state.unitDivisor;
@@ -124,21 +127,11 @@ function unitLabel() {
 }
 
 function activeMonths() {
-  if (state.selectedMonths.size) {
-    return MONTHS_RU.filter((month) => state.selectedMonths.has(month));
-  }
-  if (state.selectedQuarters.size) {
-    const months = new Set();
-    state.selectedQuarters.forEach((quarter) => {
-      (QUARTERS[quarter] || []).forEach((month) => months.add(month));
-    });
-    return MONTHS_RU.filter((month) => months.has(month));
-  }
-  return [...MONTHS_RU];
+  return [...(dashboardData?.months || MONTHS_RU)];
 }
 
 function monthLabels(months) {
-  return months.map((month) => MONTHS_SHORT[MONTHS_RU.indexOf(month)]);
+  return months.map((month) => displayPeriod(month) || MONTHS_SHORT[MONTHS_RU.indexOf(month)] || month);
 }
 
 function getConsolidated(data) {
@@ -165,27 +158,21 @@ function getChartsBundle(data) {
 }
 
 function aggregateSeries(series, months) {
-  const fullToShort = Object.fromEntries(MONTHS_RU.map((month, index) => [month, MONTHS_SHORT[index]]));
-  const shortToFull = Object.fromEntries(MONTHS_RU.map((month, index) => [MONTHS_SHORT[index], month]));
-
-  if (!months.length || months.length === MONTHS_RU.length) {
-    return {
-      labels: series.map((item) => String(item.month).toLowerCase()),
-      values: series.map((item) => Number(item.value || 0)),
-    };
-  }
-
-  const byShort = Object.fromEntries(series.map((item) => [String(item.month).toLowerCase(), Number(item.value || 0)]));
-  const labels = months.map((month) => fullToShort[month]);
-  const values = labels.map((short) => byShort[short] ?? byShort[shortToFull[short]?.slice(0, 4)] ?? 0);
-  return { labels, values };
+  const byPeriod = Object.fromEntries(series.map((item, index) => [
+    item.period || months[index],
+    Number(item.value || 0),
+  ]));
+  return {
+    labels: monthLabels(months),
+    values: months.map((period) => byPeriod[period] || 0),
+  };
 }
 
 function aggregateCostStructure(structure, months) {
   const sections = structure?.sections || [];
   const rows = structure?.by_month || [];
-  const monthSet = new Set(monthLabels(months));
-  const filtered = rows.filter((row) => monthSet.has(String(row.month).toLowerCase()));
+  const monthSet = new Set(months);
+  const filtered = rows.filter((row, index) => monthSet.has(row.period || months[index]));
   const totals = Object.fromEntries(sections.map((name) => [name, 0]));
   filtered.forEach((row) => {
     sections.forEach((name) => {
@@ -731,10 +718,9 @@ function renderExpensesMonthlyChart(data) {
   if (!canvas || !window.Chart) return;
 
   const months = activeMonths();
-  const rows = (data?.analytics_charts?.expenses_by_month || []).filter((row) => {
-    const idx = MONTHS_SHORT.findIndex((m) => String(row.month).toLowerCase().startsWith(m.slice(0, 3)));
-    return idx >= 0 && months.includes(MONTHS_RU[idx]);
-  });
+  const monthSet = new Set(months);
+  const rows = (data?.analytics_charts?.expenses_by_month || [])
+    .filter((row, index) => monthSet.has(row.period || months[index]));
   const labels = rows.map((row) => String(row.month).toLowerCase());
 
   chartInstances["expenses-monthly"] = new Chart(canvas.getContext("2d"), {
@@ -819,61 +805,6 @@ function bindToggleFilters(selector, getSet, onChange, attr = "filterValue") {
 }
 
 function initFilters(rerender) {
-  bindToggleFilters("[data-filter-year]", () => state.selectedYears, rerender);
-  bindToggleFilters("[data-filter-quarter]", () => state.selectedQuarters, () => {
-    if (state.selectedQuarters.size) {
-      state.selectedMonths.clear();
-      syncFilterButtons("[data-filter-month]", state.selectedMonths);
-    }
-    rerender();
-  });
-  bindToggleFilters("[data-filter-month]", () => state.selectedMonths, () => {
-    if (state.selectedMonths.size) {
-      state.selectedQuarters.clear();
-      syncFilterButtons("[data-filter-quarter]", state.selectedQuarters);
-    }
-    rerender();
-  });
-
-  document.querySelectorAll("[data-filter-select-all]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const group = btn.dataset.filterSelectAll;
-      if (group === "year") {
-        state.selectedYears = new Set(["2024", "2025"]);
-        syncFilterButtons("[data-filter-year]", state.selectedYears);
-      } else if (group === "quarter") {
-        state.selectedQuarters = new Set(Object.keys(QUARTERS));
-        state.selectedMonths.clear();
-        syncFilterButtons("[data-filter-quarter]", state.selectedQuarters);
-        syncFilterButtons("[data-filter-month]", state.selectedMonths);
-      } else if (group === "month") {
-        state.selectedMonths = new Set(MONTHS_RU);
-        state.selectedQuarters.clear();
-        syncFilterButtons("[data-filter-month]", state.selectedMonths);
-        syncFilterButtons("[data-filter-quarter]", state.selectedQuarters);
-      }
-      rerender();
-    });
-  });
-
-  document.querySelectorAll("[data-filter-clear-group]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const group = btn.dataset.filterClearGroup;
-      if (group === "year") {
-        state.selectedYears.clear();
-        state.selectedYears.add("2025");
-        syncFilterButtons("[data-filter-year]", state.selectedYears);
-      } else if (group === "quarter") {
-        state.selectedQuarters.clear();
-        syncFilterButtons("[data-filter-quarter]", state.selectedQuarters);
-      } else if (group === "month") {
-        state.selectedMonths.clear();
-        syncFilterButtons("[data-filter-month]", state.selectedMonths);
-      }
-      rerender();
-    });
-  });
-
   document.querySelectorAll("[data-filter-tax]").forEach((button) => {
     button.addEventListener("click", () => {
       state.taxBucket = button.dataset.filterTax || "all";
@@ -905,6 +836,320 @@ function initFilters(rerender) {
   });
 }
 
+let serverFilterTimer = null;
+let serverFilterController = null;
+
+function displayPeriod(period) {
+  if (!period) return "";
+  const match = /^(\d{4})-(\d{2})$/.exec(period);
+  if (match) {
+    const name = MONTHS_RU[Number(match[2]) - 1];
+    if (name) return `${name} ${match[1]}`;
+  }
+  return dashboardData?.period_labels?.[period] || period;
+}
+
+function setServerFilterState({ loading = false, error = "" } = {}) {
+  document.querySelector("[data-server-filter-loading]")?.classList.toggle("hidden", !loading);
+  const errorNode = document.querySelector("[data-server-filter-error]");
+  if (errorNode) {
+    errorNode.textContent = error;
+    errorNode.classList.toggle("hidden", !error);
+  }
+  document.querySelectorAll("[data-server-filter], [data-period-trigger], [data-period-clear], [data-server-filter-reset]").forEach((node) => {
+    node.disabled = loading;
+  });
+}
+
+function periodButtonLabel() {
+  if (state.periodFrom && state.periodTo) {
+    if (state.periodFrom === state.periodTo) return displayPeriod(state.periodFrom);
+    return `${displayPeriod(state.periodFrom)} — ${displayPeriod(state.periodTo)}`;
+  }
+  if (state.periodFrom) return displayPeriod(state.periodFrom);
+  return "Все месяцы";
+}
+
+function periodMonthName(period) {
+  const match = /^(\d{4})-(\d{2})$/.exec(period);
+  if (match) return MONTHS_RU[Number(match[2]) - 1] || period;
+  return period;
+}
+
+function periodHasData(period) {
+  const periods = dashboardData?.data_periods || dashboardData?.months || dashboardData?.periods || [];
+  return periods.includes(period);
+}
+
+function groupedPeriodYears() {
+  const periods = dashboardData?.available_periods || dashboardData?.periods || dashboardData?.months || [];
+  const grouped = new Map();
+  periods.forEach((period) => {
+    const match = /^(\d{4})-(\d{2})$/.exec(period);
+    const year = match ? match[1] : "Период";
+    if (!grouped.has(year)) grouped.set(year, []);
+    grouped.get(year).push(period);
+  });
+  return grouped;
+}
+
+function periodYearList() {
+  return [...groupedPeriodYears().keys()].filter((year) => /^\d{4}$/.test(year));
+}
+
+function visiblePeriodYear() {
+  const years = periodYearList();
+  if (!years.length) return "";
+  if (years.includes(state.periodViewYear)) return state.periodViewYear;
+  if (state.periodFrom && years.includes(state.periodFrom.slice(0, 4))) {
+    return state.periodFrom.slice(0, 4);
+  }
+  return years[years.length - 1];
+}
+
+function shiftPeriodViewYear(delta) {
+  const years = periodYearList();
+  const current = visiblePeriodYear();
+  const index = years.indexOf(current);
+  const next = years[index + delta];
+  if (!next) return;
+  state.periodViewYear = next;
+  renderPeriodPicker();
+}
+
+function currentPeriodRange() {
+  const from = state.periodFrom;
+  let to = state.periodTo;
+  if (!to && state.periodPicking) to = state.periodHover || from;
+  if (from && to && from > to) return [to, from];
+  return [from, to];
+}
+
+function syncPeriodMonthClasses() {
+  const calendar = document.querySelector("[data-period-calendar]");
+  if (!calendar) return;
+  const [from, to] = currentPeriodRange();
+  calendar.querySelectorAll("[data-period-month]").forEach((button) => {
+    const period = button.getAttribute("data-period-month");
+    const inRange = Boolean(from && to && period >= from && period <= to);
+    const endpoint = Boolean(period && (period === from || period === to));
+    button.classList.toggle("is-in-range", inRange);
+    button.classList.toggle("is-endpoint", endpoint);
+  });
+}
+
+function renderPeriodPicker() {
+  const root = document.querySelector("[data-period-picker]");
+  if (!root) return;
+  const calendar = root.querySelector("[data-period-calendar]");
+  const summary = root.querySelector("[data-period-summary]");
+  const hint = root.querySelector("[data-period-pick-hint]");
+  const yearNav = root.querySelector("[data-period-year-nav]");
+  const yearLabel = root.querySelector("[data-period-year-label]");
+  const yearPrev = root.querySelector("[data-period-year-prev]");
+  const yearNext = root.querySelector("[data-period-year-next]");
+  if (summary) summary.textContent = periodButtonLabel();
+  root.classList.toggle("is-active", Boolean(state.periodFrom || state.periodTo));
+  const years = periodYearList();
+  const viewYear = visiblePeriodYear();
+  state.periodViewYear = viewYear;
+  if (hint) {
+    hint.textContent = state.periodPicking && state.periodFrom
+      ? `Начало: ${displayPeriod(state.periodFrom)}. Переключите год при необходимости и выберите конец`
+      : years.length > 1
+        ? "Сначала начало, затем конец. Год можно переключить"
+        : "Сначала начало диапазона, затем конец";
+  }
+  yearNav?.classList.toggle("is-hidden", years.length < 2);
+  if (yearLabel) yearLabel.textContent = viewYear || "Период";
+  const yearIndex = years.indexOf(viewYear);
+  if (yearPrev) yearPrev.disabled = yearIndex <= 0;
+  if (yearNext) yearNext.disabled = yearIndex < 0 || yearIndex >= years.length - 1;
+  if (!calendar) return;
+  const grouped = groupedPeriodYears();
+  const periods = viewYear ? (grouped.get(viewYear) || []) : [...grouped.values()].flat();
+  calendar.innerHTML = `
+    <div class="almabi-period-year">
+      <div class="almabi-period-months">
+        ${periods.map((period) => {
+          const empty = !periodHasData(period);
+          return `<button type="button" class="almabi-period-month${empty ? " is-empty" : ""}" data-period-month="${period}"${empty ? " disabled" : ""}>${periodMonthName(period)}</button>`;
+        }).join("")}
+      </div>
+    </div>
+  `;
+  syncPeriodMonthClasses();
+}
+
+function commitIncompletePeriodPick(schedule) {
+  if (!(state.periodPicking && state.periodFrom && !state.periodTo)) return;
+  state.periodTo = state.periodFrom;
+  state.periodPicking = false;
+  state.periodHover = "";
+  renderPeriodPicker();
+  schedule?.();
+}
+
+function closePeriodPicker(schedule) {
+  const root = document.querySelector("[data-period-picker]");
+  if (!root) return;
+  const wasOpen = root.classList.contains("is-open");
+  root.classList.remove("is-open");
+  root.querySelector("[data-period-trigger]")?.setAttribute("aria-expanded", "false");
+  root.querySelector("[data-period-menu]")?.classList.add("hidden");
+  if (wasOpen) commitIncompletePeriodPick(schedule);
+}
+
+function updateServerFilterHint() {
+  const hint = document.querySelector("[data-server-filter-hint]");
+  if (!hint) return;
+  hint.textContent = `Диапазон: ${displayPeriod(state.periodFrom) || "с начала"} — ${displayPeriod(state.periodTo) || "до конца"}`;
+}
+
+function serverFilterParams() {
+  const params = new URLSearchParams();
+  document.querySelectorAll("[data-server-filter]").forEach((select) => {
+    if (select.value) params.set(select.dataset.serverFilter, select.value);
+  });
+  if (state.periodFrom) params.set("period_from", state.periodFrom);
+  if (state.periodTo) params.set("period_to", state.periodTo);
+  return params;
+}
+
+async function reloadServerDashboard(rerender) {
+  updateServerFilterHint();
+  if (state.periodFrom && state.periodTo && state.periodFrom > state.periodTo) {
+    serverFilterController?.abort();
+    setServerFilterState({ error: "«Период с» не может быть позже «Период по»." });
+    return;
+  }
+  serverFilterController?.abort();
+  serverFilterController = new AbortController();
+  setServerFilterState({ loading: true });
+  try {
+    const params = serverFilterParams().toString();
+    const response = await fetch(`/api/almabi/dashboard${params ? `?${params}` : ""}`, {
+      signal: serverFilterController.signal,
+      headers: { Accept: "application/json" },
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.detail || `Ошибка API (${response.status})`);
+    const previousDataPeriods = dashboardData?.data_periods;
+    const previousAvailable = dashboardData?.available_periods;
+    dashboardData = payload;
+    if (!dashboardData.available_periods?.length && previousAvailable?.length) {
+      dashboardData.available_periods = previousAvailable;
+    } else if (!dashboardData.available_periods?.length) {
+      dashboardData.available_periods = dashboardData.periods || dashboardData.months || [];
+    }
+    if (previousDataPeriods?.length && (dashboardData.data_periods || []).length < previousDataPeriods.length) {
+      dashboardData.data_periods = previousDataPeriods;
+    }
+    renderPeriodPicker();
+    rerender();
+    setServerFilterState();
+  } catch (error) {
+    if (error.name === "AbortError") return;
+    setServerFilterState({ error: error.message || "Не удалось обновить графики." });
+  }
+}
+
+function initServerFilters(rerender) {
+  const schedule = () => {
+    clearTimeout(serverFilterTimer);
+    serverFilterTimer = setTimeout(() => reloadServerDashboard(rerender), 250);
+  };
+  document.querySelectorAll("[data-server-filter]").forEach((select) => {
+    select.addEventListener("change", schedule);
+  });
+  const periodRoot = document.querySelector("[data-period-picker]");
+  const periodTrigger = periodRoot?.querySelector("[data-period-trigger]");
+  const periodMenu = periodRoot?.querySelector("[data-period-menu]");
+  periodTrigger?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const willOpen = !periodRoot.classList.contains("is-open");
+    closePeriodPicker(schedule);
+    if (willOpen) {
+      periodRoot.classList.add("is-open");
+      periodMenu?.classList.remove("hidden");
+      periodTrigger.setAttribute("aria-expanded", "true");
+    }
+  });
+  periodMenu?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    if (event.target.closest("[data-period-year-prev]")) {
+      shiftPeriodViewYear(-1);
+      return;
+    }
+    if (event.target.closest("[data-period-year-next]")) {
+      shiftPeriodViewYear(1);
+      return;
+    }
+    const monthButton = event.target.closest("[data-period-month]");
+    if (monthButton) {
+      const period = monthButton.getAttribute("data-period-month");
+      if (!period || monthButton.disabled || !periodHasData(period)) return;
+      if (!state.periodPicking || !state.periodFrom || state.periodTo) {
+        state.periodFrom = period;
+        state.periodTo = "";
+        state.periodPicking = true;
+        state.periodHover = period;
+        renderPeriodPicker();
+        return;
+      }
+      if (period < state.periodFrom) {
+        state.periodTo = state.periodFrom;
+        state.periodFrom = period;
+      } else {
+        state.periodTo = period;
+      }
+      state.periodPicking = false;
+      state.periodHover = "";
+      renderPeriodPicker();
+      closePeriodPicker();
+      schedule();
+      return;
+    }
+    if (event.target.closest("[data-period-clear]")) {
+      state.periodFrom = "";
+      state.periodTo = "";
+      state.periodPicking = false;
+      state.periodHover = "";
+      renderPeriodPicker();
+      closePeriodPicker();
+      schedule();
+    }
+  });
+  periodMenu?.addEventListener("mouseover", (event) => {
+    const monthButton = event.target.closest("[data-period-month]");
+    if (!monthButton || !state.periodPicking || state.periodTo) return;
+    const period = monthButton.getAttribute("data-period-month");
+    if (!period || monthButton.disabled || !periodHasData(period) || state.periodHover === period) return;
+    state.periodHover = period;
+    syncPeriodMonthClasses();
+  });
+  document.addEventListener("click", (event) => {
+    if (event.target.closest("[data-period-picker]")) return;
+    closePeriodPicker(schedule);
+  });
+  document.querySelector("[data-server-filter-reset]")?.addEventListener("click", () => {
+    clearTimeout(serverFilterTimer);
+    document.querySelectorAll("[data-server-filter]").forEach((control) => {
+      control.value = "";
+    });
+    state.periodFrom = "";
+    state.periodTo = "";
+    state.periodPicking = false;
+    state.periodHover = "";
+    state.periodViewYear = "";
+    renderPeriodPicker();
+    updateServerFilterHint();
+    reloadServerDashboard(rerender);
+  });
+  renderPeriodPicker();
+  updateServerFilterHint();
+}
+
 function initChartConfig(rerender) {
   const list = document.querySelector("[data-charts-config-list]");
   if (!list) return;
@@ -926,7 +1171,7 @@ function initChartConfig(rerender) {
 }
 
 function initPage() {
-  const data = readDashboard();
+  dashboardData = readDashboard();
   const root = document.querySelector("[data-charts-page]");
   if (!root) return;
 
@@ -936,14 +1181,15 @@ function initPage() {
   }
 
   const rerender = () => {
-    if (!data?.meta?.parsed) return;
-    renderAll(data);
+    if (!dashboardData?.meta?.parsed) return;
+    renderAll(dashboardData);
   };
 
   initFilters(rerender);
+  initServerFilters(rerender);
   initChartConfig(rerender);
 
-  if (!data?.meta?.parsed) {
+  if (!dashboardData?.meta?.parsed) {
     const kpi = document.querySelector("[data-charts-kpi-grid]");
     if (kpi) {
       kpi.innerHTML = `

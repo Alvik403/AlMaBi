@@ -5,9 +5,18 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
-from almabi_excel_utils import month_name, normalize_text, parse_date_from_text, tax_bucket
+from almabi_excel_utils import (
+    month_name,
+    normalize_text,
+    parse_date_from_text,
+    period_key_from_text,
+    period_label,
+    period_or_month,
+    period_sort_key,
+    tax_bucket,
+)
 from almabi_export_parsers import classify_cost_section_pq
-from almabi_mock_data import MONTHS, SCENARIOS, UNITS, _MONTHS_SHORT
+from almabi_mock_data import MONTHS, SCENARIOS, UNITS
 from almabi_pq_common import (
     build_davaltz_document_totals,
     davaltz_cost_tree_group,
@@ -98,6 +107,49 @@ PRIVILEGED_BUCKET = "Льготные проекты"
 NON_PRIVILEGED_BUCKET = "Нельготные проекты"
 
 
+def _ordered_period_keys(keys: set[str] | list[str] | tuple[str, ...]) -> list[str]:
+    unique = {normalize_text(key) for key in keys if normalize_text(key)}
+    return sorted(unique, key=lambda key: period_sort_key(key, fallback=key))
+
+
+def calendar_periods_for_years(periods: list[str] | tuple[str, ...]) -> list[str]:
+    """Для каждого года в данных отдать полный календарь YYYY-01 … YYYY-12."""
+    years = {
+        period[:4]
+        for period in periods
+        if len(period) == 7 and period[4] == "-" and period[:4].isdigit()
+    }
+    if not years:
+        return list(periods)
+    expanded = [f"{year}-{month:02d}" for year in sorted(years) for month in range(1, 13)]
+    extras = [
+        period
+        for period in periods
+        if not (len(period) == 7 and period[4] == "-" and period[:4].isdigit())
+    ]
+    return _ordered_period_keys([*expanded, *extras])
+
+
+def periods_from_facts(*fact_groups: list[Fact] | None) -> list[str]:
+    all_facts = [fact for facts in fact_groups for fact in (facts or [])]
+    if not any(normalize_text(getattr(fact, "period", "")) for fact in all_facts):
+        return list(MONTHS)
+    keys = {
+        period_or_month(fact)
+        for fact in all_facts
+        if period_or_month(fact)
+    }
+    return _ordered_period_keys(keys) or list(MONTHS)
+
+
+def period_labels(periods: list[str] | tuple[str, ...]) -> dict[str, str]:
+    return {period: period_label(period, fallback=period) for period in periods}
+
+
+def _fact_period(fact: Fact) -> str:
+    return period_or_month(fact)
+
+
 def _empty_drill_bucket() -> dict[str, float]:
     return {"buh": 0.0, "nu": 0.0}
 
@@ -140,10 +192,14 @@ def _build_drill_data(items: list[Fact]) -> dict[str, Any]:
         articles.sort(key=lambda item: (-_drill_article_abs_total(item), item["name"]))
         return {"type": "articles", "articles": articles}
 
+    periods = periods_from_facts(items)
     return {
         "type": "articles",
         "total": _payload(items),
-        "months": {month: _payload([fact for fact in items if fact.month == month]) for month in MONTHS},
+        "months": {
+            period: _payload([fact for fact in items if _fact_period(fact) == period])
+            for period in periods
+        },
     }
 
 
@@ -181,6 +237,17 @@ def _revenue_cost_line_metrics(
     }
 
 
+_COST_MERGE_OEZ_KEY = "__оэз__"
+
+
+def _revenue_cost_drill_group_key(display_name: str) -> str:
+    """Ключ группировки leaf-строк расшифровки; сливает только варианты ОЭЗ."""
+    text = normalize_text(display_name).casefold()
+    if text.startswith("оэз"):
+        return _COST_MERGE_OEZ_KEY
+    return display_name
+
+
 def _aggregate_revenue_cost_metrics(nodes: list[dict[str, Any]], *, name: str) -> dict[str, Any]:
     revenue_buh = sum(float(node["revenue"]["buh"]) for node in nodes)
     revenue_nu = sum(float(node["revenue"]["nu"]) for node in nodes)
@@ -197,6 +264,26 @@ def _aggregate_revenue_cost_metrics(nodes: list[dict[str, Any]], *, name: str) -
     )
 
 
+def _fact_drill_display_name(fact: Fact) -> str:
+    return (fact.nomenclature or "").strip() or (fact.contract or "").strip() or "Без наименования"
+
+
+def _remember_revenue_cost_drill_display(
+    display_names: dict[str, str],
+    group_key: str,
+    name: str,
+    *,
+    from_revenue: bool,
+) -> None:
+    if group_key != _COST_MERGE_OEZ_KEY:
+        display_names[group_key] = name
+        return
+    if from_revenue:
+        display_names[group_key] = name
+    elif group_key not in display_names:
+        display_names[group_key] = name
+
+
 def _build_revenue_cost_leaf_lines(rev_subset: list[Fact], cost_subset: list[Fact]) -> list[dict[str, Any]]:
     grouped: dict[str, dict[str, float]] = defaultdict(
         lambda: {
@@ -208,28 +295,37 @@ def _build_revenue_cost_leaf_lines(rev_subset: list[Fact], cost_subset: list[Fac
             "cost_quantity": 0.0,
         }
     )
+    display_names: dict[str, str] = {}
     for fact in rev_subset:
-        name = (fact.nomenclature or "").strip() or (fact.contract or "").strip() or "Без наименования"
+        name = _fact_drill_display_name(fact)
+        group_key = _revenue_cost_drill_group_key(name)
         rev_amount = _revenue_amount_for_drill(fact)
-        grouped[name]["revenue_buh"] += rev_amount
-        grouped[name]["revenue_nu"] += rev_amount
-        grouped[name]["rev_quantity"] = max(grouped[name]["rev_quantity"], float(fact.quantity or 0))
+        grouped[group_key]["revenue_buh"] += rev_amount
+        grouped[group_key]["revenue_nu"] += rev_amount
+        grouped[group_key]["rev_quantity"] = max(
+            grouped[group_key]["rev_quantity"], float(fact.quantity or 0)
+        )
+        _remember_revenue_cost_drill_display(display_names, group_key, name, from_revenue=True)
     for fact in cost_subset:
-        name = (fact.nomenclature or "").strip() or (fact.contract or "").strip() or "Без наименования"
-        grouped[name]["cost_buh"] += abs(float(fact.amount_buh or 0))
-        grouped[name]["cost_nu"] += abs(float(fact.amount_nu or 0))
-        grouped[name]["cost_quantity"] = max(grouped[name]["cost_quantity"], float(fact.quantity or 0))
+        name = _fact_drill_display_name(fact)
+        group_key = _revenue_cost_drill_group_key(name)
+        grouped[group_key]["cost_buh"] += abs(float(fact.amount_buh or 0))
+        grouped[group_key]["cost_nu"] += abs(float(fact.amount_nu or 0))
+        grouped[group_key]["cost_quantity"] = max(
+            grouped[group_key]["cost_quantity"], float(fact.quantity or 0)
+        )
+        _remember_revenue_cost_drill_display(display_names, group_key, name, from_revenue=False)
 
     lines = [
         _revenue_cost_line_metrics(
-            name=name,
+            name=display_names.get(group_key, group_key),
             revenue_buh=float(values["revenue_buh"]),
             revenue_nu=float(values["revenue_nu"]),
             cost_buh=float(values["cost_buh"]),
             cost_nu=float(values["cost_nu"]),
             quantity=max(float(values["rev_quantity"]), float(values["cost_quantity"])),
         )
-        for name, values in grouped.items()
+        for group_key, values in grouped.items()
     ]
     lines.sort(
         key=lambda item: (
@@ -309,15 +405,16 @@ def _build_revenue_cost_drill(
             "lines": lines,
         }
 
+    periods = periods_from_facts(revenue_facts, cost_facts)
     return {
         "type": "revenue_cost",
         "total": _payload(revenue_facts, cost_facts),
         "months": {
-            month: _payload(
-                [fact for fact in revenue_facts if fact.month == month],
-                [fact for fact in cost_facts if fact.month == month],
+            period: _payload(
+                [fact for fact in revenue_facts if _fact_period(fact) == period],
+                [fact for fact in cost_facts if _fact_period(fact) == period],
             )
-            for month in MONTHS
+            for period in periods
         },
     }
 
@@ -444,15 +541,16 @@ def _build_other_pnl_drill(income_facts: list[Fact], expense_facts: list[Fact]) 
             ],
         }
 
+    periods = periods_from_facts(income_facts, expense_facts)
     return {
         "type": "other_pnl",
         "total": _payload(income_facts, expense_facts),
         "months": {
-            month: _payload(
-                [fact for fact in income_facts if fact.month == month],
-                [fact for fact in expense_facts if fact.month == month],
+            period: _payload(
+                [fact for fact in income_facts if _fact_period(fact) == period],
+                [fact for fact in expense_facts if _fact_period(fact) == period],
             )
-            for month in MONTHS
+            for period in periods
         },
     }
 
@@ -476,7 +574,7 @@ def _aggregate_months_for_display(
 ) -> dict[str, dict[str, float]]:
     totals: dict[str, dict[str, float]] = defaultdict(lambda: {"buh": 0.0, "nu": 0.0})
     for fact in items:
-        bucket = totals[fact.month]
+        bucket = totals[_fact_period(fact)]
         bucket["buh"] += fact.amount_nu if fact.kpi_l1 in always_nu_kpis else fact.amount_buh
         bucket["nu"] += fact.amount_nu
     return totals
@@ -496,8 +594,8 @@ def _scenario_amounts(
         else _aggregate_months(items)
     )
     return {
-        month: float(aggregated[month]["nu"] if always_nu else aggregated[month]["buh"])
-        for month in MONTHS
+        period: float(aggregated[period]["nu"] if always_nu else aggregated[period]["buh"])
+        for period in _ordered_period_keys(set(aggregated))
     }
 
 
@@ -510,9 +608,12 @@ def _month_values(
     from_file: bool = False,
 ) -> dict[str, dict[str, float]]:
     result: dict[str, dict[str, float]] = {}
+    periods = _ordered_period_keys(
+        set(month_amounts) | set(plan_amounts or {}) | set(forecast_amounts or {})
+    ) or list(MONTHS)
     for scenario in SCENARIOS:
         scenario_map: dict[str, float] = {}
-        for month in MONTHS:
+        for month in periods:
             buh = float(month_amounts.get(month, {}).get("buh", 0) or 0)
             nu = float(month_amounts.get(month, {}).get("nu", 0) or 0)
             fact_buh = nu if always_nu else buh
@@ -545,10 +646,17 @@ def _attach_metrics(node: dict[str, Any], *, preserve_parent_totals: bool = Fals
             _attach_metrics(child)
         if not preserve:
             for scenario in SCENARIOS:
-                totals = {month: 0.0 for month in MONTHS}
+                periods = _ordered_period_keys(
+                    {
+                        period
+                        for child in children
+                        for period in (child.get("values", {}).get(scenario, {}) or {})
+                    }
+                )
+                totals = {period: 0.0 for period in periods}
                 for child in children:
-                    for month in MONTHS:
-                        totals[month] += float(child["values"][scenario].get(month, 0) or 0)
+                    for period in periods:
+                        totals[period] += float(child["values"][scenario].get(period, 0) or 0)
                 if scenario in {"План", "Прогноз"} and node.get("plan_forecast_from_file"):
                     continue
                 if scenario in {"План", "Прогноз"} and not any(totals.values()):
@@ -573,7 +681,7 @@ def _group_facts(facts: list[Fact], *, kpi_l1: str) -> list[Fact]:
 def _aggregate_months(items: list[Fact]) -> dict[str, dict[str, float]]:
     totals: dict[str, dict[str, float]] = defaultdict(lambda: {"buh": 0.0, "nu": 0.0})
     for fact in items:
-        bucket = totals[fact.month]
+        bucket = totals[_fact_period(fact)]
         bucket["buh"] += fact.amount_buh
         bucket["nu"] += fact.amount_nu
     return totals
@@ -704,6 +812,7 @@ def _scale_facts(items: list[Fact], sign: int) -> list[Fact]:
             tax_type=fact.tax_type,
             contractor=fact.contractor,
             quantity=fact.quantity,
+            period=fact.period,
         )
         for fact in items
     ]
@@ -857,6 +966,7 @@ def _build_kpi_node(
             tax_type=fact.tax_type,
             contractor=fact.contractor,
             quantity=fact.quantity,
+            period=fact.period,
         )
         for fact in items
     ]
@@ -889,14 +999,21 @@ def _build_kpi_node(
 
 
 def _sum_nodes_by_name(nodes: list[dict[str, Any]], names: list[str], scenario: str) -> dict[str, float]:
-    totals = {month: 0.0 for month in MONTHS}
     lookup = {node["name"]: node for node in nodes}
+    periods = _ordered_period_keys(
+        {
+            period
+            for name in names
+            for period in (lookup.get(name, {}).get("values", {}).get(scenario, {}) or {})
+        }
+    )
+    totals = {period: 0.0 for period in periods}
     for name in names:
         node = lookup.get(name)
         if not node:
             continue
-        for month in MONTHS:
-            totals[month] += float(node["values"][scenario].get(month, 0) or 0)
+        for period in periods:
+            totals[period] += float(node["values"][scenario].get(period, 0) or 0)
     return totals
 
 
@@ -917,18 +1034,27 @@ def _pbt_by_bucket_from_nodes(component_nodes: list[dict[str, Any]]) -> dict[str
     )
     if pbt_node is None:
         return {}
+    periods = _ordered_period_keys(
+        {
+            period
+            for scenario_values in (pbt_node.get("values") or {}).values()
+            for period in scenario_values
+        }
+    )
     by_bucket: dict[str, dict[str, dict[str, float]]] = {}
     for bucket_name in BENEFIT_BUCKET_NAMES:
         child = _find_named_child(pbt_node, bucket_name)
         if child is None:
             by_bucket[bucket_name] = {
-                scenario: {month: 0.0 for month in MONTHS} for scenario in ("Факт БУ", "Факт НУ")
+                scenario: {period: 0.0 for period in periods}
+                for scenario in ("Факт БУ", "Факт НУ")
             }
             continue
         values = child.get("values", {})
         by_bucket[bucket_name] = {
             scenario: {
-                month: float(values.get(scenario, {}).get(month, 0) or 0) for month in MONTHS
+                period: float(values.get(scenario, {}).get(period, 0) or 0)
+                for period in periods
             }
             for scenario in ("Факт БУ", "Факт НУ")
         }
@@ -939,24 +1065,33 @@ def _build_tax_facts(component_nodes: list[dict[str, Any]], source_facts: list[F
     """Налог от PBT по льготным/нельготным корзинам с переносом убытков (БУ и НУ отдельно)."""
     pbt_by_bucket = _pbt_by_bucket_from_nodes(component_nodes)
     tax_facts: list[Fact] = []
+    periods = _ordered_period_keys(
+        {
+            period
+            for node in component_nodes
+            for scenario_values in (node.get("values") or {}).values()
+            for period in scenario_values
+        }
+    ) or periods_from_facts(source_facts)
 
     if not pbt_by_bucket:
         pbt_bu = _sum_nodes_by_name(component_nodes, ["Прибыль/убыток до налогообложения"], "Факт БУ")
         pbt_nu = _sum_nodes_by_name(component_nodes, ["Прибыль/убыток до налогообложения"], "Факт НУ")
-        taxes_bu, _ = compute_tax_with_loss_carryforward(pbt_bu, rate=0.25, months=tuple(MONTHS))
-        taxes_nu, _ = compute_tax_with_loss_carryforward(pbt_nu, rate=0.25, months=tuple(MONTHS))
-        for month in MONTHS:
-            amount_buh = taxes_bu.get(month, 0.0)
-            amount_nu = taxes_nu.get(month, 0.0)
+        taxes_bu, _ = compute_tax_with_loss_carryforward(pbt_bu, rate=0.25, months=tuple(periods))
+        taxes_nu, _ = compute_tax_with_loss_carryforward(pbt_nu, rate=0.25, months=tuple(periods))
+        for period in periods:
+            amount_buh = taxes_bu.get(period, 0.0)
+            amount_nu = taxes_nu.get(period, 0.0)
             if amount_buh == 0 and amount_nu == 0:
                 continue
             tax_facts.append(
                 Fact(
                     kpi_l1="Налоги",
-                    month=month,
+                    month=period_label(period, fallback=period),
                     amount_buh=amount_buh,
                     amount_nu=amount_nu,
                     tax_type="Общие условия налогообложения",
+                    period=period if len(period) == 7 and period[4] == "-" else None,
                 )
             )
         return tax_facts
@@ -970,25 +1105,26 @@ def _build_tax_facts(component_nodes: list[dict[str, Any]], source_facts: list[F
         taxes_bu, _ = compute_tax_with_loss_carryforward(
             monthly_bu,
             rate=rate,
-            months=tuple(MONTHS),
+            months=tuple(periods),
         )
         taxes_nu, _ = compute_tax_with_loss_carryforward(
             monthly_nu,
             rate=rate,
-            months=tuple(MONTHS),
+            months=tuple(periods),
         )
-        for month in MONTHS:
-            amount_buh = taxes_bu.get(month, 0.0)
-            amount_nu = taxes_nu.get(month, 0.0)
+        for period in periods:
+            amount_buh = taxes_bu.get(period, 0.0)
+            amount_nu = taxes_nu.get(period, 0.0)
             if amount_buh == 0 and amount_nu == 0:
                 continue
             tax_facts.append(
                 Fact(
                     kpi_l1="Налоги",
-                    month=month,
+                    month=period_label(period, fallback=period),
                     amount_buh=amount_buh,
                     amount_nu=amount_nu,
                     tax_type=tax_type,
+                    period=period if len(period) == 7 and period[4] == "-" else None,
                 )
             )
     return tax_facts
@@ -998,16 +1134,25 @@ def _find_named_child(node: dict[str, Any], name: str) -> dict[str, Any] | None:
     return next((child for child in node.get("children") or [] if child.get("name") == name), None)
 
 
-def _empty_scenario_values() -> dict[str, dict[str, float]]:
-    return {scenario: {month: 0.0 for month in MONTHS} for scenario in SCENARIOS}
+def _empty_scenario_values(periods: list[str] | None = None) -> dict[str, dict[str, float]]:
+    active_periods = periods or list(MONTHS)
+    return {scenario: {period: 0.0 for period in active_periods} for scenario in SCENARIOS}
 
 
 def _sum_scenario_values(items: list[dict[str, dict[str, float]]]) -> dict[str, dict[str, float]]:
-    totals = _empty_scenario_values()
+    periods = _ordered_period_keys(
+        {
+            period
+            for values in items
+            for scenario_values in values.values()
+            for period in scenario_values
+        }
+    )
+    totals = _empty_scenario_values(periods)
     for values in items:
         for scenario in SCENARIOS:
-            for month in MONTHS:
-                totals[scenario][month] += float(values.get(scenario, {}).get(month, 0) or 0)
+            for period in periods:
+                totals[scenario][period] += float(values.get(scenario, {}).get(period, 0) or 0)
     return totals
 
 
@@ -1119,8 +1264,13 @@ def _build_calculated_node(
         )
     for child in benefit_children or []:
         child["signed_amounts"] = True
-    plan_amounts = {month: float(month_totals[month].get("plan", 0) or 0) for month in MONTHS}
-    forecast_amounts = {month: float(month_totals[month].get("forecast", 0) or 0) for month in MONTHS}
+    periods = _ordered_period_keys(set(month_totals))
+    plan_amounts = {
+        period: float(month_totals[period].get("plan", 0) or 0) for period in periods
+    }
+    forecast_amounts = {
+        period: float(month_totals[period].get("forecast", 0) or 0) for period in periods
+    }
     node = _attach_metrics(
         {
             "id": _next_id(f"calc-{name}"),
@@ -1144,16 +1294,62 @@ def _build_calculated_node(
 def _month_totals_from_nodes(nodes: list[dict[str, Any]], names: list[str]) -> dict[str, dict[str, float]]:
     totals: dict[str, dict[str, float]] = defaultdict(lambda: {"buh": 0.0, "nu": 0.0, "plan": 0.0, "forecast": 0.0})
     lookup = {node["name"]: node for node in nodes}
+    periods = _ordered_period_keys(
+        {
+            period
+            for name in names
+            for scenario_values in (lookup.get(name, {}).get("values") or {}).values()
+            for period in scenario_values
+        }
+    )
     for name in names:
         node = lookup.get(name)
         if not node:
             continue
-        for month in MONTHS:
-            totals[month]["buh"] += float(node["values"]["Факт БУ"].get(month, 0))
-            totals[month]["nu"] += float(node["values"]["Факт НУ"].get(month, 0))
-            totals[month]["plan"] += float(node["values"]["План"].get(month, 0))
-            totals[month]["forecast"] += float(node["values"]["Прогноз"].get(month, 0))
+        for period in periods:
+            totals[period]["buh"] += float(node["values"]["Факт БУ"].get(period, 0))
+            totals[period]["nu"] += float(node["values"]["Факт НУ"].get(period, 0))
+            totals[period]["plan"] += float(node["values"]["План"].get(period, 0))
+            totals[period]["forecast"] += float(node["values"]["Прогноз"].get(period, 0))
     return totals
+
+
+def normalize_summary_periods(nodes: list[dict[str, Any]], periods: list[str]) -> None:
+    """Привести все summary-узлы к одному набору периодов без скрытого контекста."""
+    for node in nodes:
+        values = node.setdefault("values", {})
+        for scenario in SCENARIOS:
+            current = values.get(scenario) or {}
+            values[scenario] = {
+                period: float(current.get(period, 0) or 0) for period in periods
+            }
+        drill = node.get("drill")
+        if isinstance(drill, dict) and isinstance(drill.get("months"), dict):
+            current_months = drill["months"]
+            drill_type = drill.get("type")
+            if drill_type == "articles":
+                empty_payload: dict[str, Any] = {"type": "articles", "articles": []}
+            elif drill_type == "revenue_cost":
+                empty_payload = {
+                    "type": "revenue_cost",
+                    "path": list(drill.get("total", {}).get("path") or []),
+                    "tree": [],
+                    "lines": [],
+                }
+            else:
+                empty_payload = {
+                    "type": "other_pnl",
+                    "sections": [
+                        {"name": "Прочие доходы", "articles": []},
+                        {"name": "Прочие расходы", "articles": []},
+                    ],
+                }
+            drill["months"] = {
+                period: current_months.get(period, deepcopy(empty_payload))
+                for period in periods
+            }
+        normalize_summary_periods(node.get("children") or [], periods)
+        _attach_metrics(node, preserve_parent_totals=bool(node.get("preserve_parent_totals")))
 
 
 def _build_summary_rows(
@@ -1303,6 +1499,7 @@ def _build_summary_rows(
         )
     )
 
+    normalize_summary_periods(nodes, periods_from_facts(facts, plan_facts, forecast_facts))
     return nodes
 
 
@@ -1321,6 +1518,7 @@ def _collect_filter_values(
     projects = sorted({fact.project for fact in dimension_facts if fact.project})
     contracts = sorted({fact.contract for fact in dimension_facts if fact.contract})
     contractors = sorted({fact.contractor for fact in dimension_facts if fact.contractor})
+    periods = periods_from_facts(facts, plan_facts, forecast_facts)
     return {
         "taxType": ["Все виды", "Льготные проекты", "Нельготные проекты"],
         "direction": ["Все направления", *directions],
@@ -1329,19 +1527,66 @@ def _collect_filter_values(
         "contract": ["Все договоры", *contracts],
         "contractor": ["Все контрагенты", *contractors],
         "quarter": ["Все кварталы", "Q1", "Q2", "Q3", "Q4"],
-        "month": ["Все месяцы", *MONTHS],
+        "month": ["Все месяцы", *periods],
     }
 
 
-def _chart_series(facts: list[Fact], kpi_l1: str) -> list[dict[str, Any]]:
-    totals = {month: 0.0 for month in MONTHS}
+def _collect_filter_tree(
+    facts: list[Fact],
+    *,
+    plan_facts: list[Fact] | None = None,
+    forecast_facts: list[Fact] | None = None,
+) -> list[dict[str, str]]:
+    dimension_facts = list(facts)
+    if plan_facts or forecast_facts:
+        dimension_facts.extend(plan_facts or [])
+        dimension_facts.extend(forecast_facts or [])
+    rows: list[dict[str, str]] = []
+    seen: set[tuple[str, str, str, str]] = set()
+    for fact in dimension_facts:
+        key = (
+            normalize_text(fact.direction),
+            normalize_text(fact.project_group),
+            normalize_text(fact.project),
+            normalize_text(fact.contract),
+        )
+        if not any(key) or key in seen:
+            continue
+        seen.add(key)
+        rows.append(
+            {
+                "direction": key[0],
+                "project_group": key[1],
+                "project": key[2],
+                "contract": key[3],
+            }
+        )
+    rows.sort(
+        key=lambda row: (
+            row["direction"].casefold(),
+            row["project_group"].casefold(),
+            row["project"].casefold(),
+            row["contract"].casefold(),
+        )
+    )
+    return rows
+
+
+def _chart_series(
+    facts: list[Fact],
+    kpi_l1: str,
+    *,
+    periods: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    active_periods = periods or periods_from_facts(facts)
+    totals = {period: 0.0 for period in active_periods}
     for fact in facts:
         if fact.kpi_l1 != kpi_l1:
             continue
-        totals[fact.month] += abs(fact.amount_buh)
+        totals[_fact_period(fact)] += abs(fact.amount_buh)
     return [
-        {"month": short, "value": totals[full]}
-        for full, short in zip(MONTHS, _MONTHS_SHORT, strict=True)
+        {"month": period_label(period, fallback=period), "period": period, "value": totals[period]}
+        for period in active_periods
     ]
 
 
@@ -1349,7 +1594,15 @@ def _month_from_cost_document(document: object) -> str | None:
     return month_name(parse_date_from_text(document))
 
 
-def build_cost_structure_facts_from_pq_rows(pq_rows: list[dict[str, object]]) -> list[Fact]:
+def _period_from_cost_document(document: object) -> str | None:
+    return period_key_from_text(document)
+
+
+def build_cost_structure_facts_from_pq_rows(
+    pq_rows: list[dict[str, object]],
+    *,
+    use_period: bool = False,
+) -> list[Fact]:
     """Факты для дерева «Себестоимость» (раздел → направление → …) из PQ cost, без изменения KPI L1."""
     facts: list[Fact] = []
     for row in pq_rows:
@@ -1361,6 +1614,7 @@ def build_cost_structure_facts_from_pq_rows(pq_rows: list[dict[str, object]]) ->
         ):
             continue
         month = _month_from_cost_document(row.get("Документ"))
+        period = _period_from_cost_document(row.get("Документ"))
         if month not in MONTHS:
             continue
         section = _normalize_cost_structure_section(str(row.get("Раздел") or ""))
@@ -1388,12 +1642,10 @@ def build_cost_structure_facts_from_pq_rows(pq_rows: list[dict[str, object]]) ->
                 project=project,
                 nomenclature=normalize_text(row.get("Номенклатура")),
                 cost_section=section,
+                period=period if use_period else None,
             )
         )
     return facts
-
-
-_COST_MERGE_OEZ_KEY = "__оэз__"
 
 
 def _cost_nomenclature_merge_key(nomenclature: object) -> str:
@@ -1406,6 +1658,8 @@ def _cost_nomenclature_merge_key(nomenclature: object) -> str:
 
 
 def _map_buh_cost_section(fact: Fact) -> str:
+    if normalize_text(fact.cost_section) == "Корректировка НУ":
+        return "Корректировка НУ"
     article = normalize_text(fact.expense_article)
     account = normalize_text(fact.cost_account) or "20"
     if article:
@@ -1429,8 +1683,16 @@ def _buh_fact_to_structure(fact: Fact) -> Fact:
         direction=fact.direction,
         project_group=fact.project_group,
         project=fact.project,
+        contract=fact.contract,
         nomenclature=fact.nomenclature,
         cost_section=_map_buh_cost_section(fact),
+        cost_account=fact.cost_account,
+        expense_article=fact.expense_article,
+        document=fact.document,
+        tax_type=fact.tax_type,
+        contractor=fact.contractor,
+        quantity=fact.quantity,
+        period=fact.period,
     )
 
 
@@ -1525,6 +1787,7 @@ def _scale_pq_splits_to_buh_amount(pq_items: list[Fact], buh_total: float) -> li
                 tax_type=pq_fact.tax_type,
                 contractor=pq_fact.contractor,
                 quantity=pq_fact.quantity,
+                period=pq_fact.period,
             )
         )
     return scaled
@@ -1556,6 +1819,7 @@ def _buh_only_with_pq_hint(
             tax_type=fact.tax_type,
             contractor=fact.contractor,
             quantity=fact.quantity,
+            period=fact.period or lead.period,
         )
         for fact in adjusted
     ]
@@ -1577,6 +1841,7 @@ def _apply_buh_nu_to_pq_splits(pq_items: list[Fact], buh_items: list[Fact]) -> l
     """PQ даёт структуру по БУ; НУ берём из buh и распределяем пропорционально суммам БУ."""
     buh_bu_total = sum(fact.amount_buh for fact in buh_items)
     buh_nu_total = sum(fact.amount_nu for fact in buh_items)
+    fallback_period = next((fact.period for fact in buh_items if fact.period), None)
     pq_bu_total = sum(fact.amount_buh for fact in pq_items)
     if abs(pq_bu_total) < 1e-9:
         return [_buh_fact_to_structure(fact) for fact in buh_items]
@@ -1605,18 +1870,24 @@ def _apply_buh_nu_to_pq_splits(pq_items: list[Fact], buh_items: list[Fact]) -> l
                 tax_type=pq_fact.tax_type,
                 contractor=pq_fact.contractor,
                 quantity=pq_fact.quantity,
+                period=pq_fact.period or fallback_period,
             )
         )
     return adjusted
 
 
-def _group_cost_structure_facts(facts: list[Fact]) -> dict[tuple[str, str], list[Fact]]:
+def _group_cost_structure_facts(
+    facts: list[Fact],
+    *,
+    use_period: bool = True,
+) -> dict[tuple[str, str], list[Fact]]:
     groups: dict[tuple[str, str], list[Fact]] = defaultdict(list)
     for fact in facts:
         merge_key = _cost_nomenclature_merge_key(fact.nomenclature)
         if not merge_key:
             merge_key = normalize_text(fact.nomenclature).casefold() or "—"
-        groups[(fact.month, merge_key)].append(fact)
+        time_key = _fact_period(fact) if use_period else fact.month
+        groups[(time_key, merge_key)].append(fact)
     return groups
 
 
@@ -1635,9 +1906,27 @@ def build_unified_cost_structure_facts(
     if not pq_rows:
         return [_buh_fact_to_structure(fact) for fact in buh_facts]
 
-    pq_facts = build_cost_structure_facts_from_pq_rows(pq_rows)
-    pq_groups = _group_cost_structure_facts(pq_facts)
-    buh_groups = _group_cost_structure_facts(buh_facts)
+    buh_amount_facts = [fact for fact in buh_facts if abs(float(fact.amount_buh or 0)) >= 0.005]
+    source_nu_facts = [
+        fact
+        for fact in buh_facts
+        if abs(float(fact.amount_buh or 0)) < 0.005 and abs(float(fact.amount_nu or 0)) >= 0.005
+    ]
+    years = {
+        fact.period[:4]
+        for fact in buh_facts
+        if fact.period and len(fact.period) == 7 and fact.period[4] == "-"
+    }
+    use_period_matching = len(years) > 1
+    pq_facts = build_cost_structure_facts_from_pq_rows(
+        pq_rows,
+        use_period=use_period_matching,
+    )
+    pq_groups = _group_cost_structure_facts(pq_facts, use_period=use_period_matching)
+    buh_groups = _group_cost_structure_facts(
+        buh_amount_facts,
+        use_period=use_period_matching,
+    )
     pq_only_pool = _build_pq_only_amount_pool(pq_groups, buh_groups)
     unified: list[Fact] = []
 
@@ -1656,14 +1945,26 @@ def build_unified_cost_structure_facts(
             else:
                 unified.extend(_buh_fact_to_structure(fact) for fact in buh_items)
 
-    for month in MONTHS:
-        buh_total = sum(fact.amount_buh for fact in buh_facts if fact.month == month)
+    # Вариант А: НУ уже представлен отдельными исходными строками файла НУ.
+    # Не перераспределяем его по долям БУ из PQ; добавляем в собственных статьях.
+    unified.extend(_buh_fact_to_structure(fact) for fact in source_nu_facts)
+
+    for period in periods_from_facts(buh_facts, pq_facts):
+        buh_total = sum(
+            fact.amount_buh for fact in buh_amount_facts if _fact_period(fact) == period
+        )
         if abs(buh_total) < 0.005:
             continue
-        unified_total = sum(fact.amount_buh for fact in unified if fact.month == month)
+        unified_total = sum(
+            fact.amount_buh for fact in unified if _fact_period(fact) == period
+        )
         if abs(unified_total - buh_total) > 0.05:
-            unified = [fact for fact in unified if fact.month != month]
-            unified.extend(_buh_fact_to_structure(fact) for fact in buh_facts if fact.month == month)
+            unified = [fact for fact in unified if _fact_period(fact) != period]
+            unified.extend(
+                _buh_fact_to_structure(fact)
+                for fact in buh_facts
+                if _fact_period(fact) == period
+            )
 
     return unified
 
@@ -1677,10 +1978,16 @@ def build_cost_structure_gap_facts_from_pq_rows(pq_rows: list[dict[str, object]]
     return []
 
 
-def _chart_cost_structure_from_pq_rows(pq_rows: list[dict[str, object]]) -> dict[str, Any]:
+def _chart_cost_structure_from_pq_rows(
+    pq_rows: list[dict[str, object]],
+    *,
+    periods: list[str] | None = None,
+) -> dict[str, Any]:
     """Структура себестоимости из PQ-таблицы (как этalon), месяц — из даты документа отгрузки."""
+    active_periods = periods or list(MONTHS)
     monthly_sections: dict[str, dict[str, float]] = {
-        month: {section: 0.0 for section in COST_STRUCTURE_SECTIONS} for month in MONTHS
+        period: {section: 0.0 for section in COST_STRUCTURE_SECTIONS}
+        for period in active_periods
     }
     davaltz_totals = build_davaltz_document_totals(pq_rows)
 
@@ -1693,22 +2000,28 @@ def _chart_cost_structure_from_pq_rows(pq_rows: list[dict[str, object]]) -> dict
             davaltz_totals=davaltz_totals,
         ):
             continue
-        month = _month_from_cost_document(row.get("Документ"))
-        if month not in monthly_sections:
+        period = (
+            _period_from_cost_document(row.get("Документ"))
+            if periods is not None
+            else _month_from_cost_document(row.get("Документ"))
+        )
+        if period not in monthly_sections:
             continue
         section = _normalize_cost_structure_section(str(row.get("Раздел") or ""))
         if not section:
             continue
-        monthly_sections[month][section] += float(row.get("Сумма") or 0)
+        monthly_sections[period][section] += float(row.get("Сумма") or 0)
 
     by_month: list[dict[str, Any]] = []
-    for full, short in zip(MONTHS, _MONTHS_SHORT, strict=True):
+    for period in active_periods:
         section_values = {
-            name: abs(float(monthly_sections[full].get(name, 0) or 0)) for name in COST_STRUCTURE_SECTIONS
+            name: abs(float(monthly_sections[period].get(name, 0) or 0))
+            for name in COST_STRUCTURE_SECTIONS
         }
         by_month.append(
             {
-                "month": short,
+                "month": period_label(period, fallback=period),
+                "period": period,
                 "total": sum(section_values.values()),
                 "sections": section_values,
             }
@@ -1720,11 +2033,17 @@ def _chart_cost_structure_from_pq_rows(pq_rows: list[dict[str, object]]) -> dict
     }
 
 
-def _chart_cost_structure(facts: list[Fact]) -> dict[str, Any]:
+def _chart_cost_structure(
+    facts: list[Fact],
+    *,
+    periods: list[str] | None = None,
+) -> dict[str, Any]:
     """Себестоимость: только стандартные статьи затрат (как в дереве P&L)."""
 
+    active_periods = periods or periods_from_facts(facts)
     monthly_sections: dict[str, dict[str, float]] = {
-        month: {section: 0.0 for section in COST_STRUCTURE_SECTIONS} for month in MONTHS
+        period: {section: 0.0 for section in COST_STRUCTURE_SECTIONS}
+        for period in active_periods
     }
 
     for fact in facts:
@@ -1735,16 +2054,18 @@ def _chart_cost_structure(facts: list[Fact]) -> dict[str, Any]:
         section = _normalize_cost_structure_section(fact.cost_section)
         if not section:
             continue
-        monthly_sections[fact.month][section] += abs(fact.amount_buh)
+        monthly_sections[_fact_period(fact)][section] += abs(fact.amount_buh)
 
     by_month: list[dict[str, Any]] = []
-    for full, short in zip(MONTHS, _MONTHS_SHORT, strict=True):
+    for period in active_periods:
         section_values = {
-            name: float(monthly_sections[full].get(name, 0) or 0) for name in COST_STRUCTURE_SECTIONS
+            name: float(monthly_sections[period].get(name, 0) or 0)
+            for name in COST_STRUCTURE_SECTIONS
         }
         by_month.append(
             {
-                "month": short,
+                "month": period_label(period, fallback=period),
+                "period": period,
                 "total": sum(section_values.values()),
                 "sections": section_values,
             }
@@ -1756,13 +2077,19 @@ def _chart_cost_structure(facts: list[Fact]) -> dict[str, Any]:
     }
 
 
-def _empty_cost_structure() -> dict[str, Any]:
+def _empty_cost_structure(periods: list[str] | None = None) -> dict[str, Any]:
     empty_sections = {section: 0.0 for section in COST_STRUCTURE_SECTIONS}
+    active_periods = periods or list(MONTHS)
     return {
         "sections": list(COST_STRUCTURE_SECTIONS),
         "by_month": [
-            {"month": short, "total": 0.0, "sections": dict(empty_sections)}
-            for short in _MONTHS_SHORT
+            {
+                "month": period_label(period, fallback=period),
+                "period": period,
+                "total": 0.0,
+                "sections": dict(empty_sections),
+            }
+            for period in active_periods
         ],
     }
 
@@ -1774,6 +2101,8 @@ def build_dashboard_from_pipeline(
     plan_facts: list[Fact] | None = None,
     forecast_facts: list[Fact] | None = None,
 ) -> dict[str, Any]:
+    periods = periods_from_facts(result.facts, plan_facts, forecast_facts)
+    selectable_periods = calendar_periods_for_years(periods)
     summary_rows = _build_summary_rows(
         result.facts,
         plan_facts=plan_facts,
@@ -1781,11 +2110,13 @@ def build_dashboard_from_pipeline(
     )
     contractor_details = build_contractor_details(result.facts)
     contractor_cards = build_contractor_cards(contractor_details)
-    revenue_chart = _chart_series(result.facts, "Выручка")
-    cost_chart = _chart_series(result.facts, "Себестоимость")
-    cost_structure = _chart_cost_structure(result.facts)
+    revenue_chart = _chart_series(result.facts, "Выручка", periods=periods)
+    cost_chart = _chart_series(result.facts, "Себестоимость", periods=periods)
+    cost_structure = _chart_cost_structure(result.facts, periods=periods)
     return {
-        "months": MONTHS,
+        "months": periods,
+        "periods": periods,
+        "period_labels": period_labels(selectable_periods),
         "scenarios": SCENARIOS,
         "units": UNITS,
         "filters": _collect_filter_values(
@@ -1793,6 +2124,13 @@ def build_dashboard_from_pipeline(
             plan_facts=plan_facts,
             forecast_facts=forecast_facts,
         ),
+        "filter_tree": _collect_filter_tree(
+            result.facts,
+            plan_facts=plan_facts,
+            forecast_facts=forecast_facts,
+        ),
+        "available_periods": selectable_periods,
+        "data_periods": periods,
         "summary_rows": summary_rows,
         "contractor_details": contractor_details,
         "contractor_cards": contractor_cards,
@@ -1805,6 +2143,8 @@ def build_dashboard_from_pipeline(
             "parsed": bool(result.facts),
             "upload_files": upload_names,
             "warnings": result.warnings,
+            "periods": periods,
+            "period_labels": period_labels(periods),
             "message": "Дашборд построен из загруженных выгрузок 1С.",
         },
     }

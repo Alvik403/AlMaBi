@@ -19,6 +19,7 @@ def app_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.setenv("RUNTIME_DIR", str(tmp_path / "runtime"))
     monkeypatch.setenv("LOGS_DIR", str(tmp_path / "logs"))
     monkeypatch.setenv("SESSION_SECRET", "test-secret")
+    monkeypatch.setenv("AUTH_ENABLED", "false")
 
     for module_name in [
         "app",

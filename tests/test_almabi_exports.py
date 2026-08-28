@@ -598,6 +598,7 @@ def test_realization_projects_columns_are_parsed(tmp_path: Path):
     assert rows[0].project_group == "Обслуживание"
     assert rows[0].project == "Обслуживание Долго"
     assert rows[0].month == "Январь"
+    assert rows[0].period == "2026-01"
 
 
 def test_project_index_matches_documents_by_number(tmp_path: Path):
@@ -803,8 +804,16 @@ def test_upload_bundle_builds_dashboard(app_client, tmp_path: Path):
     dashboard = app_client.get("/dashboard/almabi-test")
     assert dashboard.status_code == 200
     assert "Выручка" in dashboard.text
-    assert "Услуги" in dashboard.text
-    assert "ООО Тест Клиент" in dashboard.text
+    dashboard_data = app_client.get("/api/almabi/dashboard")
+    assert dashboard_data.status_code == 200
+    assert "Услуги" in [
+        item["direction"]
+        for item in dashboard_data.json()["filter_tree"]
+    ]
+    assert any(
+        item["contractor"] == "ООО Тест Клиент"
+        for item in dashboard_data.json()["contractor_details"]
+    )
 
 
 def test_trim_cost_export_tail_removes_empty_and_itogo():
@@ -893,6 +902,90 @@ def test_parse_cost_nu_sparse_header(tmp_path: Path):
     assert rows[0].nomenclature == "Комплект А"
     assert rows[0].amount_nu == 150_000
     assert rows[0].month == "Январь"
+    assert rows[0].period == "2026-01"
+
+
+def test_buh_parser_preserves_same_month_across_two_years(tmp_path: Path):
+    from almabi_export_parsers import ParsedExports, parse_buh_register
+    from almabi_pipeline import build_facts
+    from almabi_test_pipeline import build_test_facts
+
+    path = tmp_path / "buh-two-years.xlsx"
+    workbook = Workbook()
+    sheet = workbook.active
+    _pad_rows(sheet, 8)
+    sheet.append(
+        ["Документ", "Счет Дт", "Счет Кт", "Дата", "Сумма", "Сумма НУ Дт", "Сумма НУ Кт"]
+    )
+    sheet.append(["Операция 2025", "91.02", "76.09", "15.01.2025", 100, 100, 0])
+    sheet.append(["Операция 2026", "91.02", "76.09", "15.01.2026", 200, 200, 0])
+    sheet.append(["Итого"])
+    workbook.save(path)
+
+    rows = parse_buh_register(path)
+
+    assert [row.month for row in rows] == ["Январь", "Январь"]
+    assert [row.period for row in rows] == ["2025-01", "2026-01"]
+    exports = ParsedExports(buh=rows)
+    assert {fact.period for fact in build_facts(exports).facts} == {"2025-01", "2026-01"}
+    assert {fact.period for fact in build_test_facts(exports).facts} == {"2025-01", "2026-01"}
+
+
+def test_period_helpers_format_sort_and_fallback():
+    from datetime import date
+
+    from almabi_excel_utils import (
+        period_key_from_date,
+        period_key_from_text,
+        period_label,
+        period_or_month,
+        period_sort_key,
+    )
+    from almabi_pipeline import Fact
+
+    assert period_key_from_date(date(2025, 1, 15)) == "2025-01"
+    assert period_key_from_text("Документ от 31.01.2026 12:00:00") == "2026-01"
+    assert period_label("2026-01") == "Январь 2026"
+    assert period_sort_key("2025-12") < period_sort_key("2026-01")
+    legacy = Fact("Выручка", "Январь", 1, 1)
+    assert period_or_month(legacy) == "Январь"
+
+
+def test_cost_nu_does_not_match_same_month_in_another_year():
+    from almabi_export_parsers import CostNuRow
+    from almabi_pipeline import Fact, _apply_cost_nu_to_buh_facts
+
+    facts = [
+        Fact(
+            kpi_l1="Себестоимость",
+            month="Январь",
+            period="2025-01",
+            amount_buh=-100,
+            amount_nu=0,
+            document="Реализация 001",
+            nomenclature="Комплект А",
+            cost_account="20",
+            expense_article="Сырье и материалы",
+        )
+    ]
+    rows = [
+        CostNuRow(
+            document="Реализация 001",
+            nomenclature="Комплект А",
+            account="20",
+            calc_article="Сырье и материалы",
+            quantity=1,
+            amount_nu=100,
+            month="Январь",
+            period="2026-01",
+        )
+    ]
+
+    stats = _apply_cost_nu_to_buh_facts(facts, rows)
+
+    assert facts[0].amount_nu == 0
+    assert stats["matched"] == 0
+    assert stats["orphan_nu"] == 1
 
 
 def _create_cost_nu_workbook(path: Path, *, document: str, amount_nu: float, nomenclature: str = "Лицензия ПО") -> None:
@@ -946,12 +1039,18 @@ def test_cost_fact_nu_uses_cost_nu_export(tmp_path: Path):
     ).facts
     cost_facts = [fact for fact in facts if fact.kpi_l1 == "Себестоимость"]
 
-    assert len(cost_facts) == 1
-    assert cost_facts[0].amount_buh == -200_000
-    assert cost_facts[0].amount_nu == -150_000
+    buh_facts = [fact for fact in cost_facts if fact.amount_buh]
+    nu_facts = [fact for fact in cost_facts if fact.amount_nu]
+    assert len(buh_facts) == 1
+    assert buh_facts[0].amount_buh == -200_000
+    assert buh_facts[0].amount_nu == 0.0
+    assert len(nu_facts) == 1
+    assert nu_facts[0].amount_buh == 0.0
+    assert nu_facts[0].amount_nu == -150_000
+    assert nu_facts[0].cost_section == "Материальные затраты"
 
 
-def test_cost_fact_nu_zero_when_no_exact_nu_match(tmp_path: Path):
+def test_cost_fact_nu_zero_when_no_exact_match_and_register_residual_is_explicit(tmp_path: Path):
     from almabi_export_parsers import parse_exports
     from almabi_test_pipeline import build_test_facts
 
@@ -983,6 +1082,20 @@ def test_cost_fact_nu_zero_when_no_exact_nu_match(tmp_path: Path):
     ).facts
     cost_facts = [fact for fact in facts if fact.kpi_l1 == "Себестоимость"]
 
-    assert len(cost_facts) == 1
-    assert cost_facts[0].amount_buh == -400_000
-    assert cost_facts[0].amount_nu == 0.0
+    source_facts = [
+        fact
+        for fact in cost_facts
+        if fact.expense_article != "Сверка НУ с бухрегистром 90.02"
+    ]
+    residual_facts = [
+        fact
+        for fact in cost_facts
+        if fact.expense_article == "Сверка НУ с бухрегистром 90.02"
+    ]
+
+    assert len(source_facts) == 1
+    assert source_facts[0].amount_buh == -200_000
+    assert source_facts[0].amount_nu == 0.0
+    assert len(residual_facts) == 1
+    assert residual_facts[0].amount_buh == 0.0
+    assert residual_facts[0].amount_nu == -999_999

@@ -5,7 +5,14 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-from almabi_excel_utils import MONTH_NAMES, analytics_value, normalize_text, parse_date, tax_bucket
+from almabi_excel_utils import (
+    MONTH_NAMES,
+    analytics_value,
+    normalize_text,
+    parse_date,
+    period_sort_key,
+    tax_bucket,
+)
 from almabi_pq_buh_register import build_pq_buh_register_table
 
 TAX_BUCKET_PRIVILEGED = "Льготные проекты"
@@ -80,7 +87,7 @@ def _month_label(raw_date: object) -> str:
         parsed = parse_date(str(raw_date))
     if parsed is None:
         return FIELD_DEFAULTS["Месяц"]
-    return MONTH_NAMES.get(parsed.month, FIELD_DEFAULTS["Месяц"])
+    return parsed.strftime("%Y-%m")
 
 
 def _field_value(row: dict[str, object], field: str) -> str:
@@ -91,7 +98,14 @@ def _field_value(row: dict[str, object], field: str) -> str:
 def _sorted_group_keys(field: str, keys: list[str] | set[str]) -> list[str]:
     unique = list(keys)
     if field == "Месяц":
-        return sorted(unique, key=lambda item: (MONTH_ORDER.get(item, 99), item))
+        return sorted(
+            unique,
+            key=lambda item: (
+                period_sort_key(item, fallback=item),
+                MONTH_ORDER.get(item, 99),
+                item,
+            ),
+        )
     if field == "Льгота":
         order = {TAX_BUCKET_PRIVILEGED: 0, TAX_BUCKET_NON_PRIVILEGED: 1}
         return sorted(unique, key=lambda item: (order.get(item, 2), item))
@@ -123,11 +137,24 @@ def compute_tax_with_loss_carryforward(
     months: tuple[str, ...] | None = None,
 ) -> tuple[dict[str, float], dict[str, float]]:
     """Налог и налогооблагаемая база по месяцам с переносом убытков внутри корзины."""
-    month_order = months or MONTHS_ORDERED
+    has_period_keys = any(
+        len(key) == 7 and key[4] == "-" and key[:4].isdigit()
+        for key in monthly_base
+    )
+    requested = list(months) if months is not None else (
+        list(monthly_base) if has_period_keys else list(MONTHS_ORDERED)
+    )
+    month_order = sorted(requested, key=lambda key: period_sort_key(key, fallback=key))
     carryforward = 0.0
+    previous_year: str | None = None
     taxes: dict[str, float] = {}
     taxable_bases: dict[str, float] = {}
     for month in month_order:
+        current_year = month[:4] if len(month) == 7 and month[4] == "-" and month[:4].isdigit() else None
+        if current_year is not None and previous_year is not None and current_year != previous_year:
+            carryforward = 0.0
+        if current_year is not None:
+            previous_year = current_year
         pbt = float(monthly_base.get(month, 0) or 0)
         net = carryforward + pbt
         if net <= 0:

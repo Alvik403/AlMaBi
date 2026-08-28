@@ -1,0 +1,26 @@
+flowchart LR
+  U["Пользователь<br/>Браузер / АРМ"]
+  N["Корпоративная сеть / VPN"]
+  P["Хост :80/:443 → nginx<br/>:8080/:8443"]
+  W["Docker: web<br/>FastAPI · :8000<br/>RBAC · CSRF"]
+  S["Docker volumes<br/>uploads/almabi/users/{user_id}/<br/>runtime · logs"]
+  M["Мониторинг<br/>/health · /ready"]
+
+  U --> N
+  N -->|"1 HTTPS :443"| P
+  N -->|"2 HTTP :80"| P
+  P -->|"3 HTTP :8000<br/>(internal)"| W
+  W --- S
+  M -->|"4 HTTPS :443"| P
+
+  classDef user fill:#E8F4FF,stroke:#2B6CB0,color:#123048
+  classDef proxy fill:#E6FFFA,stroke:#0B6E4F,color:#123048
+  classDef app fill:#FFF7ED,stroke:#C05621,color:#123048
+  classDef store fill:#F0FFF4,stroke:#276749,color:#123048
+  classDef admin fill:#F7FAFC,stroke:#4A5568,color:#123048
+
+  class U,N user
+  class P proxy
+  class W app
+  class S store
+  class M admin

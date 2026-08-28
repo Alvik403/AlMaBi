@@ -1,6 +1,17 @@
+import "@fontsource/inter/cyrillic-300.css";
+import "@fontsource/inter/cyrillic-400.css";
+import "@fontsource/inter/cyrillic-500.css";
+import "@fontsource/inter/cyrillic-600.css";
+import "@fontsource/inter/cyrillic-700.css";
+import "@fontsource/inter/latin-300.css";
+import "@fontsource/inter/latin-400.css";
+import "@fontsource/inter/latin-500.css";
+import "@fontsource/inter/latin-600.css";
+import "@fontsource/inter/latin-700.css";
 import "./app.css";
 
 const SIDEBAR_STORAGE_KEY = "almabi-sidebar";
+const CSRF_TOKEN = document.querySelector('meta[name="csrf-token"]')?.content || "";
 
 function isLargeScreen() {
   return window.matchMedia("(min-width: 1024px)").matches;
@@ -229,6 +240,7 @@ function initAlmabiDataSourceMenu() {
     try {
       const response = await fetch("/api/almabi/files/upload-set", {
         method: "POST",
+        headers: { "X-CSRF-Token": CSRF_TOKEN },
         body: formData,
       });
       const payload = await response.json().catch(() => ({}));

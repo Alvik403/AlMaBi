@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any
 
-from almabi_excel_utils import tax_bucket
+from almabi_excel_utils import period_label, period_or_month, tax_bucket
 from almabi_pipeline import Fact
 
 
@@ -26,7 +26,8 @@ def build_contractor_details(facts: list[Fact]) -> list[dict[str, Any]]:
                 "project_group": fact.project_group,
                 "project": fact.project,
                 "contract": fact.contract,
-                "month": fact.month,
+                "month": period_label(period_or_month(fact), fallback=fact.month),
+                "period": period_or_month(fact),
                 "amount": abs(fact.amount_buh),
             }
         )
@@ -81,6 +82,7 @@ def contractor_details_from_cards(cards: list[dict[str, Any]]) -> list[dict[str,
                     "project": "",
                     "contract": "",
                     "month": "",
+                    "period": "",
                     "amount": float(row["value"]),
                 }
             )

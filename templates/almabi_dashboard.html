@@ -109,56 +109,79 @@
     </div>
     {% endif %}
 
-    <div class="hidden mt-4 flex flex-wrap items-end gap-3" data-filter-toolbar>
-      <div class="grid flex-1 grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-8" data-filter-bar>
-        {% set filter_labels = {
-          "taxType": "Вид налогообложения",
-          "project": "Проект",
-          "direction": "Направление",
-          "projectGroup": "Группа проектов",
-          "contract": "Договор",
-          "contractor": "Контрагент",
-          "quarter": "Квартал",
-          "month": "Месяц"
-        } %}
-        {% for key, options in dashboard.filters.items() %}
-        <div
-          class="almabi-select"
-          data-filter-select="{{ key }}"
-          data-filter-label="{{ filter_labels[key] }}"
-          data-filter-default="{{ options[0] }}"
-        >
-          <button type="button" class="almabi-select__trigger" aria-haspopup="listbox" aria-expanded="false">
-            <span class="almabi-select__label">{{ filter_labels[key] }}</span>
-            <span class="almabi-select__value">{{ options[0] }}</span>
+    <div class="mt-4 space-y-2" data-filter-toolbar>
+      <div class="flex flex-wrap items-end gap-3">
+        <div class="grid flex-1 grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5" data-filter-bar>
+          {% set filter_labels = {
+            "direction": "Направление",
+            "projectGroup": "Группа проектов",
+            "project": "Проект",
+            "contract": "Договор"
+          } %}
+          {% for key in ["direction", "projectGroup", "project", "contract"] %}
+          <div
+            class="almabi-select almabi-select--multi"
+            data-filter-select="{{ key }}"
+            data-filter-label="{{ filter_labels[key] }}"
+          >
+            <button type="button" class="almabi-select__trigger" aria-haspopup="listbox" aria-expanded="false">
+              <span class="almabi-select__label">{{ filter_labels[key] }}</span>
+              <span class="almabi-select__value" data-filter-summary>Все</span>
+            </button>
             <svg class="almabi-select__chevron" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
             </svg>
-          </button>
-          <div class="almabi-select__menu hidden" role="listbox">
-            {% for option in options %}
-            <button
-              type="button"
-              class="almabi-select__option{% if loop.first %} is-selected{% endif %}"
-              role="option"
-              data-value="{{ option }}"
-              aria-selected="{% if loop.first %}true{% else %}false{% endif %}"
-            >{{ option }}</button>
-            {% endfor %}
+            <div class="almabi-select__menu hidden" role="listbox" aria-multiselectable="true">
+              <div class="almabi-select__toolbar">
+                <input type="search" class="almabi-select__search" data-filter-search placeholder="Поиск" autocomplete="off" />
+                <button type="button" class="almabi-select__all" data-filter-select-all>Выбрать все</button>
+              </div>
+              <div class="almabi-select__options" data-filter-options></div>
+              <p class="almabi-select__empty hidden" data-filter-empty>Нет вариантов</p>
+            </div>
+          </div>
+          {% endfor %}
+          <div
+            class="almabi-select almabi-select--period"
+            data-period-picker
+          >
+            <button type="button" class="almabi-select__trigger" aria-haspopup="dialog" aria-expanded="false" data-period-trigger>
+              <span class="almabi-select__label">Период</span>
+              <span class="almabi-select__value" data-period-summary>Все месяцы</span>
+            </button>
+            <svg class="almabi-select__chevron" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+            </svg>
+            <div class="almabi-select__menu hidden" data-period-menu>
+              <p class="almabi-period-hint" data-period-pick-hint>Сначала начало, затем конец. Год можно переключить</p>
+              <div class="almabi-period-year-nav" data-period-year-nav>
+                <button type="button" class="almabi-period-year-nav__btn" data-period-year-prev aria-label="Предыдущий год">‹</button>
+                <span class="almabi-period-year-nav__label" data-period-year-label></span>
+                <button type="button" class="almabi-period-year-nav__btn" data-period-year-next aria-label="Следующий год">›</button>
+              </div>
+              <div class="almabi-select__options" data-period-calendar></div>
+              <div class="almabi-period-actions">
+                <button type="button" class="almabi-select__all" data-period-clear>Сбросить период</button>
+              </div>
+            </div>
           </div>
         </div>
-        {% endfor %}
+        <button
+          type="button"
+          data-filter-reset
+          class="shrink-0 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-600 shadow-sm hover:border-sky-200 hover:text-sky-800"
+          title="Сбросить фильтры"
+        >
+          Сбросить
+        </button>
       </div>
-      <button
-        type="button"
-        data-filter-reset
-        class="shrink-0 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-600 shadow-sm hover:border-sky-200 hover:text-sky-800"
-        title="Сбросить фильтры"
-      >
-        Сбросить
-      </button>
+      <div class="flex flex-wrap gap-1.5 min-h-[1.5rem]" data-filter-chips></div>
+      <div class="flex flex-wrap items-center gap-3 text-xs">
+        <p data-filter-hint class="text-sky-800"></p>
+        <p data-filter-loading class="hidden font-semibold text-sky-700">Обновляем данные…</p>
+        <p data-filter-error class="hidden font-semibold text-rose-700" role="alert"></p>
+      </div>
     </div>
-    <p data-filter-hint class="mt-2 hidden text-xs text-sky-800"></p>
     </div>
   </div>
 
@@ -355,12 +378,36 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
-<script>
-  const almabiData = {{ dashboard | tojson }};
+<script type="module" src="/static/dist/chart_vendor.js"></script>
+<script nonce="{{ csp_nonce }}">
+  let almabiData = {{ dashboard | tojson }};
   const dashboardMode = "bi";
 
-  const FILTER_KEYS = ["taxType", "direction", "projectGroup", "project", "contract", "contractor", "quarter", "month"];
+  const FILTER_KEYS = ["direction", "projectGroup", "project", "contract"];
+  const FILTER_QUERY_KEYS = {
+    direction: "direction",
+    projectGroup: "project_group",
+    project: "project",
+    contract: "contract",
+  };
+  const FILTER_TREE_FIELDS = {
+    direction: "direction",
+    projectGroup: "project_group",
+    project: "project",
+    contract: "contract",
+  };
+  const FILTER_PARENTS = {
+    direction: [],
+    projectGroup: ["direction"],
+    project: ["direction", "projectGroup"],
+    contract: ["direction", "projectGroup", "project"],
+  };
+  const FILTER_ALL_LABELS = {
+    direction: "Все направления",
+    projectGroup: "Все группы",
+    project: "Все проекты",
+    contract: "Все договоры",
+  };
 
   const QUARTER_MONTHS = {
     Q1: ["Январь", "Февраль", "Март"],
@@ -375,6 +422,40 @@
     { key: "Q3", label: "Q3", months: QUARTER_MONTHS.Q3 },
     { key: "Q4", label: "Q4", months: QUARTER_MONTHS.Q4 },
   ];
+
+  function periodDisplayLabel(period) {
+    const match = /^(\d{4})-(\d{2})$/.exec(period);
+    if (match) {
+      const name = MONTH_NAMES_FULL[Number(match[2]) - 1];
+      if (name) return `${name} ${match[1]}`;
+    }
+    return almabiData.period_labels?.[period] || MONTH_HEADER_SHORT[period] || period;
+  }
+
+  function currentQuarterDefs() {
+    const periods = almabiData.months || [];
+    if (!periods.some((period) => /^\d{4}-\d{2}$/.test(period))) return QUARTER_DEFS;
+    const grouped = new Map();
+    periods.forEach((period) => {
+      const match = /^(\d{4})-(\d{2})$/.exec(period);
+      if (!match) return;
+      const quarter = Math.floor((Number(match[2]) - 1) / 3) + 1;
+      const key = `${match[1]}-Q${quarter}`;
+      if (!grouped.has(key)) grouped.set(key, {
+        key,
+        label: `Q${quarter} ${match[1]}`,
+        months: [],
+      });
+      grouped.get(key).months.push(period);
+    });
+    const legacy = QUARTER_DEFS
+      .map((quarter) => ({
+        ...quarter,
+        months: quarter.months.filter((month) => periods.includes(month)),
+      }))
+      .filter((quarter) => quarter.months.length);
+    return [...Array.from(grouped.values()), ...legacy];
+  }
 
   const CHART_PALETTE = {
     revenue: { stroke: "#0284C7", fill: "rgba(224, 242, 254, 0.9)", point: "#0369A1" },
@@ -635,6 +716,10 @@
     return copy;
   }
 
+  const MONTH_NAMES_FULL = [
+    "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+    "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
+  ];
   const MONTH_HEADER_SHORT = {
     "Январь": "Янв",
     "Февраль": "Фев",
@@ -662,9 +747,12 @@
     tablePeriod: "month",
     rowById: {},
     rowByName: {},
-    filters: Object.fromEntries(
-      FILTER_KEYS.map((key) => [key, almabiData.filters[key][0]]),
-    ),
+    filters: Object.fromEntries(FILTER_KEYS.map((key) => [key, new Set()])),
+    periodFrom: "",
+    periodTo: "",
+    periodPicking: false,
+    periodHover: "",
+    periodViewYear: "",
   };
 
   const PRIVILEGED_BUCKET = "Льготные проекты";
@@ -742,11 +830,11 @@
   }
 
   function isDefaultFilter(key) {
-    return state.filters[key] === almabiData.filters[key][0];
+    return !(state.filters[key] instanceof Set) || state.filters[key].size === 0;
   }
 
   function hasActiveFilters() {
-    return FILTER_KEYS.some((key) => !isDefaultFilter(key));
+    return FILTER_KEYS.some((key) => !isDefaultFilter(key)) || Boolean(state.periodFrom || state.periodTo);
   }
 
   function subtreeContainsName(node, target) {
@@ -793,8 +881,7 @@
   }
 
   function getFilteredSummaryRows() {
-    if (!hasActiveFilters()) return getBaseSummaryRows();
-    return pruneTree(getBaseSummaryRows());
+    return getBaseSummaryRows();
   }
 
   function rebuildRowIndex() {
@@ -862,11 +949,11 @@
   function scenarioColumnHeader(columnTitle) {
     const subtitle = scenarioDuoSubtitle();
     if (!subtitle) {
-      return columnTitle;
+      return escapeHtml(columnTitle);
     }
     return `
-      <span class="col-header-title">${columnTitle}</span>
-      <span class="col-header-scenarios">${subtitle}</span>
+      <span class="col-header-title">${escapeHtml(columnTitle)}</span>
+      <span class="col-header-scenarios">${escapeHtml(subtitle)}</span>
     `;
   }
 
@@ -1042,7 +1129,7 @@
           .map((column) => {
             const align = column.align === "right" ? " text-right" : "";
             const pad = column.align === "right" ? "py-3 pl-2 pr-3" : "py-3 pr-4";
-            return `<th class="${pad}${align}">${column.label}</th>`;
+            return `<th class="${pad}${align}">${escapeHtml(column.label)}</th>`;
           })
           .join("")}
       </tr>`;
@@ -1103,7 +1190,7 @@
           const zebra = index % 2 === 1 ? " bg-slate-50/80" : "";
           return `
             <tr class="border-b border-slate-100 last:border-0${zebra}">
-              <td class="py-3 pr-4 font-medium text-slate-700">${article.name}</td>
+              <td class="py-3 pr-4 font-medium text-slate-700">${escapeHtml(article.name)}</td>
               <td class="py-3 pl-2 pr-3 text-right tabular-nums text-sky-800">${formatPlAmount(row.name, totals.privileged)}</td>
               <td class="py-3 pl-2 pr-3 text-right tabular-nums text-rose-700">${formatPlAmount(row.name, totals.nonPrivileged)}</td>
               <td class="py-3 pl-2 pr-3 text-right tabular-nums font-semibold">${formatPlAmount(row.name, totals.total)}</td>
@@ -1137,7 +1224,7 @@
       ? (Number.isInteger(qty) ? String(qty) : qty.toLocaleString("ru-RU", { maximumFractionDigits: 0 }))
       : "—";
     const chevron = expandable
-      ? `<button type="button" class="row-chevron inline-flex h-5 w-5 items-center justify-center rounded text-slate-500 hover:bg-slate-100" data-drill-expand="${pathKey}" aria-label="${isExpanded ? "Свернуть" : "Раскрыть"}">
+      ? `<button type="button" class="row-chevron inline-flex h-5 w-5 items-center justify-center rounded text-slate-500 hover:bg-slate-100" data-drill-expand="${escapeHtml(pathKey)}" aria-label="${isExpanded ? "Свернуть" : "Раскрыть"}">
            <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="${isExpanded ? "M6 9l6 6 6-6" : "M9 6l6 6-6 6"}"/>
            </svg>
@@ -1150,7 +1237,7 @@
         <td class="py-2.5 pr-4">
           <div class="flex items-center gap-1.5" style="padding-left:${indent}px">
             ${chevron}
-            <span class="${weight}">${node.name}</span>
+            <span class="${weight}">${escapeHtml(node.name)}</span>
           </div>
         </td>
         <td class="py-2.5 pr-4 text-right tabular-nums text-slate-700">${qtyLabel}</td>
@@ -1269,7 +1356,7 @@
             const nonPrivilegedLabel = totals.nonPrivileged ? formatMoneyAbs(totals.nonPrivileged) : "";
             return `
               <tr>
-                <td>${article.name}</td>
+                <td>${escapeHtml(article.name)}</td>
                 <td>${privilegedLabel}</td>
                 <td>${nonPrivilegedLabel}</td>
               </tr>`;
@@ -1277,7 +1364,7 @@
           .join("");
         return `
           <section>
-            <h4>${section.name}</h4>
+            <h4>${escapeHtml(section.name)}</h4>
             <div data-other-scroll>
               <table>
                 <thead>
@@ -1314,7 +1401,7 @@
     const payload = drillPayloadForPeriod(row, periodKey);
     const monthLabel = periodKey === "total"
       ? "Итого"
-      : (QUARTER_DEFS.find((item) => item.key === periodKey)?.label
+      : (currentQuarterDefs().find((item) => item.key === periodKey)?.label
         || MONTH_HEADER_SHORT[periodKey]
         || periodKey);
 
@@ -1422,8 +1509,8 @@
     }
 
     return {
-      labels: QUARTER_DEFS.map((quarter) => quarter.label),
-      values: QUARTER_DEFS.map((quarter) =>
+      labels: currentQuarterDefs().map((quarter) => quarter.label),
+      values: currentQuarterDefs().map((quarter) =>
         entries
           .filter((entry) => quarter.months.includes(entry.full))
           .reduce((sum, entry) => sum + entry.value, 0),
@@ -1462,7 +1549,7 @@
     if (state.chartPeriod === "month") {
       periods = entries;
     } else {
-      periods = QUARTER_DEFS.map((quarter) => {
+      periods = currentQuarterDefs().map((quarter) => {
         const quarterEntries = entries.filter((entry) => quarter.months.includes(entry.key));
         const sectionBucket = {};
         quarterEntries.forEach((entry) => {
@@ -1541,37 +1628,23 @@
   }
 
   function getVisibleMonths() {
-    const month = state.filters.month;
-    const quarter = state.filters.quarter;
-    const all = almabiData.months;
-
-    if (!isDefaultFilter("month")) {
-      return all.filter((item) => item === month);
-    }
-    if (!isDefaultFilter("quarter") && QUARTER_MONTHS[quarter]) {
-      return QUARTER_MONTHS[quarter];
-    }
-    return all;
+    return almabiData.months || [];
   }
 
   function getTablePeriodColumns() {
     if (state.tablePeriod === "quarter") {
-      let quarters = QUARTER_DEFS;
-      if (!isDefaultFilter("quarter")) {
-        quarters = quarters.filter((item) => item.key === state.filters.quarter);
-      }
-      return quarters.map((quarter) => ({
+      return currentQuarterDefs().map((quarter) => ({
         key: quarter.key,
         label: quarter.label,
         months: quarter.months,
-        title: `${quarter.label} (${quarter.months.map((m) => MONTH_HEADER_SHORT[m] || m).join(", ")})`,
+        title: `${quarter.label} (${quarter.months.map(periodDisplayLabel).join(", ")})`,
       }));
     }
     return getVisibleMonths().map((month) => ({
       key: month,
-      label: MONTH_HEADER_SHORT[month] || month,
+      label: periodDisplayLabel(month),
       months: [month],
-      title: month,
+      title: periodDisplayLabel(month),
     }));
   }
 
@@ -1709,7 +1782,7 @@
   function drillPayloadForPeriod(row, periodKey) {
     if (!row?.drill) return null;
     if (periodKey === "total") return row.drill.total;
-    const quarter = QUARTER_DEFS.find((item) => item.key === periodKey);
+    const quarter = currentQuarterDefs().find((item) => item.key === periodKey);
     if (quarter) {
       const payloads = quarter.months.map((month) => row.drill.months?.[month]).filter(Boolean);
       return mergeDrillPayloads(payloads);
@@ -1824,7 +1897,7 @@
       ${columns
         .map((column) => {
           const title = scenarioHeaderTitle(column.title);
-          return `<th class="text-center col-month" title="${title}">${scenarioColumnHeader(column.label)}</th>`;
+          return `<th class="text-center col-month" title="${escapeHtml(title)}">${scenarioColumnHeader(column.label)}</th>`;
         })
         .join("")}
     `;
@@ -1837,8 +1910,12 @@
   function updateFilterHint() {
     const hint = document.querySelector("[data-filter-hint]");
     if (!hint) return;
-    hint.classList.add("hidden");
-    hint.textContent = "";
+    const from = state.periodFrom ? periodDisplayLabel(state.periodFrom) : "начала";
+    const to = state.periodTo ? periodDisplayLabel(state.periodTo) : "конца";
+    const dimensions = FILTER_KEYS
+      .filter((key) => !isDefaultFilter(key))
+      .map((key) => `${document.querySelector(`[data-filter-select="${key}"]`)?.dataset.filterLabel || key}: ${state.filters[key].size}`);
+    hint.textContent = `Диапазон: ${from} — ${to}${dimensions.length ? ` · ${dimensions.join(" · ")}` : ""}`;
   }
 
   function renderSummary() {
@@ -1873,13 +1950,13 @@
         return `
           <tr
             class="${levelClass} ${depthClass} ${zebra} ${row.expandable ? "cursor-pointer is-expandable" : ""}"
-            data-summary-row="${row.id}"
+            data-summary-row="${escapeHtml(row.id)}"
             data-expandable="${row.expandable ? "true" : "false"}"
           >
             <td class="col-indicator" style="--row-indent:${indent}px">
               <div class="row-label">
                 ${chevron}
-                <span class="row-name">${row.name}</span>
+                <span class="row-name">${escapeHtml(row.name)}</span>
               </div>
             </td>
             <td class="text-center col-total${drillCellClass(row)}"${renderDrillCell("total", row)}>${renderScenarioCell(row.values, almabiData.months, row)}</td>
@@ -2067,30 +2144,366 @@
   }
 
   function closeAllFilterMenus(except = null) {
-    document.querySelectorAll("[data-filter-select], [data-scenario-picker]").forEach((root) => {
+    let finishPeriodPick = false;
+    document.querySelectorAll("[data-filter-select], [data-scenario-picker], [data-period-picker]").forEach((root) => {
       if (root === except) return;
+      const wasOpen = root.classList.contains("is-open");
       root.classList.remove("is-open");
       root.querySelector(".almabi-select__trigger")?.setAttribute("aria-expanded", "false");
       root.querySelector(".almabi-select__menu")?.classList.add("hidden");
+      if (wasOpen && root.hasAttribute("data-period-picker") && state.periodPicking && state.periodFrom && !state.periodTo) {
+        finishPeriodPick = true;
+      }
+    });
+    if (finishPeriodPick) commitIncompletePeriodPick();
+  }
+
+  function availablePeriods() {
+    return almabiData.available_periods || almabiData.periods || almabiData.months || [];
+  }
+
+  function periodHasData(period) {
+    const periods = almabiData.data_periods || almabiData.months || almabiData.periods || [];
+    return periods.includes(period);
+  }
+
+  function filterTreeRows() {
+    return almabiData.filter_tree || [];
+  }
+
+  function cascadeRowsFor(key) {
+    const parents = FILTER_PARENTS[key] || [];
+    return filterTreeRows().filter((row) =>
+      parents.every((parentKey) => {
+        const selected = state.filters[parentKey];
+        if (!selected.size) return true;
+        return selected.has(row[FILTER_TREE_FIELDS[parentKey]] || "");
+      })
+    );
+  }
+
+  function optionsFor(key) {
+    const values = new Set();
+    cascadeRowsFor(key).forEach((row) => {
+      const value = row[FILTER_TREE_FIELDS[key]] || "";
+      if (value) values.add(value);
+    });
+    if (values.size) return [...values].sort((left, right) => left.localeCompare(right, "ru"));
+    const fallback = (almabiData.filters?.[key] || []).filter((item, index) => index > 0 && item);
+    return fallback;
+  }
+
+  function pruneChildSelections(changedKey) {
+    const start = FILTER_KEYS.indexOf(changedKey);
+    FILTER_KEYS.slice(start + 1).forEach((childKey) => {
+      const allowed = new Set(optionsFor(childKey));
+      state.filters[childKey] = new Set([...state.filters[childKey]].filter((value) => allowed.has(value)));
     });
   }
 
-  function setFilterValue(key, value) {
-    state.filters[key] = value;
+  function escapeHtml(value) {
+    return String(value || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  function escapeFilterText(value) {
+    return escapeHtml(value);
+  }
+
+  function renderFilterOptions(key) {
     const root = document.querySelector(`[data-filter-select="${key}"]`);
     if (!root) return;
-    const isActive = !isDefaultFilter(key);
-    root.classList.toggle("is-active", isActive);
-    root.querySelector(".almabi-select__value").textContent = value;
-    root.querySelectorAll(".almabi-select__option").forEach((option) => {
-      const selected = option.dataset.value === value;
-      option.classList.toggle("is-selected", selected);
-      option.setAttribute("aria-selected", selected ? "true" : "false");
+    const query = (root.querySelector("[data-filter-search]")?.value || "").trim().toLowerCase();
+    const options = optionsFor(key).filter((value) => !query || value.toLowerCase().includes(query));
+    const selected = state.filters[key];
+    const list = root.querySelector("[data-filter-options]");
+    const empty = root.querySelector("[data-filter-empty]");
+    if (list) {
+      list.innerHTML = options.map((value) => {
+        const checked = selected.has(value);
+        return `
+          <label class="almabi-select__option almabi-select__option--check${checked ? " is-selected" : ""}" role="option" aria-selected="${checked ? "true" : "false"}">
+            <input type="checkbox" data-filter-option value="${escapeFilterText(value)}" ${checked ? "checked" : ""} />
+            <span>${escapeFilterText(value)}</span>
+          </label>`;
+      }).join("");
+    }
+    empty?.classList.toggle("hidden", options.length > 0);
+    const allButton = root.querySelector("[data-filter-select-all]");
+    if (allButton) {
+      const allSelected = options.length > 0 && options.every((value) => selected.has(value));
+      allButton.textContent = allSelected ? "Снять все" : "Выбрать все";
+    }
+    const summary = root.querySelector("[data-filter-summary]");
+    if (summary) {
+      summary.textContent = selected.size
+        ? `Выбрано: ${selected.size}`
+        : (FILTER_ALL_LABELS[key] || "Все");
+    }
+    root.classList.toggle("is-active", selected.size > 0);
+  }
+
+  function renderFilterChips() {
+    const container = document.querySelector("[data-filter-chips]");
+    if (!container) return;
+    const chips = [];
+    FILTER_KEYS.forEach((key) => {
+      const label = document.querySelector(`[data-filter-select="${key}"]`)?.dataset.filterLabel || key;
+      [...state.filters[key]].sort((left, right) => left.localeCompare(right, "ru")).forEach((value) => {
+        chips.push(`
+          <button type="button" class="almabi-filter-chip" data-filter-chip="${escapeFilterText(key)}" data-value="${escapeFilterText(value)}" title="Убрать ${escapeFilterText(label)}: ${escapeFilterText(value)}">
+            <span>${escapeFilterText(label)}: ${escapeFilterText(value)}</span>
+            <span aria-hidden="true">×</span>
+          </button>`);
+      });
     });
+    container.innerHTML = chips.join("");
+  }
+
+  function periodMonthName(period) {
+    const match = /^(\d{4})-(\d{2})$/.exec(period);
+    if (match) return MONTH_NAMES_FULL[Number(match[2]) - 1] || period;
+    return period;
+  }
+
+  function periodButtonLabel() {
+    if (state.periodFrom && state.periodTo) {
+      if (state.periodFrom === state.periodTo) return periodDisplayLabel(state.periodFrom);
+      return `${periodDisplayLabel(state.periodFrom)} — ${periodDisplayLabel(state.periodTo)}`;
+    }
+    if (state.periodFrom) return periodDisplayLabel(state.periodFrom);
+    return "Все месяцы";
+  }
+
+  function groupedPeriodYears() {
+    const grouped = new Map();
+    availablePeriods().forEach((period) => {
+      const match = /^(\d{4})-(\d{2})$/.exec(period);
+      const year = match ? match[1] : "Период";
+      if (!grouped.has(year)) grouped.set(year, []);
+      grouped.get(year).push(period);
+    });
+    return grouped;
+  }
+
+  function periodYearList() {
+    return [...groupedPeriodYears().keys()].filter((year) => /^\d{4}$/.test(year));
+  }
+
+  function visiblePeriodYear() {
+    const years = periodYearList();
+    if (!years.length) return "";
+    if (years.includes(state.periodViewYear)) return state.periodViewYear;
+    if (state.periodFrom && years.includes(state.periodFrom.slice(0, 4))) {
+      return state.periodFrom.slice(0, 4);
+    }
+    return years[years.length - 1];
+  }
+
+  function shiftPeriodViewYear(delta) {
+    const years = periodYearList();
+    const current = visiblePeriodYear();
+    const index = years.indexOf(current);
+    const next = years[index + delta];
+    if (!next) return;
+    state.periodViewYear = next;
+    renderPeriodPicker();
+  }
+
+  function currentPeriodRange() {
+    const from = state.periodFrom;
+    let to = state.periodTo;
+    if (!to && state.periodPicking) to = state.periodHover || from;
+    if (from && to && from > to) return [to, from];
+    return [from, to];
+  }
+
+  function syncPeriodMonthClasses() {
+    const calendar = document.querySelector("[data-period-calendar]");
+    if (!calendar) return;
+    const [from, to] = currentPeriodRange();
+    calendar.querySelectorAll("[data-period-month]").forEach((button) => {
+      const period = button.getAttribute("data-period-month");
+      const inRange = Boolean(from && to && period >= from && period <= to);
+      const endpoint = Boolean(period && (period === from || period === to));
+      button.classList.toggle("is-in-range", inRange);
+      button.classList.toggle("is-endpoint", endpoint);
+    });
+  }
+
+  function commitIncompletePeriodPick() {
+    if (!(state.periodPicking && state.periodFrom && !state.periodTo)) return;
+    state.periodTo = state.periodFrom;
+    state.periodPicking = false;
+    state.periodHover = "";
+    renderPeriodPicker();
+    scheduleDashboardReload();
+  }
+
+  function renderPeriodPicker() {
+    const root = document.querySelector("[data-period-picker]");
+    if (!root) return;
+    const calendar = root.querySelector("[data-period-calendar]");
+    const summary = root.querySelector("[data-period-summary]");
+    const hint = root.querySelector("[data-period-pick-hint]");
+    const yearNav = root.querySelector("[data-period-year-nav]");
+    const yearLabel = root.querySelector("[data-period-year-label]");
+    const yearPrev = root.querySelector("[data-period-year-prev]");
+    const yearNext = root.querySelector("[data-period-year-next]");
+    if (summary) summary.textContent = periodButtonLabel();
+    root.classList.toggle("is-active", Boolean(state.periodFrom || state.periodTo));
+    const years = periodYearList();
+    const viewYear = visiblePeriodYear();
+    state.periodViewYear = viewYear;
+    if (hint) {
+      hint.textContent = state.periodPicking && state.periodFrom
+        ? `Начало: ${periodDisplayLabel(state.periodFrom)}. Переключите год при необходимости и выберите конец`
+        : years.length > 1
+          ? "Сначала начало, затем конец. Год можно переключить"
+          : "Сначала начало диапазона, затем конец";
+    }
+    yearNav?.classList.toggle("is-hidden", years.length < 2);
+    if (yearLabel) yearLabel.textContent = viewYear || "Период";
+    const yearIndex = years.indexOf(viewYear);
+    if (yearPrev) yearPrev.disabled = yearIndex <= 0;
+    if (yearNext) yearNext.disabled = yearIndex < 0 || yearIndex >= years.length - 1;
+    if (!calendar) return;
+    const grouped = groupedPeriodYears();
+    const periods = viewYear ? (grouped.get(viewYear) || []) : [...grouped.values()].flat();
+    calendar.innerHTML = `
+      <div class="almabi-period-year">
+        <div class="almabi-period-months">
+          ${periods.map((period) => {
+            const empty = !periodHasData(period);
+            return `<button type="button" class="almabi-period-month${empty ? " is-empty" : ""}" data-period-month="${escapeFilterText(period)}"${empty ? " disabled" : ""}>${escapeFilterText(periodMonthName(period))}</button>`;
+          }).join("")}
+        </div>
+      </div>
+    `;
+    syncPeriodMonthClasses();
+  }
+
+  function renderFilterControls() {
+    FILTER_KEYS.forEach(renderFilterOptions);
+    renderFilterChips();
+    renderPeriodPicker();
+    updateFilterHint();
+  }
+
+  function toggleFilterValue(key, value, checked) {
+    if (checked) state.filters[key].add(value);
+    else state.filters[key].delete(value);
+    pruneChildSelections(key);
+    renderFilterControls();
+    scheduleDashboardReload();
   }
 
   function resetFilters() {
-    FILTER_KEYS.forEach((key) => setFilterValue(key, almabiData.filters[key][0]));
+    FILTER_KEYS.forEach((key) => {
+      state.filters[key] = new Set();
+    });
+    state.periodFrom = "";
+    state.periodTo = "";
+    state.periodPicking = false;
+    state.periodHover = "";
+    state.periodViewYear = "";
+    document.querySelectorAll("[data-filter-search]").forEach((input) => {
+      input.value = "";
+    });
+    renderFilterControls();
+  }
+
+  let filterFetchTimer = null;
+  let filterFetchController = null;
+
+  function setFilterRequestState({ loading = false, error = "" } = {}) {
+    document.querySelector("[data-filter-loading]")?.classList.toggle("hidden", !loading);
+    const errorNode = document.querySelector("[data-filter-error]");
+    if (errorNode) {
+      errorNode.textContent = error;
+      errorNode.classList.toggle("hidden", !error);
+    }
+    document.querySelectorAll("[data-filter-select] button, [data-period-trigger], [data-period-clear], [data-filter-reset], [data-filter-search]").forEach((node) => {
+      node.disabled = loading;
+    });
+  }
+
+  function validatePeriodRange() {
+    if (state.periodFrom && state.periodTo && state.periodFrom > state.periodTo) {
+      return "«Период с» не может быть позже «Период по».";
+    }
+    return "";
+  }
+
+  function dashboardFilterParams() {
+    const params = new URLSearchParams();
+    FILTER_KEYS.forEach((key) => {
+      [...state.filters[key]].forEach((value) => params.append(FILTER_QUERY_KEYS[key], value));
+    });
+    if (state.periodFrom) params.set("period_from", state.periodFrom);
+    if (state.periodTo) params.set("period_to", state.periodTo);
+    return params;
+  }
+
+  async function reloadDashboard() {
+    const validationError = validatePeriodRange();
+    updateFilterHint();
+    if (validationError) {
+      filterFetchController?.abort();
+      setFilterRequestState({ error: validationError });
+      return;
+    }
+
+    filterFetchController?.abort();
+    filterFetchController = new AbortController();
+    setFilterRequestState({ loading: true });
+    try {
+      const params = dashboardFilterParams();
+      const query = params.toString();
+      const response = await fetch(`/api/almabi/dashboard${query ? `?${query}` : ""}`, {
+        signal: filterFetchController.signal,
+        headers: { Accept: "application/json" },
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.detail || `Ошибка API (${response.status})`);
+
+      const previousTree = almabiData.filter_tree;
+      const previousPeriods = almabiData.available_periods;
+      const previousDataPeriods = almabiData.data_periods;
+      const previousLabels = almabiData.period_labels;
+      almabiData = payload;
+      if (!almabiData.filter_tree?.length && previousTree?.length) almabiData.filter_tree = previousTree;
+      if (!almabiData.available_periods?.length && previousPeriods?.length) {
+        almabiData.available_periods = previousPeriods;
+      }
+      if (previousDataPeriods?.length && (almabiData.data_periods || []).length < previousDataPeriods.length) {
+        almabiData.data_periods = previousDataPeriods;
+      }
+      almabiData.period_labels = { ...(previousLabels || {}), ...(almabiData.period_labels || {}) };
+      const allowedScenarios = new Set(almabiData.scenarios || []);
+      state.selectedScenarios = new Set(
+        [...state.selectedScenarios].filter((scenario) => allowedScenarios.has(scenario)),
+      );
+      if (!state.selectedScenarios.size && almabiData.scenarios?.length) {
+        state.selectedScenarios.add(almabiData.scenarios[0]);
+      }
+      syncScenarioPickerUi();
+      renderFilterControls();
+      renderAll();
+      setFilterRequestState();
+    } catch (error) {
+      if (error.name === "AbortError") return;
+      setFilterRequestState({ error: error.message || "Не удалось обновить dashboard." });
+    }
+  }
+
+  function scheduleDashboardReload() {
+    clearTimeout(filterFetchTimer);
+    filterFetchTimer = setTimeout(reloadDashboard, 250);
   }
 
   function initFilterSelects() {
@@ -2107,33 +2520,115 @@
           root.classList.add("is-open");
           menu?.classList.remove("hidden");
           trigger.setAttribute("aria-expanded", "true");
+          root.querySelector("[data-filter-search]")?.focus();
         }
       });
 
-      root.querySelectorAll(".almabi-select__option").forEach((option) => {
-        option.addEventListener("click", (event) => {
-          event.stopPropagation();
-          setFilterValue(key, option.dataset.value);
-          closeAllFilterMenus();
-          if (key === "quarter" && !isDefaultFilter("quarter")) {
-            setFilterValue("month", almabiData.filters.month[0]);
-          }
-          if (key === "month" && !isDefaultFilter("month")) {
-            setFilterValue("quarter", almabiData.filters.quarter[0]);
-          }
-          renderAll();
-        });
+      menu?.addEventListener("click", (event) => event.stopPropagation());
+      root.querySelector("[data-filter-search]")?.addEventListener("input", () => renderFilterOptions(key));
+      root.querySelector("[data-filter-select-all]")?.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const query = (root.querySelector("[data-filter-search]")?.value || "").trim().toLowerCase();
+        const options = optionsFor(key).filter((value) => !query || value.toLowerCase().includes(query));
+        const allSelected = options.length > 0 && options.every((value) => state.filters[key].has(value));
+        if (allSelected) options.forEach((value) => state.filters[key].delete(value));
+        else options.forEach((value) => state.filters[key].add(value));
+        pruneChildSelections(key);
+        renderFilterControls();
+        scheduleDashboardReload();
+      });
+      root.querySelector("[data-filter-options]")?.addEventListener("change", (event) => {
+        const input = event.target;
+        if (!(input instanceof HTMLInputElement) || !input.matches("[data-filter-option]")) return;
+        toggleFilterValue(key, input.value, input.checked);
       });
     });
 
+    const periodRoot = document.querySelector("[data-period-picker]");
+    const periodTrigger = periodRoot?.querySelector("[data-period-trigger]");
+    const periodMenu = periodRoot?.querySelector("[data-period-menu]");
+    periodTrigger?.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const willOpen = !periodRoot.classList.contains("is-open");
+      closeAllFilterMenus();
+      if (willOpen) {
+        periodRoot.classList.add("is-open");
+        periodMenu?.classList.remove("hidden");
+        periodTrigger.setAttribute("aria-expanded", "true");
+      }
+    });
+    periodMenu?.addEventListener("click", (event) => {
+      event.stopPropagation();
+      if (event.target.closest("[data-period-year-prev]")) {
+        shiftPeriodViewYear(-1);
+        return;
+      }
+      if (event.target.closest("[data-period-year-next]")) {
+        shiftPeriodViewYear(1);
+        return;
+      }
+      const monthButton = event.target.closest("[data-period-month]");
+      if (monthButton) {
+        const period = monthButton.getAttribute("data-period-month");
+        if (!period || monthButton.disabled || !periodHasData(period)) return;
+        if (!state.periodPicking || !state.periodFrom || state.periodTo) {
+          state.periodFrom = period;
+          state.periodTo = "";
+          state.periodPicking = true;
+          state.periodHover = period;
+          renderPeriodPicker();
+          return;
+        }
+        if (period < state.periodFrom) {
+          state.periodTo = state.periodFrom;
+          state.periodFrom = period;
+        } else {
+          state.periodTo = period;
+        }
+        state.periodPicking = false;
+        state.periodHover = "";
+        renderPeriodPicker();
+        closeAllFilterMenus();
+        scheduleDashboardReload();
+        return;
+      }
+      if (event.target.closest("[data-period-clear]")) {
+        state.periodFrom = "";
+        state.periodTo = "";
+        state.periodPicking = false;
+        state.periodHover = "";
+        renderPeriodPicker();
+        closeAllFilterMenus();
+        scheduleDashboardReload();
+      }
+    });
+    periodMenu?.addEventListener("mouseover", (event) => {
+      const monthButton = event.target.closest("[data-period-month]");
+      if (!monthButton || !state.periodPicking || state.periodTo) return;
+      const period = monthButton.getAttribute("data-period-month");
+      if (!period || monthButton.disabled || !periodHasData(period) || state.periodHover === period) return;
+      state.periodHover = period;
+      syncPeriodMonthClasses();
+    });
+
+    document.querySelector("[data-filter-chips]")?.addEventListener("click", (event) => {
+      const chip = event.target.closest("[data-filter-chip]");
+      if (!chip) return;
+      toggleFilterValue(chip.dataset.filterChip, chip.dataset.value, false);
+    });
+
     document.addEventListener("click", (event) => {
-      if (event.target.closest("[data-scenario-picker]")) return;
+      if (event.target.closest("[data-scenario-picker], [data-period-picker]")) return;
       closeAllFilterMenus();
     });
     document.querySelector("[data-filter-reset]")?.addEventListener("click", () => {
+      clearTimeout(filterFetchTimer);
       resetFilters();
-      renderAll();
+      closeAllFilterMenus();
+      reloadDashboard();
     });
+    renderFilterControls();
   }
 
   function buildChartMetrics() {
@@ -2834,14 +3329,6 @@
   function contractorDetailMatchesFilters(item) {
     const taxBucket = activeTaxBucketFilter();
     if (taxBucket && item.tax_bucket !== taxBucket) return false;
-    if (!isDefaultFilter("taxType") && item.tax_bucket !== state.filters.taxType) return false;
-    if (!isDefaultFilter("direction") && item.direction && item.direction !== state.filters.direction) return false;
-    if (!isDefaultFilter("projectGroup") && item.project_group && item.project_group !== state.filters.projectGroup) return false;
-    if (!isDefaultFilter("project") && item.project && item.project !== state.filters.project) return false;
-    if (!isDefaultFilter("contract") && item.contract && item.contract !== state.filters.contract) return false;
-    if (!isDefaultFilter("contractor") && item.contractor !== state.filters.contractor) return false;
-    if (!isDefaultFilter("month") && item.month && item.month !== state.filters.month) return false;
-    if (!isDefaultFilter("quarter") && item.month && !QUARTER_MONTHS[state.filters.quarter]?.includes(item.month)) return false;
     return true;
   }
 
@@ -2893,7 +3380,7 @@
       cardNode.className = "rounded-lg border border-slate-200 bg-white p-5 shadow-md";
       cardNode.innerHTML = `
         <div class="mb-4 flex items-center justify-between border-b border-slate-100 pb-3">
-          <h2 class="text-base font-bold text-slate-900">${card.title}</h2>
+          <h2 class="text-base font-bold text-slate-900">${escapeHtml(card.title)}</h2>
           <span class="text-xs font-semibold text-slate-400">↕</span>
         </div>
         <div class="mb-2 grid grid-cols-[1fr_auto] gap-4 text-xs font-semibold text-slate-500">
@@ -2909,7 +3396,7 @@
             <div class="almabi-contractor-row grid grid-cols-[1fr_auto] items-center gap-4">
               <div class="relative h-7 overflow-hidden rounded-sm bg-slate-50">
                 <div class="absolute inset-y-0 left-0 rounded-sm ${accentClass}" style="width:${Math.max((row.value / maxValue) * 100, 4)}%"></div>
-                <span class="relative z-10 flex h-full items-center truncate px-2 text-sm font-semibold text-slate-700">${row.name}</span>
+                <span class="relative z-10 flex h-full items-center truncate px-2 text-sm font-semibold text-slate-700">${escapeHtml(row.name)}</span>
               </div>
               <span class="whitespace-nowrap text-sm font-semibold text-slate-700">${formatMoney(row.value)}</span>
             </div>`,

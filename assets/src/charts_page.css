@@ -449,3 +449,17 @@
   color: #6b7280;
   font-size: 0.875rem;
 }
+
+.charts-sidebar .almabi-select--period .almabi-select__menu {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+
+.charts-sidebar .almabi-period-months {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.charts-sidebar .almabi-period-month {
+  font-size: 0.68rem;
+}

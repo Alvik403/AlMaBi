@@ -1,0 +1,28 @@
+flowchart LR
+  U["Пользователь<br/>Браузер"]
+  W["AlMaBi web<br/>auth · RBAC · CSRF"]
+  X["uploads/almabi/users/{user_id}/<br/>Excel .xlsx"]
+  P["Парсинг + валидация<br/>openpyxl"]
+  Q["PQ pipeline<br/>join · Fact · P&L"]
+  D["Dashboard / KPI"]
+  A["runtime/auth.sqlite3"]
+
+  U -->|"1 upload"| W
+  W -->|"2 save"| X
+  X -->|"3 read"| P
+  P -->|"4 parse"| Q
+  Q -->|"5 aggregate"| D
+  D -->|"6 render"| U
+  W <-->|"7 session"| A
+
+  classDef a fill:#E8F4FF,stroke:#2B6CB0,color:#123048
+  classDef b fill:#FFF7ED,stroke:#C05621,color:#123048
+  classDef c fill:#E6FFFA,stroke:#0B6E4F,color:#123048
+  classDef d fill:#F0FFF4,stroke:#276749,color:#123048
+  classDef e fill:#F7FAFC,stroke:#4A5568,color:#123048
+
+  class U a
+  class W,P b
+  class Q c
+  class D d
+  class X,A e

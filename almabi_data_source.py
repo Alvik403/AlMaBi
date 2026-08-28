@@ -6,12 +6,19 @@ from uuid import uuid4
 
 from fastapi import HTTPException, Request, UploadFile
 
+from almabi_file_security import (
+    directory_size,
+    resolve_user_stored_xlsx,
+    user_upload_dir,
+    write_limited,
+)
 from almabi_file_validation import (
     EXPORT_TYPES,
     REQUIRED_EXPORT_TYPES,
     EXPORT_LABELS,
     guess_export_type_from_filename,
     validate_almabi_export,
+    validate_xlsx_container,
 )
 from settings import Settings
 
@@ -27,6 +34,37 @@ _EXPORT_FIELD_NAMES = {
 }
 
 
+def adopt_latest_user_uploads(request: Request, settings: Settings) -> None:
+    """Attach safely migrated files when a user has no current upload session."""
+    if get_almabi_upload_set(request):
+        return
+    upload_dir = user_upload_dir(request, settings.resolved_uploads_dir, "almabi")
+    adopted: dict[str, dict[str, str]] = {}
+    for export_type in EXPORT_TYPES:
+        candidates = sorted(
+            upload_dir.glob(f"{export_type}-*.xlsx"),
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )
+        if candidates:
+            adopted[export_type] = {
+                "original": candidates[0].name,
+                "stored": candidates[0].name,
+            }
+    if adopted:
+        request.session[SESSION_ALMABI_UPLOAD_SET] = adopted
+    plans = sorted(
+        upload_dir.glob("plan-forecast-*.xlsx"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    if plans and SESSION_ALMABI_PLAN_FORECAST not in request.session:
+        request.session[SESSION_ALMABI_PLAN_FORECAST] = {
+            "original": plans[0].name,
+            "stored": plans[0].name,
+        }
+
+
 def get_almabi_upload_set(request: Request) -> dict[str, dict[str, str]]:
     stored = request.session.get(SESSION_ALMABI_UPLOAD_SET, {})
     if not isinstance(stored, dict):
@@ -40,14 +78,18 @@ def get_almabi_upload_set(request: Request) -> dict[str, dict[str, str]]:
 
 def get_almabi_upload_paths(request: Request, settings: Settings) -> dict[str, Path]:
     upload_set = get_almabi_upload_set(request)
-    upload_dir = settings.resolved_uploads_dir / "almabi"
     paths: dict[str, Path] = {}
     for export_type, meta in upload_set.items():
         stored_name = meta.get("stored")
         if not stored_name:
             continue
-        path = upload_dir / stored_name
-        if path.exists():
+        path = resolve_user_stored_xlsx(
+            request,
+            settings.resolved_uploads_dir,
+            "almabi",
+            stored_name,
+        )
+        if path is not None:
             paths[export_type] = path
     return paths
 
@@ -59,8 +101,12 @@ def get_almabi_plan_forecast_path(request: Request, settings: Settings) -> Path 
     stored_name = stored.get("stored")
     if not stored_name:
         return None
-    path = settings.resolved_uploads_dir / "almabi" / stored_name
-    return path if path.exists() else None
+    return resolve_user_stored_xlsx(
+        request,
+        settings.resolved_uploads_dir,
+        "almabi",
+        stored_name,
+    )
 
 
 def _upload_status(upload_set: dict[str, dict[str, str]], *, plan_forecast: dict[str, str] | None = None) -> dict[str, Any]:
@@ -94,26 +140,28 @@ def almabi_data_context(request: Request, settings: Settings) -> dict[str, Any]:
     }
 
 
-def _save_upload_file(settings: Settings, file: UploadFile) -> dict[str, Any]:
+def _save_upload_file(request: Request, settings: Settings, file: UploadFile) -> dict[str, Any]:
     original_name = Path(file.filename or "").name
     if not original_name:
         raise ValueError("Имя файла не передано")
     if Path(original_name).suffix.casefold() != ".xlsx":
         raise ValueError("Поддерживаются только файлы .xlsx")
 
-    upload_dir = settings.resolved_uploads_dir / "almabi"
-    upload_dir.mkdir(parents=True, exist_ok=True)
+    upload_dir = user_upload_dir(request, settings.resolved_uploads_dir, "almabi")
+    used_bytes = directory_size(upload_dir)
+    if used_bytes >= settings.upload_quota_bytes:
+        raise ValueError("Квота хранилища пользователя исчерпана")
     incoming_dir = upload_dir / ".incoming"
     incoming_dir.mkdir(parents=True, exist_ok=True)
 
     temp_path = incoming_dir / f"upload-{uuid4().hex}.xlsx"
 
     try:
-        with temp_path.open("wb") as output:
-            while chunk := file.file.read(1024 * 1024):
-                output.write(chunk)
-        if temp_path.stat().st_size == 0:
+        size = write_limited(file.file, temp_path, settings.max_upload_bytes)
+        if size == 0:
             raise ValueError(f"Файл «{original_name}» пустой")
+        if used_bytes + size > settings.upload_quota_bytes:
+            raise ValueError("Файл превышает оставшуюся квоту хранилища пользователя")
         validation = validate_almabi_export(temp_path)
         export_type = validation.export_type
         filename_hint = guess_export_type_from_filename(original_name)
@@ -139,7 +187,7 @@ def _save_upload_file(settings: Settings, file: UploadFile) -> dict[str, Any]:
         raise ValueError(str(exc)) from exc
 
 
-def _save_plan_forecast_file(settings: Settings, file: UploadFile) -> dict[str, str]:
+def _save_plan_forecast_file(request: Request, settings: Settings, file: UploadFile) -> dict[str, str]:
     from almabi_plan_forecast_parser import validate_plan_forecast_workbook
 
     original_name = Path(file.filename or "").name
@@ -148,18 +196,21 @@ def _save_plan_forecast_file(settings: Settings, file: UploadFile) -> dict[str, 
     if Path(original_name).suffix.casefold() != ".xlsx":
         raise ValueError("Поддерживаются только файлы .xlsx")
 
-    upload_dir = settings.resolved_uploads_dir / "almabi"
-    upload_dir.mkdir(parents=True, exist_ok=True)
+    upload_dir = user_upload_dir(request, settings.resolved_uploads_dir, "almabi")
+    used_bytes = directory_size(upload_dir)
+    if used_bytes >= settings.upload_quota_bytes:
+        raise ValueError("Квота хранилища пользователя исчерпана")
     incoming_dir = upload_dir / ".incoming"
     incoming_dir.mkdir(parents=True, exist_ok=True)
     temp_path = incoming_dir / f"plan-forecast-{uuid4().hex}.xlsx"
 
     try:
-        with temp_path.open("wb") as output:
-            while chunk := file.file.read(1024 * 1024):
-                output.write(chunk)
-        if temp_path.stat().st_size == 0:
+        size = write_limited(file.file, temp_path, settings.max_upload_bytes)
+        if size == 0:
             raise ValueError(f"Файл «{original_name}» пустой")
+        if used_bytes + size > settings.upload_quota_bytes:
+            raise ValueError("Файл превышает оставшуюся квоту хранилища пользователя")
+        validate_xlsx_container(temp_path)
         validate_plan_forecast_workbook(temp_path)
         stored_name = f"plan-forecast-{uuid4().hex}.xlsx"
         final_path = upload_dir / stored_name
@@ -190,7 +241,7 @@ def store_almabi_upload_bundle(
 
     try:
         for slot, file in incoming:
-            payload = _save_upload_file(settings, file)
+            payload = _save_upload_file(request, settings, file)
             payload["selected_slot"] = slot
             export_type = payload["export_type"]
             if export_type in saved:
@@ -215,7 +266,7 @@ def store_almabi_upload_bundle(
     plan_forecast_meta: dict[str, str] | None = None
     if plan_forecast_file is not None:
         try:
-            plan_forecast_meta = _save_plan_forecast_file(settings, plan_forecast_file)
+            plan_forecast_meta = _save_plan_forecast_file(request, settings, plan_forecast_file)
             request.session[SESSION_ALMABI_PLAN_FORECAST] = plan_forecast_meta
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -243,17 +294,19 @@ def store_almabi_upload(request: Request, settings: Settings, file: UploadFile) 
     if Path(original_name).suffix.casefold() != ".xlsx":
         raise HTTPException(status_code=400, detail="Поддерживаются только файлы .xlsx")
 
-    upload_dir = settings.resolved_uploads_dir / "almabi"
-    upload_dir.mkdir(parents=True, exist_ok=True)
+    upload_dir = user_upload_dir(request, settings.resolved_uploads_dir, "almabi")
+    used_bytes = directory_size(upload_dir)
+    if used_bytes >= settings.upload_quota_bytes:
+        raise HTTPException(status_code=413, detail="Квота хранилища пользователя исчерпана")
     incoming_dir = upload_dir / ".incoming"
     incoming_dir.mkdir(parents=True, exist_ok=True)
     temp_path = incoming_dir / f"detect-{uuid4().hex}.xlsx"
     try:
-        with temp_path.open("wb") as output:
-            while chunk := file.file.read(1024 * 1024):
-                output.write(chunk)
-        if temp_path.stat().st_size == 0:
+        size = write_limited(file.file, temp_path, settings.max_upload_bytes)
+        if size == 0:
             raise ValueError("Файл пустой")
+        if used_bytes + size > settings.upload_quota_bytes:
+            raise ValueError("Файл превышает оставшуюся квоту хранилища пользователя")
         validation = validate_almabi_export(temp_path)
         export_type = validation.export_type
         stored_name = f"{export_type}-{uuid4().hex}.xlsx"
