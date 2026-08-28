@@ -23,6 +23,32 @@ test("dashboard keeps its visual baseline and uses local assets", async ({ page 
   expect(page.externalRequests).toEqual([]);
 });
 
+test("year period toggle groups summary columns and can switch back", async ({ page }) => {
+  const monthBtn = page.locator("[data-table-period='month']");
+  const quarterBtn = page.locator("[data-table-period='quarter']");
+  const yearBtn = page.locator("[data-table-period='year']");
+  const monthColumns = page.locator("#almabiSummaryHead th.col-month");
+
+  await expect(yearBtn).toHaveText("Год");
+  await expect(monthColumns).toHaveCount(12);
+
+  await quarterBtn.click();
+  await expect(monthColumns).toHaveCount(4);
+
+  await yearBtn.click();
+  await expect(monthColumns).toHaveCount(1);
+  await expect(monthColumns.first()).toContainText("Год");
+
+  await monthBtn.click();
+  await expect(monthColumns).toHaveCount(12);
+
+  const chartYearBtn = page.locator("[data-chart-period='year']");
+  await page.locator("[data-tab-button='revenue']").click();
+  await expect(chartYearBtn).toBeVisible();
+  await chartYearBtn.click();
+  await expect(page.locator("#almabiRevenueTrendChart")).toBeVisible();
+});
+
 test("charts and report pages remain operational", async ({ page }) => {
   await page.goto("/dashboard/almabi-charts");
   await expect(page.locator("body")).toContainText("Графики БДР");

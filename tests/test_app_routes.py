@@ -22,6 +22,9 @@ def test_almabi_dashboard_available(app_client):
     assert "BI" in response.text
     assert "Сводная информация" in response.text
     assert "data-table-period" in response.text
+    assert 'data-table-period="year"' in response.text
+    assert 'data-chart-period="year"' in response.text
+    assert ">Год<" in response.text
     assert "data-tax-bucket" in response.text
     assert "data-consolidated-panel" not in response.text
     assert "almabiConsolidatedBody" not in response.text

@@ -34,6 +34,7 @@
   <div class="flex rounded-lg border border-slate-200 bg-white p-1 shadow-sm" data-table-period-group role="group" aria-label="Период таблицы">
     <button type="button" class="rounded-md px-3 py-1.5 text-xs font-semibold bg-sky-100 text-sky-900 ring-1 ring-sky-200" data-table-period="month">Месяцы</button>
     <button type="button" class="rounded-md px-3 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-800" data-table-period="quarter">Кварталы</button>
+    <button type="button" class="rounded-md px-3 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-800" data-table-period="year">Год</button>
   </div>
 </div>
 {% endblock %}
@@ -255,6 +256,7 @@
       <div class="flex rounded-lg border border-slate-200 bg-white p-1 shadow-sm" data-chart-period-group role="group" aria-label="Период графиков">
         <button type="button" class="rounded-md px-3 py-1.5 text-xs font-semibold bg-sky-100 text-sky-900 ring-1 ring-sky-200" data-chart-period="month">Месяцы</button>
         <button type="button" class="rounded-md px-3 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-800" data-chart-period="quarter">Кварталы</button>
+        <button type="button" class="rounded-md px-3 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-800" data-chart-period="year">Год</button>
       </div>
     </div>
 
@@ -455,6 +457,54 @@
       }))
       .filter((quarter) => quarter.months.length);
     return [...Array.from(grouped.values()), ...legacy];
+  }
+
+  function currentYearDefs() {
+    const periods = almabiData.months || [];
+    const grouped = new Map();
+    const leftover = [];
+    periods.forEach((period) => {
+      const match = /^(\d{4})-(\d{2})$/.exec(period);
+      if (!match) {
+        leftover.push(period);
+        return;
+      }
+      const year = match[1];
+      const key = `Y${year}`;
+      if (!grouped.has(key)) grouped.set(key, { key, label: year, months: [] });
+      grouped.get(key).months.push(period);
+    });
+    const years = Array.from(grouped.values()).sort((left, right) => left.label.localeCompare(right.label));
+    if (leftover.length) {
+      years.push({
+        key: "Y-legacy",
+        label: years.length ? "Прочие" : "Год",
+        months: leftover,
+      });
+    }
+    return years;
+  }
+
+  function periodGroupDefs(mode) {
+    if (mode === "quarter") return currentQuarterDefs();
+    if (mode === "year") return currentYearDefs();
+    return null;
+  }
+
+  function periodGroupByKey(periodKey) {
+    return [...currentQuarterDefs(), ...currentYearDefs()].find((item) => item.key === periodKey) || null;
+  }
+
+  function periodModeShortSuffix(mode) {
+    if (mode === "year") return "г.";
+    if (mode === "quarter") return "кв.";
+    return "мес.";
+  }
+
+  function periodModeFullSuffix(mode) {
+    if (mode === "year") return "год";
+    if (mode === "quarter") return "квартал";
+    return "месяц";
   }
 
   const CHART_PALETTE = {
@@ -1401,8 +1451,9 @@
     const payload = drillPayloadForPeriod(row, periodKey);
     const monthLabel = periodKey === "total"
       ? "Итого"
-      : (currentQuarterDefs().find((item) => item.key === periodKey)?.label
+      : (periodGroupByKey(periodKey)?.label
         || MONTH_HEADER_SHORT[periodKey]
+        || periodDisplayLabel(periodKey)
         || periodKey);
 
     clearOtherPnlBlocks(modal);
@@ -1501,7 +1552,8 @@
       value: Number(rows[index]?.value || 0),
     }));
 
-    if (state.chartPeriod === "month") {
+    const groups = periodGroupDefs(state.chartPeriod);
+    if (!groups) {
       return {
         labels: entries.map((entry) => entry.short),
         values: entries.map((entry) => entry.value),
@@ -1509,10 +1561,10 @@
     }
 
     return {
-      labels: currentQuarterDefs().map((quarter) => quarter.label),
-      values: currentQuarterDefs().map((quarter) =>
+      labels: groups.map((group) => group.label),
+      values: groups.map((group) =>
         entries
-          .filter((entry) => quarter.months.includes(entry.full))
+          .filter((entry) => group.months.includes(entry.full))
           .reduce((sum, entry) => sum + entry.value, 0),
       ),
     };
@@ -1545,21 +1597,22 @@
       };
     });
 
+    const groups = periodGroupDefs(state.chartPeriod);
     let periods;
-    if (state.chartPeriod === "month") {
+    if (!groups) {
       periods = entries;
     } else {
-      periods = currentQuarterDefs().map((quarter) => {
-        const quarterEntries = entries.filter((entry) => quarter.months.includes(entry.key));
+      periods = groups.map((group) => {
+        const groupEntries = entries.filter((entry) => group.months.includes(entry.key));
         const sectionBucket = {};
-        quarterEntries.forEach((entry) => {
+        groupEntries.forEach((entry) => {
           Object.entries(entry.sections || {}).forEach(([name, value]) => {
             sectionBucket[name] = (sectionBucket[name] || 0) + Number(value || 0);
           });
         });
         return {
-          key: quarter.key,
-          label: quarter.label,
+          key: group.key,
+          label: group.label,
           total: Object.values(sectionBucket).reduce((sum, value) => sum + Number(value || 0), 0),
           sections: sectionBucket,
         };
@@ -1632,12 +1685,13 @@
   }
 
   function getTablePeriodColumns() {
-    if (state.tablePeriod === "quarter") {
-      return currentQuarterDefs().map((quarter) => ({
-        key: quarter.key,
-        label: quarter.label,
-        months: quarter.months,
-        title: `${quarter.label} (${quarter.months.map(periodDisplayLabel).join(", ")})`,
+    const groups = periodGroupDefs(state.tablePeriod);
+    if (groups) {
+      return groups.map((group) => ({
+        key: group.key,
+        label: group.label,
+        months: group.months,
+        title: `${group.label} (${group.months.map(periodDisplayLabel).join(", ")})`,
       }));
     }
     return getVisibleMonths().map((month) => ({
@@ -1782,9 +1836,9 @@
   function drillPayloadForPeriod(row, periodKey) {
     if (!row?.drill) return null;
     if (periodKey === "total") return row.drill.total;
-    const quarter = currentQuarterDefs().find((item) => item.key === periodKey);
-    if (quarter) {
-      const payloads = quarter.months.map((month) => row.drill.months?.[month]).filter(Boolean);
+    const group = periodGroupByKey(periodKey);
+    if (group) {
+      const payloads = group.months.map((month) => row.drill.months?.[month]).filter(Boolean);
       return mergeDrillPayloads(payloads);
     }
     return row.drill.months?.[periodKey] || null;
@@ -2771,7 +2825,7 @@
       const raw = Number(row.value || 0);
       return raw === 0 ? null : raw;
     });
-    const periodSuffix = state.chartPeriod === "quarter" ? "кв." : "мес.";
+    const periodSuffix = periodModeShortSuffix(state.chartPeriod);
 
     let peakIndex = -1;
     let peakValue = 0;
@@ -2940,7 +2994,7 @@
       rawMeta.push({ revenue, cost, profit, margin: (profit / revenue) * 100 });
     });
 
-    const periodSuffix = state.chartPeriod === "quarter" ? "кв." : "мес.";
+    const periodSuffix = periodModeShortSuffix(state.chartPeriod);
 
     const chart = new Chart(context, {
       type: "bar",
@@ -3170,7 +3224,7 @@
             },
             callbacks: {
               title(items) {
-                const suffix = state.chartPeriod === "quarter" ? "квартал" : "месяц";
+                const suffix = periodModeFullSuffix(state.chartPeriod);
                 const index = items[0]?.dataIndex ?? 0;
                 const period = periods[index];
                 let title = `${suffix}: ${items[0]?.label || ""}`;

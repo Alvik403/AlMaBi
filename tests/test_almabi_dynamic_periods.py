@@ -8,6 +8,20 @@ from almabi_test_builder import build_test_dashboard_from_pipeline
 from almabi_test_pipeline import TestPipelineResult as _TestPipelineResult
 
 
+def _sum_by_calendar_year(values: dict[str, float]) -> dict[str, float]:
+    totals: dict[str, float] = {}
+    leftover = 0.0
+    for period, amount in values.items():
+        if len(period) == 7 and period[4] == "-" and period[:4].isdigit():
+            year = period[:4]
+            totals[year] = totals.get(year, 0.0) + float(amount or 0)
+        else:
+            leftover += float(amount or 0)
+    if leftover:
+        totals["Год"] = leftover
+    return totals
+
+
 def _revenue(period: str, amount: float, *, tax_type: str) -> Fact:
     year, month = period.split("-")
     month_name = "Январь" if month == "01" else f"{month}.{year}"
@@ -77,6 +91,10 @@ def test_dynamic_periods_separate_years_in_summary_chart_drill_and_contractors()
     assert privileged["values"]["Факт БУ"] == {"2024-01": 100.0, "2025-01": 0.0}
     assert non_privileged["values"]["Факт БУ"] == {"2024-01": 0.0, "2025-01": 250.0}
 
+    year_totals = _sum_by_calendar_year(revenue["values"]["Факт БУ"])
+    assert year_totals == {"2024": 100.0, "2025": 250.0}
+    assert year_totals["2024"] + year_totals["2025"] == sum(revenue["values"]["Факт БУ"].values())
+
 
 def test_legacy_month_only_dashboard_keeps_russian_months():
     fact = Fact("Выручка", "Январь", 100.0, 100.0)
@@ -91,6 +109,7 @@ def test_legacy_month_only_dashboard_keeps_russian_months():
     assert len(dashboard["months"]) == 12
     revenue = next(row for row in dashboard["summary_rows"] if row["name"] == "Выручка")
     assert revenue["values"]["Факт БУ"]["Январь"] == 100.0
+    assert _sum_by_calendar_year(revenue["values"]["Факт БУ"]) == {"Год": 100.0}
 
 
 def test_tax_loss_carryforward_resets_at_calendar_year_boundary():
