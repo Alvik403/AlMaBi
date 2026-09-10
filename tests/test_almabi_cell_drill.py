@@ -550,6 +550,111 @@ def test_revenue_cost_drill_matches_name_case_insensitively():
     assert line["profit"]["buh"] == 600
 
 
+def test_revenue_month_drill_attaches_same_document_cost_from_later_month():
+    drill = _build_revenue_cost_drill(
+        [
+            _fact(
+                kpi_l1="Выручка",
+                nomenclature="Настольный двухканальный ЯМР-спектрометр Spinsolve 90 Carbon",
+                amount_buh=46_090,
+                amount_nu=46_090,
+                quantity=1,
+                period="2026-01",
+                month="Январь",
+                document="Реализация 00БП-15 от 15.01.2026",
+            ),
+        ],
+        [
+            _fact(
+                kpi_l1="Себестоимость",
+                nomenclature="Настольный двухканальный ЯМР-спектрометр Spinsolve 90 Carbon",
+                amount_buh=-40_000,
+                amount_nu=-40_000,
+                quantity=1,
+                period="2026-02",
+                month="Февраль",
+                document="Реализация 00БП-15 от 15.01.2026",
+            ),
+        ],
+    )
+    january = {line["name"]: line for line in drill["months"]["2026-01"]["lines"]}
+    line = january["Настольный двухканальный ЯМР-спектрометр Spinsolve 90 Carbon"]
+    assert line["revenue"]["buh"] == 46_090
+    assert line["cost"]["buh"] == 40_000
+    assert line["profit"]["buh"] == 6_090
+
+
+def test_revenue_month_drill_does_not_take_other_month_cost_without_document():
+    drill = _build_revenue_cost_drill(
+        [
+            _fact(
+                kpi_l1="Выручка",
+                nomenclature="Настольный ЯМР Spinsolve",
+                amount_buh=46_090,
+                amount_nu=46_090,
+                quantity=1,
+                period="2026-01",
+                month="Январь",
+            ),
+        ],
+        [
+            _fact(
+                kpi_l1="Себестоимость",
+                nomenclature="Настольный ЯМР Spinsolve",
+                amount_buh=-40_000,
+                amount_nu=-40_000,
+                quantity=1,
+                period="2026-02",
+                month="Февраль",
+            ),
+            _fact(
+                kpi_l1="Себестоимость",
+                nomenclature="Другой товар",
+                amount_buh=-1_000,
+                amount_nu=-1_000,
+                quantity=1,
+                period="2026-01",
+                month="Январь",
+            ),
+        ],
+    )
+    january = {line["name"]: line for line in drill["months"]["2026-01"]["lines"]}
+    assert january["Настольный ЯМР Spinsolve"]["cost"]["buh"] == 0
+    assert january["Настольный ЯМР Spinsolve"]["revenue"]["buh"] == 46_090
+    assert "Другой товар" not in january
+
+
+def test_revenue_month_drill_does_not_take_other_year_cost_even_with_document():
+    drill = _build_revenue_cost_drill(
+        [
+            _fact(
+                kpi_l1="Выручка",
+                nomenclature="Настольный ЯМР Spinsolve",
+                amount_buh=46_090,
+                amount_nu=46_090,
+                quantity=1,
+                period="2026-01",
+                month="Январь",
+                document="Реализация 00БП-15",
+            ),
+        ],
+        [
+            _fact(
+                kpi_l1="Себестоимость",
+                nomenclature="Настольный ЯМР Spinsolve",
+                amount_buh=-40_000,
+                amount_nu=-40_000,
+                quantity=1,
+                period="2025-12",
+                month="Декабрь",
+                document="Реализация 00БП-15",
+            ),
+        ],
+    )
+    january = {line["name"]: line for line in drill["months"]["2026-01"]["lines"]}
+    assert january["Настольный ЯМР Spinsolve"]["cost"]["buh"] == 0
+
+
 def test_build_other_pnl_drill_is_shared_for_income_and_expense():
     from almabi_dashboard_builder import _build_other_pnl_drill
 

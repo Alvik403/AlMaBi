@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from almabi_excel_utils import (
+    document_match_keys,
     month_name,
     normalize_text,
     parse_date_from_text,
@@ -421,6 +422,49 @@ def _build_revenue_cost_tree(
     return nodes
 
 
+def _period_calendar_year(period: str) -> str:
+    text = normalize_text(period)
+    if len(text) >= 7 and text[4] == "-" and text[:4].isdigit():
+        return text[:4]
+    return ""
+
+
+def _facts_for_drill_window(facts: list[Fact], period: str) -> list[Fact]:
+    year = _period_calendar_year(period)
+    if year:
+        return [fact for fact in facts if _period_calendar_year(_fact_period(fact)) == year]
+    return [fact for fact in facts if _fact_period(fact) == period]
+
+
+def _drill_documents_overlap(left: Fact, right: Fact) -> bool:
+    left_keys = document_match_keys(left.document)
+    right_keys = document_match_keys(right.document)
+    return bool(left_keys and right_keys and left_keys & right_keys)
+
+
+def _related_counterpart_facts(base_facts: list[Fact], other_facts: list[Fact]) -> list[Fact]:
+    """Себес/выручка для расшифровки: документ+имя, иначе то же имя в том же периоде."""
+    if not base_facts or not other_facts:
+        return []
+    by_name: dict[str, list[Fact]] = defaultdict(list)
+    for fact in base_facts:
+        by_name[_revenue_cost_drill_group_key(_fact_drill_display_name(fact))].append(fact)
+
+    selected: list[Fact] = []
+    leftover: list[Fact] = []
+    for other in other_facts:
+        partners = by_name.get(_revenue_cost_drill_group_key(_fact_drill_display_name(other)), [])
+        if any(_drill_documents_overlap(other, base) for base in partners):
+            selected.append(other)
+        else:
+            leftover.append(other)
+    for other in leftover:
+        partners = by_name.get(_revenue_cost_drill_group_key(_fact_drill_display_name(other)), [])
+        if any(_fact_period(other) == _fact_period(base) for base in partners):
+            selected.append(other)
+    return selected
+
+
 def _build_revenue_cost_drill(
     revenue_facts: list[Fact],
     cost_facts: list[Fact],
@@ -442,16 +486,20 @@ def _build_revenue_cost_drill(
         }
 
     periods = periods_from_facts(revenue_facts, cost_facts)
+
+    def _period_payload(period: str) -> dict[str, Any]:
+        if base == "revenue":
+            rev = [fact for fact in revenue_facts if _fact_period(fact) == period]
+            cost = _related_counterpart_facts(rev, _facts_for_drill_window(cost_facts, period))
+            return _payload(rev, cost)
+        cost = [fact for fact in cost_facts if _fact_period(fact) == period]
+        rev = _related_counterpart_facts(cost, _facts_for_drill_window(revenue_facts, period))
+        return _payload(rev, cost)
+
     return {
         "type": "revenue_cost",
         "total": _payload(revenue_facts, cost_facts),
-        "months": {
-            period: _payload(
-                [fact for fact in revenue_facts if _fact_period(fact) == period],
-                [fact for fact in cost_facts if _fact_period(fact) == period],
-            )
-            for period in periods
-        },
+        "months": {period: _period_payload(period) for period in periods},
     }
 
 
