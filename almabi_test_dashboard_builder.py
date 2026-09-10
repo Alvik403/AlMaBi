@@ -258,6 +258,7 @@ def build_test_summary_rows_from_facts(
                 revenue_facts,
                 cost_facts,
                 child_path=list(dashboard_builder.REVENUE_PATH),
+                base="revenue",
             )
         elif node["name"] == "Себестоимость":
             dashboard_builder._attach_revenue_cost_level_drills(
@@ -266,6 +267,7 @@ def build_test_summary_rows_from_facts(
                 cost_facts,
                 child_path=list(dashboard_builder.COST_PATH),
                 group_path_keys=list(dashboard_builder.COST_GROUP_PATH),
+                base="cost",
             )
 
     operating_component_names = [

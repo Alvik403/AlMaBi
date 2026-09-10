@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from copy import deepcopy
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from almabi_excel_utils import (
     month_name,
@@ -22,6 +22,7 @@ from almabi_pq_common import (
     davaltz_cost_tree_group,
     is_black_metal_scrap_nomenclature,
     is_davaltz_cost_document,
+    nomenclature_key,
     should_include_in_cost_structure,
     should_include_in_cost_tree,
 )
@@ -240,12 +241,15 @@ def _revenue_cost_line_metrics(
 _COST_MERGE_OEZ_KEY = "__оэз__"
 
 
+DrillBase = Literal["revenue", "cost"]
+
+
 def _revenue_cost_drill_group_key(display_name: str) -> str:
-    """Ключ группировки leaf-строк расшифровки; сливает только варианты ОЭЗ."""
-    text = normalize_text(display_name).casefold()
+    """Ключ группировки leaf-строк расшифровки: полное имя без регистра, плюс слияние ОЭЗ."""
+    text = nomenclature_key(display_name)
     if text.startswith("оэз"):
         return _COST_MERGE_OEZ_KEY
-    return display_name
+    return text
 
 
 def _aggregate_revenue_cost_metrics(nodes: list[dict[str, Any]], *, name: str) -> dict[str, Any]:
@@ -274,17 +278,28 @@ def _remember_revenue_cost_drill_display(
     name: str,
     *,
     from_revenue: bool,
+    prefer: DrillBase,
 ) -> None:
-    if group_key != _COST_MERGE_OEZ_KEY:
-        display_names[group_key] = name
+    if group_key == _COST_MERGE_OEZ_KEY:
+        if from_revenue:
+            display_names[group_key] = name
+        elif group_key not in display_names:
+            display_names[group_key] = name
         return
-    if from_revenue:
+    if prefer == "revenue" and from_revenue:
+        display_names[group_key] = name
+    elif prefer == "cost" and not from_revenue:
         display_names[group_key] = name
     elif group_key not in display_names:
         display_names[group_key] = name
 
 
-def _build_revenue_cost_leaf_lines(rev_subset: list[Fact], cost_subset: list[Fact]) -> list[dict[str, Any]]:
+def _build_revenue_cost_leaf_lines(
+    rev_subset: list[Fact],
+    cost_subset: list[Fact],
+    *,
+    base: DrillBase = "revenue",
+) -> list[dict[str, Any]]:
     grouped: dict[str, dict[str, float]] = defaultdict(
         lambda: {
             "revenue_buh": 0.0,
@@ -296,26 +311,35 @@ def _build_revenue_cost_leaf_lines(rev_subset: list[Fact], cost_subset: list[Fac
         }
     )
     display_names: dict[str, str] = {}
+    revenue_keys: set[str] = set()
+    cost_keys: set[str] = set()
     for fact in rev_subset:
         name = _fact_drill_display_name(fact)
         group_key = _revenue_cost_drill_group_key(name)
+        revenue_keys.add(group_key)
         rev_amount = _revenue_amount_for_drill(fact)
         grouped[group_key]["revenue_buh"] += rev_amount
         grouped[group_key]["revenue_nu"] += rev_amount
         grouped[group_key]["rev_quantity"] = max(
             grouped[group_key]["rev_quantity"], float(fact.quantity or 0)
         )
-        _remember_revenue_cost_drill_display(display_names, group_key, name, from_revenue=True)
+        _remember_revenue_cost_drill_display(
+            display_names, group_key, name, from_revenue=True, prefer=base
+        )
     for fact in cost_subset:
         name = _fact_drill_display_name(fact)
         group_key = _revenue_cost_drill_group_key(name)
+        cost_keys.add(group_key)
         grouped[group_key]["cost_buh"] += abs(float(fact.amount_buh or 0))
         grouped[group_key]["cost_nu"] += abs(float(fact.amount_nu or 0))
         grouped[group_key]["cost_quantity"] = max(
             grouped[group_key]["cost_quantity"], float(fact.quantity or 0)
         )
-        _remember_revenue_cost_drill_display(display_names, group_key, name, from_revenue=False)
+        _remember_revenue_cost_drill_display(
+            display_names, group_key, name, from_revenue=False, prefer=base
+        )
 
+    keep_keys = revenue_keys if base == "revenue" else cost_keys
     lines = [
         _revenue_cost_line_metrics(
             name=display_names.get(group_key, group_key),
@@ -326,6 +350,7 @@ def _build_revenue_cost_leaf_lines(rev_subset: list[Fact], cost_subset: list[Fac
             quantity=max(float(values["rev_quantity"]), float(values["cost_quantity"])),
         )
         for group_key, values in grouped.items()
+        if group_key in keep_keys
     ]
     lines.sort(
         key=lambda item: (
@@ -341,6 +366,7 @@ def _build_revenue_cost_tree(
     cost_subset: list[Fact],
     path: list[str],
     *,
+    base: DrillBase = "revenue",
     level: int = 1,
 ) -> list[dict[str, Any]]:
     if not path:
@@ -351,21 +377,30 @@ def _build_revenue_cost_tree(
                 "expandable": False,
                 "children": [],
             }
-            for line in _build_revenue_cost_leaf_lines(rev_subset, cost_subset)
+            for line in _build_revenue_cost_leaf_lines(rev_subset, cost_subset, base=base)
         ]
 
     current_key = path[0]
-    rev_grouped = _group_facts_by_dimension(rev_subset, current_key)
-    cost_grouped = _group_facts_by_dimension(cost_subset, current_key)
-    names = sorted(set(rev_grouped) | set(cost_grouped))
+    base_facts = rev_subset if base == "revenue" else cost_subset
+    grouped = _group_facts_by_dimension(base_facts, current_key)
     nodes: list[dict[str, Any]] = []
-    for name in names:
-        children = _build_revenue_cost_tree(
-            rev_grouped.get(name, []),
-            cost_grouped.get(name, []),
-            path[1:],
-            level=level + 1,
-        )
+    for name in sorted(grouped):
+        if base == "revenue":
+            children = _build_revenue_cost_tree(
+                grouped[name],
+                cost_subset,
+                path[1:],
+                base=base,
+                level=level + 1,
+            )
+        else:
+            children = _build_revenue_cost_tree(
+                rev_subset,
+                grouped[name],
+                path[1:],
+                base=base,
+                level=level + 1,
+            )
         if not children:
             continue
         metrics = _aggregate_revenue_cost_metrics(children, name=name)
@@ -391,13 +426,14 @@ def _build_revenue_cost_drill(
     cost_facts: list[Fact],
     *,
     group_path: list[str] | None = None,
+    base: DrillBase = "revenue",
 ) -> dict[str, Any]:
-    """Расшифровка выручки/себестоимости с раскрытием по уровням до предпоследнего."""
+    """Расшифровка выручки/себестоимости: каркас с выбранной стороны, вторая сумма по полному имени."""
     path = list(REVENUE_COST_GROUP_PATH if group_path is None else group_path)
 
     def _payload(rev_subset: list[Fact], cost_subset: list[Fact]) -> dict[str, Any]:
-        tree = _build_revenue_cost_tree(rev_subset, cost_subset, list(path))
-        lines = _build_revenue_cost_leaf_lines(rev_subset, cost_subset)
+        tree = _build_revenue_cost_tree(rev_subset, cost_subset, list(path), base=base)
+        lines = _build_revenue_cost_leaf_lines(rev_subset, cost_subset, base=base)
         return {
             "type": "revenue_cost",
             "path": list(path),
@@ -419,44 +455,22 @@ def _build_revenue_cost_drill(
     }
 
 
-def _revenue_matching_cost_scope(revenue_facts: list[Fact], cost_facts: list[Fact]) -> list[Fact]:
-    if not cost_facts:
-        return []
-    keys = {
-        (
-            _dimension_value(fact, "direction"),
-            _dimension_value(fact, "project_group"),
-            _dimension_value(fact, "project"),
-            (fact.nomenclature or "").strip().casefold(),
-        )
-        for fact in cost_facts
-    }
-    return [
-        fact
-        for fact in revenue_facts
-        if (
-            _dimension_value(fact, "direction"),
-            _dimension_value(fact, "project_group"),
-            _dimension_value(fact, "project"),
-            (fact.nomenclature or "").strip().casefold(),
-        )
-        in keys
-    ]
-
-
 def _scope_revenue_cost_facts(
     revenue_facts: list[Fact],
     cost_facts: list[Fact],
     filters: list[tuple[str, str]],
+    *,
+    base: DrillBase = "revenue",
 ) -> tuple[list[Fact], list[Fact]]:
+    """Режет только каркас расшифровки; вторая сторона клеится по имени номенклатуры."""
     rev = list(revenue_facts)
     cost = list(cost_facts)
     for key, name in filters:
-        if key == "cost_section":
-            cost = [fact for fact in cost if _dimension_value(fact, key) == name]
-            rev = _revenue_matching_cost_scope(rev, cost)
-        else:
+        if base == "revenue":
+            if key == "cost_section":
+                continue
             rev = [fact for fact in rev if _dimension_value(fact, key) == name]
+        else:
             cost = [fact for fact in cost if _dimension_value(fact, key) == name]
     return rev, cost
 
@@ -479,10 +493,13 @@ def _attach_revenue_cost_level_drills(
     child_path: list[str],
     group_path_keys: list[str] | None = None,
     filters: list[tuple[str, str]] | None = None,
+    base: DrillBase = "revenue",
 ) -> None:
     """Вешает расшифровку на узел и всех потомков в рамках текущего среза."""
     active_filters = list(filters or [])
-    scoped_rev, scoped_cost = _scope_revenue_cost_facts(revenue_facts, cost_facts, active_filters)
+    scoped_rev, scoped_cost = _scope_revenue_cost_facts(
+        revenue_facts, cost_facts, active_filters, base=base
+    )
     node["drill"] = _build_revenue_cost_drill(
         scoped_rev,
         scoped_cost,
@@ -490,6 +507,7 @@ def _attach_revenue_cost_level_drills(
             active_filters,
             group_path_keys=group_path_keys,
         ),
+        base=base,
     )
     if not child_path:
         return
@@ -502,6 +520,7 @@ def _attach_revenue_cost_level_drills(
             child_path=child_path[1:],
             group_path_keys=group_path_keys,
             filters=[*active_filters, (key, child["name"])],
+            base=base,
         )
 
 
@@ -1394,6 +1413,7 @@ def _build_summary_rows(
                 revenue_facts,
                 cost_facts,
                 child_path=list(REVENUE_PATH),
+                base="revenue",
             )
         elif node["name"] == "Себестоимость":
             _attach_revenue_cost_level_drills(
@@ -1402,6 +1422,7 @@ def _build_summary_rows(
                 cost_facts,
                 child_path=list(COST_PATH),
                 group_path_keys=list(COST_GROUP_PATH),
+                base="cost",
             )
 
     operating_component_names = [

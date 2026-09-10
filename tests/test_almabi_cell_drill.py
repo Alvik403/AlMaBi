@@ -368,6 +368,11 @@ def test_revenue_cost_level_drills_follow_hierarchy():
     assert resale["drill"]["type"] == "revenue_cost"
     assert resale["drill"]["total"]["path"] == ["project_group", "project"]
     assert {line["name"] for line in resale["drill"]["total"]["lines"]} == {"Товар 1", "Товар 2"}
+    resale_lines = {line["name"]: line for line in resale["drill"]["total"]["lines"]}
+    assert resale_lines["Товар 1"]["revenue"]["buh"] == 1_000
+    assert resale_lines["Товар 1"]["cost"]["buh"] == 400
+    assert resale_lines["Товар 2"]["revenue"]["buh"] == 500
+    assert resale_lines["Товар 2"]["cost"]["buh"] == 0
 
     group_a = next(child for child in resale["children"] if child["name"] == "Группа А")
     assert group_a["drill"]["total"]["path"] == ["project"]
@@ -387,6 +392,8 @@ def test_revenue_cost_level_drills_follow_hierarchy():
     lines_by_name = {line["name"]: line for line in resale_cost["drill"]["total"]["lines"]}
     assert set(lines_by_name) == {"Товар 1"}
     assert lines_by_name["Товар 1"]["cost"]["buh"] == 400
+    assert lines_by_name["Товар 1"]["revenue"]["buh"] == 1_000
+    assert lines_by_name["Товар 1"]["profit"]["buh"] == 600
 
 
 def test_revenue_cost_quantity_keeps_real_values_without_fake_ones():
@@ -423,6 +430,124 @@ def test_revenue_cost_quantity_keeps_real_values_without_fake_ones():
     assert lines["Товар"]["cost"]["buh"] == 4_000
     assert lines["Без количества"]["quantity"] == 0
     assert lines["Без количества"]["revenue"]["buh"] == 1_000
+
+
+def test_revenue_drill_hides_cost_only_and_attaches_exact_name():
+    drill = _build_revenue_cost_drill(
+        [
+            _fact(
+                kpi_l1="Выручка",
+                direction="Услуги",
+                nomenclature="Настольный ЯМР Spinsolve",
+                amount_buh=341_849,
+                amount_nu=341_849,
+                quantity=1,
+            ),
+        ],
+        [
+            _fact(
+                kpi_l1="Себестоимость",
+                direction="Перепродажа",
+                nomenclature="Настольный ЯМР Spinsolve",
+                amount_buh=-40_000,
+                amount_nu=-40_000,
+                quantity=1,
+            ),
+            _fact(
+                kpi_l1="Себестоимость",
+                direction="Перепродажа",
+                nomenclature="139570, Набор цветных фильтров Pt-Co",
+                amount_buh=-605,
+                amount_nu=-605,
+                quantity=1,
+            ),
+        ],
+        base="revenue",
+    )
+    lines = {line["name"]: line for line in drill["total"]["lines"]}
+    assert set(lines) == {"Настольный ЯМР Spinsolve"}
+    assert lines["Настольный ЯМР Spinsolve"]["revenue"]["buh"] == 341_849
+    assert lines["Настольный ЯМР Spinsolve"]["cost"]["buh"] == 40_000
+    assert lines["Настольный ЯМР Spinsolve"]["profit"]["buh"] == 301_849
+    assert abs(lines["Настольный ЯМР Spinsolve"]["margin"]["buh"] - 88.3) < 0.05
+    tree_names = [node["name"] for node in drill["total"]["tree"]]
+    assert tree_names == ["Услуги"]
+
+
+def test_cost_drill_keeps_cost_rows_and_attaches_matching_revenue():
+    drill = _build_revenue_cost_drill(
+        [
+            _fact(
+                kpi_l1="Выручка",
+                direction="Услуги",
+                nomenclature="Настольный ЯМР Spinsolve",
+                amount_buh=341_849,
+                amount_nu=341_849,
+                quantity=1,
+            ),
+            _fact(
+                kpi_l1="Выручка",
+                nomenclature="Только продажа",
+                amount_buh=50_000,
+                amount_nu=50_000,
+                quantity=1,
+            ),
+        ],
+        [
+            _fact(
+                kpi_l1="Себестоимость",
+                nomenclature="Настольный ЯМР Spinsolve",
+                amount_buh=-40_000,
+                amount_nu=-40_000,
+                quantity=1,
+            ),
+            _fact(
+                kpi_l1="Себестоимость",
+                nomenclature="139570, Набор цветных фильтров Pt-Co",
+                amount_buh=-605,
+                amount_nu=-605,
+                quantity=1,
+            ),
+        ],
+        base="cost",
+    )
+    lines = {line["name"]: line for line in drill["total"]["lines"]}
+    assert set(lines) == {
+        "Настольный ЯМР Spinsolve",
+        "139570, Набор цветных фильтров Pt-Co",
+    }
+    assert lines["Настольный ЯМР Spinsolve"]["revenue"]["buh"] == 341_849
+    assert lines["Настольный ЯМР Spinsolve"]["cost"]["buh"] == 40_000
+    assert lines["139570, Набор цветных фильтров Pt-Co"]["revenue"]["buh"] == 0
+    assert lines["139570, Набор цветных фильтров Pt-Co"]["cost"]["buh"] == 605
+
+
+def test_revenue_cost_drill_matches_name_case_insensitively():
+    drill = _build_revenue_cost_drill(
+        [
+            _fact(
+                kpi_l1="Выручка",
+                nomenclature="Лицензия ПО",
+                amount_buh=1_000,
+                amount_nu=1_000,
+                quantity=1,
+            ),
+        ],
+        [
+            _fact(
+                kpi_l1="Себестоимость",
+                nomenclature="лицензия по",
+                amount_buh=-400,
+                amount_nu=-400,
+                quantity=1,
+            ),
+        ],
+    )
+    assert len(drill["total"]["lines"]) == 1
+    line = drill["total"]["lines"][0]
+    assert line["revenue"]["buh"] == 1_000
+    assert line["cost"]["buh"] == 400
+    assert line["profit"]["buh"] == 600
 
 
 def test_build_other_pnl_drill_is_shared_for_income_and_expense():
