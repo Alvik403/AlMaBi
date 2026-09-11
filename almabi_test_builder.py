@@ -171,6 +171,7 @@ def _build_summary_by_tax(
     plan_facts: list[Fact] | None = None,
     forecast_facts: list[Fact] | None = None,
     pq_cost_rows: list[dict[str, object]] | None = None,
+    realization_rows: list | None = None,
 ) -> dict[str, list[dict[str, Any]]]:
     periods = periods_from_facts(facts, plan_facts, forecast_facts)
     result = {
@@ -179,12 +180,14 @@ def _build_summary_by_tax(
             plan_facts=plan_facts,
             forecast_facts=forecast_facts,
             pq_cost_rows=pq_cost_rows,
+            realization_rows=realization_rows,
         ),
         **{
             bucket: build_test_summary_rows_from_facts(
                 filter_facts_by_tax_bucket(facts, bucket),
                 plan_facts=filter_facts_by_tax_bucket(plan_facts or [], bucket),
                 forecast_facts=filter_facts_by_tax_bucket(forecast_facts or [], bucket),
+                realization_rows=realization_rows,
             )
             for bucket in TAX_BUCKET_OPTIONS
         },
@@ -246,6 +249,7 @@ def build_test_dashboard_from_pipeline(
         plan_facts=plan_facts,
         forecast_facts=forecast_facts,
         pq_cost_rows=pipeline.pq_cost_rows,
+        realization_rows=list(result.realization_rows),
     )
     charts_by_tax = _build_charts_by_tax(
         result.facts,

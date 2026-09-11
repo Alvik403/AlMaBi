@@ -89,6 +89,7 @@ class RealizationRow:
     direction: str
     revenue: float
     month: str | None
+    quantity: float | None = None
     contract: str = ""
     period: str | None = None
 
@@ -308,6 +309,7 @@ def _map_realization_headers(headers: list[str]) -> dict[str, int]:
         ),
         "номенклатура": ("номенклатура", "sku", "продукция"),
         "выручка": ("выручка", "revenue"),
+        "количество": ("количество", "количество продаж", "quantity"),
         "дата": ("регистратор.дата", "дата", "date"),
         "договор": ("договор", "договоры", "договор контрагента", "contract"),
         **PROJECT_ALIASES,
@@ -340,6 +342,11 @@ def parse_realization(path: Path) -> list[RealizationRow]:
                 direction=direction,
                 revenue=revenue,
                 month=month_name(parsed_date),
+                quantity=(
+                    parse_amount(cell_value(row, column_map, "количество"))
+                    if "количество" in column_map
+                    else None
+                ),
                 contract=normalize_text(cell_value(row, column_map, "договор", "contract")),
                 period=resolve_period_key(parsed_date),
             )

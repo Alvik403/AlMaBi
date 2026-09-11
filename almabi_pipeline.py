@@ -24,8 +24,13 @@ from almabi_export_parsers import (
     parse_exports,
 )
 from almabi_project_index import ProjectMeta, build_project_index, lookup_project
-from almabi_pq_common import nomenclature_key
-from almabi_realization_lookup import build_realization_index, resolve_realization_match
+from almabi_pq_common import is_buh_revenue_activity_nomenclature, nomenclature_key
+from almabi_realization_lookup import (
+    build_realization_index,
+    lookup_exact_realization_operation,
+    lookup_realization_for_revenue_amount,
+    resolve_realization_match,
+)
 
 OTHER_PNL_SECTIONS = frozenset({"Прочие доходы", "Прочие расходы"})
 COST_ROUNDING_ARTICLE = "Погрешность расчета себестоимости"
@@ -80,6 +85,7 @@ class PipelineResult:
     facts: list[Fact] = field(default_factory=list)
     months: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    realization_rows: list = field(default_factory=list)
 
 
 def _lookup_contract(document: str, doc_contract: dict[str, str]) -> str:
@@ -1407,10 +1413,14 @@ def _append_file_fallback_facts(
                 nomenclature=row.nomenclature,
                 tax_type=doc_tax.get(row.document, "Общие условия налогообложения"),
                 contractor=_lookup_contractor(row.document, doc_contractor),
-                quantity=resolve_quantity_from_cost(
-                    document=row.document,
-                    nomenclature=row.nomenclature,
-                    qty_lookup=cost_qty_lookup,
+                quantity=(
+                    float(row.quantity or 0)
+                    if row.quantity is not None
+                    else resolve_quantity_from_cost(
+                        document=row.document,
+                        nomenclature=row.nomenclature,
+                        qty_lookup=cost_qty_lookup,
+                    )
                 ),
             )
 
@@ -1552,9 +1562,11 @@ def build_facts(exports: ParsedExports) -> PipelineResult:
         )
 
         nomenclature = row.nomenclature_kt
-        if cost_match and cost_match.nomenclature:
+        if section == "Выручка" and is_buh_revenue_activity_nomenclature(nomenclature):
+            nomenclature = ""
+        if section != "Выручка" and cost_match and cost_match.nomenclature:
             nomenclature = cost_match.nomenclature
-        elif rev_match and rev_match.nomenclature:
+        elif not nomenclature and rev_match and rev_match.nomenclature:
             nomenclature = rev_match.nomenclature
 
         contract = analytics_value(row.contract, default="") or _lookup_contract(row.document, doc_contract)
@@ -1562,19 +1574,41 @@ def build_facts(exports: ParsedExports) -> PipelineResult:
             contract = cost_match.contract or contract
         contractor = row.contractor or _lookup_contractor(row.document, doc_contractor)
 
-        quantity = resolve_quantity_from_cost(
-            document=row.document,
-            nomenclature=nomenclature,
-            cost_match=cost_match,
-            qty_lookup=cost_qty_lookup,
-        )
-        if quantity <= 0 and cost_match is not None and cost_match.document:
+        exact_revenue_operation = None
+        if section == "Выручка" and exports.realization:
+            revenue_realization = lookup_realization_for_revenue_amount(
+                document=row.document,
+                amount_buh=amount_buh,
+                amount_nu=amount_nu,
+                rows=exports.realization,
+            )
+            if revenue_realization is not None and revenue_realization.nomenclature:
+                nomenclature = revenue_realization.nomenclature
+            exact_revenue_operation = lookup_exact_realization_operation(
+                document=row.document,
+                nomenclature=nomenclature,
+                index=realization_index,
+            )
+            if exact_revenue_operation is None and revenue_realization is not None:
+                exact_revenue_operation = revenue_realization
+            if exact_revenue_operation is not None and exact_revenue_operation.nomenclature:
+                nomenclature = exact_revenue_operation.nomenclature
+        if exact_revenue_operation is not None and exact_revenue_operation.quantity is not None:
+            quantity = float(exact_revenue_operation.quantity or 0)
+        else:
             quantity = resolve_quantity_from_cost(
-                document=cost_match.document,
-                nomenclature=nomenclature or cost_match.nomenclature,
+                document=row.document,
+                nomenclature=nomenclature,
                 cost_match=cost_match,
                 qty_lookup=cost_qty_lookup,
             )
+            if quantity <= 0 and cost_match is not None and cost_match.document:
+                quantity = resolve_quantity_from_cost(
+                    document=cost_match.document,
+                    nomenclature=nomenclature or cost_match.nomenclature,
+                    cost_match=cost_match,
+                    qty_lookup=cost_qty_lookup,
+                )
 
         resolved_tax_type = _resolve_row_tax_type(
             section,
@@ -1661,7 +1695,12 @@ def build_facts(exports: ParsedExports) -> PipelineResult:
     if not facts:
         warnings.append("После обработки выгрузок не найдено строк с суммами по месяцам.")
 
-    return PipelineResult(facts=facts, months=months, warnings=warnings)
+    return PipelineResult(
+        facts=facts,
+        months=months,
+        warnings=warnings,
+        realization_rows=list(exports.realization),
+    )
 
 
 def run_pipeline(paths: dict[str, Path]) -> PipelineResult:

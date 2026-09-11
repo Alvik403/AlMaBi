@@ -310,6 +310,7 @@ def _match_payload_realization(row: Any | None) -> dict[str, Any] | None:
         "document": row.document,
         "nomenclature": row.nomenclature,
         "revenue": row.revenue,
+        "quantity": row.quantity,
         "direction": row.direction,
         "project_group": row.project_group,
         "project": row.project,

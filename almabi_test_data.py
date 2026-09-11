@@ -19,7 +19,7 @@ from settings import Settings
 from starlette.requests import Request
 
 # Меняйте при правках pipeline/dashboard — сбрасывает in-memory кэш.
-PIPELINE_BUILD_ID = "cascade_multiselect_filters_v1"
+PIPELINE_BUILD_ID = "drill_v2_realization_quantity_v3"
 
 FileCacheKey = tuple[tuple[str, str, int, int], ...]
 FilterCacheKey = tuple[tuple[str, str], ...]
@@ -230,7 +230,9 @@ def resolve_almabi_dashboard_api_data(
         filtered_pipeline = TestPipelineResult(
             result=PipelineResult(
                 facts=filtered_facts,
+                months=list(pipeline.result.months),
                 warnings=list(pipeline.result.warnings),
+                realization_rows=list(pipeline.result.realization_rows),
             ),
             audit=pipeline.audit,
             audit_path=pipeline.audit_path,

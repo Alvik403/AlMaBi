@@ -358,18 +358,12 @@
       <div class="flex min-h-0 flex-1 flex-col overflow-hidden px-6 py-4" data-cell-drill-body>
         <div class="hidden min-h-0 flex-1 overflow-hidden" data-cell-drill-other-blocks></div>
         <div class="flex min-h-0 flex-1 flex-col overflow-hidden" data-cell-drill-table-panel>
-          <div class="shrink-0 overflow-x-auto border-b border-slate-200 bg-white" data-cell-drill-head-bar>
-            <table class="w-full table-fixed text-sm">
+          <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]" data-cell-drill-scroll>
+            <table class="w-full table-fixed border-collapse text-sm" data-cell-drill-table>
               <colgroup data-cell-drill-cols></colgroup>
-              <thead data-cell-drill-head></thead>
-            </table>
-          </div>
-          <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain" data-cell-drill-scroll>
-            <table class="w-full table-fixed text-sm" data-cell-drill-table>
-              <colgroup data-cell-drill-cols-body></colgroup>
+              <thead class="sticky top-0 z-10 bg-white shadow-[inset_0_-1px_0_0_rgb(226_232_240)]" data-cell-drill-head></thead>
               <tbody data-cell-drill-rows></tbody>
             </table>
-            <p class="mt-3 hidden text-right text-xs font-semibold text-rose-600" data-cell-drill-formula>Рентабельность = Прибыль / Выручку</p>
             <p class="hidden py-8 text-center text-sm text-slate-500" data-cell-drill-empty>Нет детализации для выбранной ячейки.</p>
           </div>
         </div>
@@ -1142,10 +1136,25 @@
     return row?.drill ? " is-drillable" : "";
   }
 
+  const DRILL_NUM_CELL = "px-3 py-2.5 text-right tabular-nums align-middle border-r border-slate-200 last:border-r-0";
+  const DRILL_TEXT_CELL = "px-4 py-2.5 align-middle border-r border-slate-200";
+
   function formatMarginPercent(value) {
     const num = Number(value || 0);
     if (!Number.isFinite(num)) return "—";
     return String(Math.round(num));
+  }
+
+  function formatDrillProfit(value) {
+    const num = Number(value || 0);
+    if (!Number.isFinite(num)) return "0";
+    return formatMoneyAbs(Math.max(0, num));
+  }
+
+  function formatDrillMarginPercent(value) {
+    const num = Number(value || 0);
+    if (!Number.isFinite(num)) return "0";
+    return String(Math.max(0, Math.round(num)));
   }
 
   function revenueDrillAmount(pair) {
@@ -1162,12 +1171,8 @@
   function setDrillTableHead(modal, columns) {
     const head = modal.querySelector("[data-cell-drill-head]");
     const cols = modal.querySelector("[data-cell-drill-cols]");
-    const colsBody = modal.querySelector("[data-cell-drill-cols-body]");
-    const headBar = modal.querySelector("[data-cell-drill-head-bar]");
     const colHtml = columns.map((column) => `<col style="width:${column.width}">`).join("");
     if (cols) cols.innerHTML = colHtml;
-    if (colsBody) colsBody.innerHTML = colHtml;
-    if (headBar) headBar.classList.toggle("hidden", !columns.length);
     if (!head) return;
     if (!columns.length) {
       head.innerHTML = "";
@@ -1176,10 +1181,13 @@
     head.innerHTML = `
       <tr class="text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
         ${columns
-          .map((column) => {
-            const align = column.align === "right" ? " text-right" : "";
-            const pad = column.align === "right" ? "py-3 pl-2 pr-3" : "py-3 pr-4";
-            return `<th class="${pad}${align}">${escapeHtml(column.label)}</th>`;
+          .map((column, index) => {
+            const isLast = index === columns.length - 1;
+            const divider = isLast ? "" : " border-r border-slate-200";
+            if (column.align === "right") {
+              return `<th class="px-3 py-3 text-right align-middle${divider}">${escapeHtml(column.label)}</th>`;
+            }
+            return `<th class="px-4 py-3 text-left align-middle${divider}">${escapeHtml(column.label)}</th>`;
           })
           .join("")}
       </tr>`;
@@ -1187,11 +1195,9 @@
 
   function openArticlesDrillModal(modal, row, periodKey, payload, monthLabel) {
     const summary = modal.querySelector("[data-cell-drill-summary]");
-    const formula = modal.querySelector("[data-cell-drill-formula]");
     const tablePanel = modal.querySelector("[data-cell-drill-table-panel]");
     const blocksRoot = modal.querySelector("[data-cell-drill-other-blocks]");
     summary?.classList.remove("hidden");
-    formula?.classList.add("hidden");
     blocksRoot?.classList.add("hidden");
     tablePanel?.classList.remove("hidden");
 
@@ -1259,6 +1265,28 @@
     drillExpandState.expandedIds = new Set();
   }
 
+  function flattenRevenueCostLeaves(nodes) {
+    const leaves = [];
+    (nodes || []).forEach((node) => {
+      if (node.expandable && (node.children || []).length) {
+        leaves.push(...flattenRevenueCostLeaves(node.children));
+      } else {
+        leaves.push(node);
+      }
+    });
+    return leaves;
+  }
+
+  function revenueCostQtyLabel(qty, hasAmount) {
+    const value = Number(qty || 0);
+    if (value > 0) {
+      return Number.isInteger(value)
+        ? String(value)
+        : value.toLocaleString("ru-RU", { maximumFractionDigits: 0 });
+    }
+    return hasAmount ? "0" : "—";
+  }
+
   function revenueCostRowHtml(node, pathKey, depth) {
     const revenue = revenueDrillAmount(node.revenue);
     const cost = lineScenarioAmount(node.cost);
@@ -1269,10 +1297,7 @@
     const expandable = !!node.expandable && (node.children || []).length > 0;
     const isExpanded = expandable && drillExpandState.expandedIds.has(pathKey);
     const indent = 8 + depth * 18;
-    const qty = Number(node.quantity || 0);
-    const qtyLabel = qty > 0
-      ? (Number.isInteger(qty) ? String(qty) : qty.toLocaleString("ru-RU", { maximumFractionDigits: 0 }))
-      : "—";
+    const qtyLabel = revenueCostQtyLabel(node.quantity, revenue !== 0 || cost !== 0);
     const chevron = expandable
       ? `<button type="button" class="row-chevron inline-flex h-5 w-5 items-center justify-center rounded text-slate-500 hover:bg-slate-100" data-drill-expand="${escapeHtml(pathKey)}" aria-label="${isExpanded ? "Свернуть" : "Раскрыть"}">
            <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
@@ -1284,17 +1309,17 @@
     const weight = expandable ? "font-semibold text-slate-900" : "font-medium text-slate-800";
     let html = `
       <tr class="border-b border-slate-100 last:border-0${depth % 2 === 1 && !expandable ? " bg-slate-50/70" : ""}">
-        <td class="py-2.5 pr-4">
+        <td class="${DRILL_TEXT_CELL}">
           <div class="flex items-center gap-1.5" style="padding-left:${indent}px">
             ${chevron}
             <span class="${weight}">${escapeHtml(node.name)}</span>
           </div>
         </td>
-        <td class="py-2.5 pr-4 text-right tabular-nums text-slate-700">${qtyLabel}</td>
-        <td class="py-2.5 pr-4 text-right tabular-nums text-slate-800">${formatMoneyAbs(revenue)}</td>
-        <td class="py-2.5 pr-4 text-right tabular-nums text-slate-800">${formatMoneyAbs(cost)}</td>
-        <td class="py-2.5 pr-4 text-right tabular-nums font-semibold text-slate-900">${formatMoneyAbs(profit)}</td>
-        <td class="py-2.5 text-right tabular-nums text-slate-800">${formatMarginPercent(margin)}</td>
+        <td class="${DRILL_NUM_CELL} text-slate-700">${qtyLabel}</td>
+        <td class="${DRILL_NUM_CELL} text-slate-800">${formatMoneyAbs(revenue)}</td>
+        <td class="${DRILL_NUM_CELL} text-slate-800">${formatMoneyAbs(cost)}</td>
+        <td class="${DRILL_NUM_CELL} font-semibold text-slate-900">${formatDrillProfit(profit)}</td>
+        <td class="${DRILL_NUM_CELL} text-slate-800">${formatDrillMarginPercent(margin)}</td>
       </tr>`;
 
     if (expandable && isExpanded) {
@@ -1307,20 +1332,20 @@
 
   function openRevenueCostDrillModal(modal, row, periodKey, payload, monthLabel) {
     const summary = modal.querySelector("[data-cell-drill-summary]");
-    const formula = modal.querySelector("[data-cell-drill-formula]");
     const tablePanel = modal.querySelector("[data-cell-drill-table-panel]");
     const blocksRoot = modal.querySelector("[data-cell-drill-other-blocks]");
     summary?.classList.add("hidden");
-    formula?.classList.remove("hidden");
     blocksRoot?.classList.add("hidden");
     tablePanel?.classList.remove("hidden");
 
-    const tree = payload?.tree || [];
+    const lines = (payload?.lines || []).length
+      ? payload.lines
+      : flattenRevenueCostLeaves(payload?.tree || []);
     modal.querySelector("[data-cell-drill-title]").textContent = "Расшифровки";
-    modal.querySelector("[data-cell-drill-subtitle]").textContent = `${row.name} · ${monthLabel} · ${orderedSelectedScenarios().join(" · ")}`;
+    modal.querySelector("[data-cell-drill-subtitle]").textContent = `${row.name} · ${monthLabel} · ${orderedSelectedScenarios().join(" · ")} · номенклатура`;
 
     setDrillTableHead(modal, [
-      { label: "Наименование", width: "34%" },
+      { label: "Номенклатура", width: "34%" },
       { label: "Кол-во", width: "10%", align: "right" },
       { label: "Выручка", width: "14%", align: "right" },
       { label: "Себестоимость", width: "14%", align: "right" },
@@ -1330,40 +1355,24 @@
 
     const tbody = modal.querySelector("[data-cell-drill-rows]");
     const empty = modal.querySelector("[data-cell-drill-empty]");
-    const renderTree = () => {
-      if (!tree.length) {
-        tbody.innerHTML = "";
-        empty?.classList.remove("hidden");
-        formula?.classList.add("hidden");
-        return;
-      }
-      empty?.classList.add("hidden");
-      tbody.innerHTML = tree
-        .map((node, index) => revenueCostRowHtml(node, `${index}:${node.name}`, 0))
-        .join("");
-    };
-
-    renderTree();
-    tbody.onclick = (event) => {
-      const button = event.target.closest("[data-drill-expand]");
-      if (!button) return;
-      event.preventDefault();
-      const key = button.getAttribute("data-drill-expand");
-      if (!key) return;
-      if (drillExpandState.expandedIds.has(key)) drillExpandState.expandedIds.delete(key);
-      else drillExpandState.expandedIds.add(key);
-      renderTree();
-    };
+    if (!lines.length) {
+      tbody.innerHTML = "";
+      empty?.classList.remove("hidden");
+      return;
+    }
+    empty?.classList.add("hidden");
+    tbody.innerHTML = lines
+      .map((line) => revenueCostRowHtml({ ...line, expandable: false, children: [] }, line.name, 0))
+      .join("");
+    tbody.onclick = null;
   }
 
   function openOtherPnlDrillModal(modal, row, periodKey, payload, monthLabel) {
     const summary = modal.querySelector("[data-cell-drill-summary]");
-    const formula = modal.querySelector("[data-cell-drill-formula]");
     const tablePanel = modal.querySelector("[data-cell-drill-table-panel]");
     const blocksRoot = modal.querySelector("[data-cell-drill-other-blocks]");
     const empty = modal.querySelector("[data-cell-drill-empty]");
     summary?.classList.add("hidden");
-    formula?.classList.add("hidden");
     setDrillTableHead(modal, []);
     tablePanel?.classList.add("hidden");
 
@@ -1707,10 +1716,16 @@
     return months.reduce((sum, month) => sum + Number(bucket[month] || 0), 0);
   }
 
+  function revenueCostDrillMergeKey(name) {
+    const normalized = String(name || "").trim().replace(/\s+/g, " ").toLocaleLowerCase("ru-RU");
+    return normalized.startsWith("оэз") ? "__оэз__" : normalized;
+  }
+
   function mergeRevenueCostNodes(nodes) {
     const merged = new Map();
     nodes.forEach((node) => {
-      const current = merged.get(node.name) || {
+      const mergeKey = revenueCostDrillMergeKey(node.name);
+      const current = merged.get(mergeKey) || {
         name: node.name,
         quantity: 0,
         revenue: { buh: 0, nu: 0 },
@@ -1728,7 +1743,7 @@
       });
       current.children.push(...(node.children || []));
       current.expandable = current.expandable || !!node.expandable || current.children.length > 0;
-      merged.set(node.name, current);
+      merged.set(mergeKey, current);
     });
     return Array.from(merged.values()).map((node) => {
       const children = node.expandable ? mergeRevenueCostNodes(node.children) : [];
@@ -1784,7 +1799,8 @@
       const linesMap = new Map();
       payloads.forEach((payload) => {
         (payload?.lines || []).forEach((line) => {
-          const current = linesMap.get(line.name) || {
+          const mergeKey = revenueCostDrillMergeKey(line.name);
+          const current = linesMap.get(mergeKey) || {
             name: line.name,
             quantity: 0,
             revenue: { buh: 0, nu: 0 },
@@ -1797,7 +1813,7 @@
             current[key].buh += Number(line[key]?.buh || 0);
             current[key].nu += Number(line[key]?.nu || 0);
           });
-          linesMap.set(line.name, current);
+          linesMap.set(mergeKey, current);
         });
       });
       const lines = Array.from(linesMap.values()).map((line) => {

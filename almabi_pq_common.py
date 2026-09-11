@@ -17,6 +17,20 @@ def nomenclature_key(value: object) -> str:
     return normalize_text(value).casefold()
 
 
+_BUH_REVENUE_ACTIVITY_NOMENCLATURE_KEYS = frozenset(
+    {
+        "реализация товаров",
+        "реализация покупного по",
+        "реализация пу",
+    }
+)
+
+
+def is_buh_revenue_activity_nomenclature(value: object) -> bool:
+    """Субконто 90.01 с видом «Реализация …» — это тип выручки, не номенклатура товара."""
+    return nomenclature_key(value) in _BUH_REVENUE_ACTIVITY_NOMENCLATURE_KEYS
+
+
 def is_cost_structure_shipment_document(document: object) -> bool:
     """PQ «Свод_нов»: в структуру себестоимости входят только документы отгрузки «Реализация …»."""
     text = normalize_text(document)

@@ -327,3 +327,18 @@ def test_dashboard_api_rejects_unknown_dimension_value(app_client, tmp_path: Pat
 
     assert response.status_code == 400
     assert "Неизвестное значение направления" in response.json()["detail"]
+
+
+def test_dashboard_api_drill_expands_realization_rows(app_client, tmp_path: Path):
+    _upload_dashboard_bundle(app_client, tmp_path)
+
+    response = app_client.get("/api/almabi/dashboard")
+    assert response.status_code == 200
+    revenue = next(row for row in response.json()["summary_rows"] if row["name"] == "Выручка")
+    drill = revenue["drill"]
+    assert drill["type"] == "revenue_cost"
+    period = next(iter(drill["months"]))
+    lines = drill["months"][period]["lines"]
+    assert lines
+    assert "Реализация товаров" not in {line["name"] for line in lines}
+    assert any(line["name"] == "Лицензия ПО" for line in lines)

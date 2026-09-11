@@ -49,8 +49,19 @@ from almabi_pipeline_audit import (
     _match_payload_realization,
 )
 from almabi_project_index import ProjectMeta, build_project_index, lookup_project
-from almabi_pq_common import build_cost_pq_lookup, is_black_metal_scrap_nomenclature, lookup_cost_pq_rows, nomenclature_key
-from almabi_realization_lookup import build_realization_index, resolve_realization_match
+from almabi_pq_common import (
+    build_cost_pq_lookup,
+    is_black_metal_scrap_nomenclature,
+    is_buh_revenue_activity_nomenclature,
+    lookup_cost_pq_rows,
+    nomenclature_key,
+)
+from almabi_realization_lookup import (
+    build_realization_index,
+    lookup_exact_realization_operation,
+    lookup_realization_for_revenue_amount,
+    resolve_realization_match,
+)
 
 INCOME_SECTIONS = frozenset({"Выручка", "Прочие доходы"})
 
@@ -479,9 +490,11 @@ def build_test_facts(
             )
 
             nomenclature = row.nomenclature_kt
-            if cost_match and cost_match.nomenclature:
+            if section == "Выручка" and is_buh_revenue_activity_nomenclature(nomenclature):
+                nomenclature = ""
+            if section != "Выручка" and cost_match and cost_match.nomenclature:
                 nomenclature = cost_match.nomenclature
-            elif rev_match and rev_match.nomenclature:
+            elif not nomenclature and rev_match and rev_match.nomenclature:
                 nomenclature = rev_match.nomenclature
 
             if section == "Себестоимость" and is_black_metal_scrap_nomenclature(nomenclature):
@@ -491,6 +504,26 @@ def build_test_facts(
             if cost_match and cost_match.contract:
                 contract = cost_match.contract or contract
             contractor = row.contractor or _lookup_contractor(row.document, doc_contractor)
+
+            exact_revenue_operation = None
+            if section == "Выручка" and exports.realization:
+                revenue_realization = lookup_realization_for_revenue_amount(
+                    document=row.document,
+                    amount_buh=amount_buh,
+                    amount_nu=amount_nu,
+                    rows=exports.realization,
+                )
+                if revenue_realization is not None and revenue_realization.nomenclature:
+                    nomenclature = revenue_realization.nomenclature
+                exact_revenue_operation = lookup_exact_realization_operation(
+                    document=row.document,
+                    nomenclature=nomenclature,
+                    index=realization_index,
+                )
+                if exact_revenue_operation is None and revenue_realization is not None:
+                    exact_revenue_operation = revenue_realization
+                if exact_revenue_operation is not None and exact_revenue_operation.nomenclature:
+                    nomenclature = exact_revenue_operation.nomenclature
 
             audit_log.log_buh_line(
                 section=section,
@@ -508,30 +541,33 @@ def build_test_facts(
                 nomenclature=nomenclature,
             )
 
-            quantity = resolve_quantity_from_cost(
-                document=lookup_document,
-                nomenclature=nomenclature,
-                cost_match=cost_match,
-                qty_lookup=cost_qty_lookup,
-            )
-            # Для выручки cost join идёт по «Доходы», а qty лежит в строках cost с «Расходы».
-            if quantity <= 0 and section in INCOME_SECTIONS and exports.cost:
-                qty_matches = _lookup_cost_rows_pq(
-                    lookup_document,
-                    "Расходы",
-                    nomenclature or row.nomenclature_kt,
-                    by_full_key=cost_by_full,
-                    by_doc_section=cost_by_doc_section,
-                    pq_cost_lookup=pq_cost_lookup,
+            if exact_revenue_operation is not None and exact_revenue_operation.quantity is not None:
+                quantity = float(exact_revenue_operation.quantity or 0)
+            else:
+                quantity = resolve_quantity_from_cost(
+                    document=lookup_document,
+                    nomenclature=nomenclature,
+                    cost_match=cost_match,
+                    qty_lookup=cost_qty_lookup,
                 )
-                if qty_matches:
-                    quantity = max(float(item.quantity or 0) for item in qty_matches)
-                if quantity <= 0:
-                    quantity = resolve_quantity_from_cost(
-                        document=row.document,
-                        nomenclature=nomenclature or row.nomenclature_kt,
-                        qty_lookup=cost_qty_lookup,
+                # Старые выгрузки без колонки «Количество» сохраняют прежний fallback.
+                if quantity <= 0 and section in INCOME_SECTIONS and exports.cost:
+                    qty_matches = _lookup_cost_rows_pq(
+                        lookup_document,
+                        "Расходы",
+                        nomenclature_kt=nomenclature or row.nomenclature_kt,
+                        by_full_key=cost_by_full,
+                        by_doc_section=cost_by_doc_section,
+                        pq_cost_lookup=pq_cost_lookup,
                     )
+                    if qty_matches:
+                        quantity = max(float(item.quantity or 0) for item in qty_matches)
+                    if quantity <= 0:
+                        quantity = resolve_quantity_from_cost(
+                            document=row.document,
+                            nomenclature=nomenclature or row.nomenclature_kt,
+                            qty_lookup=cost_qty_lookup,
+                        )
 
             resolved_tax_type = _resolve_row_tax_type(
                 section,
@@ -614,10 +650,14 @@ def build_test_facts(
                 nomenclature=row.nomenclature,
                 tax_type=doc_tax.get(row.document, "Общие условия налогообложения"),
                 contractor=_lookup_contractor(row.document, doc_contractor),
-                quantity=resolve_quantity_from_cost(
-                    document=row.document,
-                    nomenclature=row.nomenclature,
-                    qty_lookup=cost_qty_lookup,
+                quantity=(
+                    float(row.quantity or 0)
+                    if row.quantity is not None
+                    else resolve_quantity_from_cost(
+                        document=row.document,
+                        nomenclature=row.nomenclature,
+                        qty_lookup=cost_qty_lookup,
+                    )
                 ),
             )
             audit_log.record_fact(facts[-1])
@@ -685,7 +725,12 @@ def build_test_facts(
     if not facts:
         warnings.append("После обработки выгрузок не найдено строк с суммами по месяцам.")
 
-    return PipelineResult(facts=facts, months=months, warnings=warnings)
+    return PipelineResult(
+        facts=facts,
+        months=months,
+        warnings=warnings,
+        realization_rows=list(exports.realization),
+    )
 
 
 def run_test_pipeline(

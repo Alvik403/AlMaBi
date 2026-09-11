@@ -22,6 +22,7 @@ from almabi_dashboard_builder import (
     periods_from_facts,
 )
 from almabi_excel_utils import period_label
+from almabi_export_parsers import RealizationRow
 from almabi_pipeline import Fact
 from almabi_mock_data import SCENARIOS
 
@@ -210,6 +211,7 @@ def build_test_summary_rows_from_facts(
     plan_facts: list[Fact] | None = None,
     forecast_facts: list[Fact] | None = None,
     pq_cost_rows: list[dict[str, object]] | None = None,
+    realization_rows: list[RealizationRow] | None = None,
 ) -> list[dict[str, Any]]:
     dashboard_builder._id_seq = 0
 
@@ -250,7 +252,10 @@ def build_test_summary_rows_from_facts(
         _append_cost_structure_gap_child(cost_node, pq_cost_rows=pq_cost_rows)
 
     revenue_facts = _group_facts(facts, kpi_l1="Выручка")
-    cost_facts = cost_structure_facts or _group_facts(facts, kpi_l1="Себестоимость")
+    # Расшифровка работает по исходным бухгалтерским фактам с документом.
+    # Унифицированные факты нужны только дереву себестоимости и могут не
+    # содержать ключ операции, поэтому в новую расшифровку их не передаём.
+    cost_facts = cost_buh_facts
     for node in nodes:
         if node["name"] == "Выручка":
             dashboard_builder._attach_revenue_cost_level_drills(
@@ -259,6 +264,7 @@ def build_test_summary_rows_from_facts(
                 cost_facts,
                 child_path=list(dashboard_builder.REVENUE_PATH),
                 base="revenue",
+                realization_rows=realization_rows,
             )
         elif node["name"] == "Себестоимость":
             dashboard_builder._attach_revenue_cost_level_drills(
@@ -268,6 +274,7 @@ def build_test_summary_rows_from_facts(
                 child_path=list(dashboard_builder.COST_PATH),
                 group_path_keys=list(dashboard_builder.COST_GROUP_PATH),
                 base="cost",
+                realization_rows=realization_rows,
             )
 
     operating_component_names = [

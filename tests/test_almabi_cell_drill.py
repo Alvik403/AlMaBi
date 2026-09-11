@@ -7,6 +7,7 @@ from almabi_dashboard_builder import (
     _build_revenue_cost_drill,
     _build_summary_rows,
 )
+from almabi_export_parsers import RealizationRow
 from almabi_pipeline import Fact
 
 
@@ -67,6 +68,190 @@ def test_build_drill_data_sorts_articles_by_abs_amount_desc():
     )
     names = [item["name"] for item in drill["total"]["articles"]]
     assert names == ["Крупный", "Средний", "Малый"]
+
+
+def test_revenue_drill_expands_realization_rows_for_aggregated_buh_shipment():
+    document = "Реализация товаров и услуг 00АМ-000032 от 09.03.2026 21:00:00"
+    realization_rows = [
+        RealizationRow(
+            document=document,
+            nomenclature="Компьютер iRU City 101",
+            project="Прочие проекты",
+            project_group="Группа А",
+            direction="Перепродажа",
+            revenue=3851400.0,
+            month="Март",
+            period="2026-03",
+            quantity=12.0,
+        ),
+        RealizationRow(
+            document=document,
+            nomenclature="Монитор Sunwind SM-27FI223",
+            project="Прочие проекты",
+            project_group="Группа А",
+            direction="Перепродажа",
+            revenue=180480.0,
+            month="Март",
+            period="2026-03",
+            quantity=12.0,
+        ),
+    ]
+    revenue_facts = [
+        _fact(
+            kpi_l1="Выручка",
+            direction="Перепродажа",
+            project_group="Группа А",
+            project="Прочие проекты",
+            nomenclature="Реализация товаров",
+            document=document,
+            amount_buh=4_631_880.0,
+            amount_nu=4_031_880.0,
+            quantity=0,
+            period="2026-03",
+            month="Март",
+        ),
+    ]
+    cost_facts = [
+        _fact(
+            kpi_l1="Себестоимость",
+            direction="Перепродажа",
+            project_group="Группа А",
+            project="Прочие проекты",
+            nomenclature="Компьютер iRU City 101",
+            document=document,
+            amount_buh=-3_000_000,
+            amount_nu=-3_000_000,
+            quantity=12.0,
+            period="2026-03",
+            month="Март",
+        ),
+    ]
+    drill = _build_revenue_cost_drill(
+        revenue_facts,
+        cost_facts,
+        base="revenue",
+        realization_rows=realization_rows,
+    )
+    lines = {line["name"]: line for line in drill["months"]["2026-03"]["lines"]}
+    assert "Реализация товаров" not in lines
+    assert lines["Компьютер iRU City 101"]["quantity"] == 12.0
+    assert lines["Компьютер iRU City 101"]["revenue"]["nu"] == 3_851_400.0
+    assert lines["Компьютер iRU City 101"]["cost"]["buh"] == 3_000_000.0
+    assert lines["Монитор Sunwind SM-27FI223"]["quantity"] == 12.0
+    assert lines["Монитор Sunwind SM-27FI223"]["revenue"]["nu"] == 180_480.0
+
+
+def test_revenue_drill_does_not_duplicate_buh_line_when_realization_document_date_differs():
+    buh_document = "Реализация товаров и услуг 00АМ-000205 от 10.07.2026 21:00:00"
+    realization_document = "Реализация товаров и услуг 00АМ-000205 от 16.07.2026 21:00:00"
+    realization_rows = [
+        RealizationRow(
+            document=realization_document,
+            nomenclature='Программно-аппаратный комплекс "Око" (длинное наименование)',
+            direction="Производство (Слаботочка)",
+            project_group="Слаботочка",
+            project='Синергия 23.1 "Королев" СКУД',
+            revenue=34_329_350.0,
+            month="Июль",
+            period="2026-07",
+            quantity=1.0,
+        ),
+        RealizationRow(
+            document=realization_document,
+            nomenclature='Программно-аппаратный комплекс "Око" (ещё одна позиция)',
+            direction="Производство (Слаботочка)",
+            project_group="Слаботочка",
+            project='Синергия 23.1 "Королев" СКУД',
+            revenue=26_450_820.0,
+            month="Июль",
+            period="2026-07",
+            quantity=1.0,
+        ),
+    ]
+    revenue_facts = [
+        _fact(
+            kpi_l1="Выручка",
+            direction="Производство (Слаботочка)",
+            project_group="Слаботочка",
+            project='Синергия 23.1 "Королев" СКУД',
+            nomenclature='Программно-аппаратный комплекс "Око"',
+            document=buh_document,
+            amount_buh=60_780_170.0,
+            amount_nu=60_780_170.0,
+            quantity=0,
+            period="2026-07",
+            month="Июль",
+        ),
+    ]
+    drill = _build_revenue_cost_drill(
+        revenue_facts,
+        [],
+        base="revenue",
+        realization_rows=realization_rows,
+    )
+    lines = drill["months"]["2026-07"]["lines"]
+    assert len(lines) == 2
+    assert all(line["quantity"] == 1.0 for line in lines)
+    assert 'Программно-аппаратный комплекс "Око"' not in {line["name"] for line in lines}
+
+
+def test_revenue_drill_links_cost_when_realization_document_date_differs():
+    buh_document = "Реализация товаров и услуг 00АМ-000205 от 10.07.2026 21:00:00"
+    realization_document = "Реализация товаров и услуг 00АМ-000205 от 16.07.2026 21:00:00"
+    nomenclature = 'Программно-аппаратный комплекс «Око» Тип 1 Исполнение 16'
+    realization_rows = [
+        RealizationRow(
+            document=realization_document,
+            nomenclature=nomenclature,
+            direction="Без направления",
+            project_group="Без группы",
+            project="Без проекта",
+            revenue=34_329_350.0,
+            month="Июль",
+            period="2026-07",
+            quantity=1.0,
+        ),
+    ]
+    revenue_facts = [
+        _fact(
+            kpi_l1="Выручка",
+            direction="Без направления",
+            project_group="Без группы",
+            project="Без проекта",
+            nomenclature='Программно-аппаратный комплекс "Око"',
+            document=buh_document,
+            amount_buh=34_329_350.0,
+            amount_nu=34_329_350.0,
+            quantity=0,
+            period="2026-07",
+            month="Июль",
+        ),
+    ]
+    cost_facts = [
+        _fact(
+            kpi_l1="Себестоимость",
+            direction="Без направления",
+            project_group="Без группы",
+            project="Без проекта",
+            nomenclature=nomenclature,
+            document=buh_document,
+            amount_buh=-2_500_000,
+            amount_nu=-2_500_000,
+            quantity=1,
+            period="2026-07",
+            month="Июль",
+        ),
+    ]
+    drill = _build_revenue_cost_drill(
+        revenue_facts,
+        cost_facts,
+        base="revenue",
+        realization_rows=realization_rows,
+    )
+    line = drill["months"]["2026-07"]["lines"][0]
+    assert line["quantity"] == 1.0
+    assert line["revenue"]["nu"] == 34_329_350.0
+    assert line["cost"]["nu"] == 2_500_000.0
 
 
 def test_build_revenue_cost_drill_pairs_nomenclature_lines():
@@ -141,7 +326,7 @@ def test_build_revenue_cost_drill_pairs_nomenclature_lines():
     leaves = project["children"]
     assert [item["name"] for item in leaves] == ["Лицензия А", "Лицензия Б"]
     assert leaves[0]["expandable"] is False
-    assert leaves[1]["quantity"] == 2
+    assert leaves[1]["quantity"] == 1
     assert leaves[1]["profit"]["buh"] == 150_000
 
 
@@ -432,6 +617,145 @@ def test_revenue_cost_quantity_keeps_real_values_without_fake_ones():
     assert lines["Без количества"]["revenue"]["buh"] == 1_000
 
 
+def test_revenue_cost_quantity_sums_only_clicked_side_inside_each_cell():
+    revenue_facts = [
+        _fact(
+            kpi_l1="Выручка",
+            nomenclature="Товар",
+            amount_buh=600,
+            amount_nu=600,
+            quantity=1,
+            period="2026-05",
+            month="Май",
+        ),
+        _fact(
+            kpi_l1="Выручка",
+            nomenclature="Товар",
+            amount_buh=400,
+            amount_nu=400,
+            quantity=2,
+            period="2026-05",
+            month="Май",
+        ),
+        _fact(
+            kpi_l1="Выручка",
+            nomenclature="Товар",
+            amount_buh=2_000,
+            amount_nu=2_000,
+            quantity=4,
+            period="2026-06",
+            month="Июнь",
+        ),
+    ]
+    cost_facts = [
+        _fact(
+            kpi_l1="Себестоимость",
+            nomenclature="Товар",
+            amount_buh=-300,
+            amount_nu=-300,
+            quantity=30,
+            period="2026-05",
+            month="Май",
+        ),
+        _fact(
+            kpi_l1="Себестоимость",
+            nomenclature="Товар",
+            amount_buh=-800,
+            amount_nu=-800,
+            quantity=40,
+            period="2026-06",
+            month="Июнь",
+        ),
+    ]
+
+    revenue_drill = _build_revenue_cost_drill(revenue_facts, cost_facts, base="revenue")
+    may_revenue = revenue_drill["months"]["2026-05"]["lines"][0]
+    june_revenue = revenue_drill["months"]["2026-06"]["lines"][0]
+    assert may_revenue["quantity"] == 3
+    assert may_revenue["revenue"]["buh"] == 1_000
+    assert may_revenue["cost"]["buh"] == 300
+    assert june_revenue["quantity"] == 4
+    assert june_revenue["revenue"]["buh"] == 2_000
+    assert june_revenue["cost"]["buh"] == 800
+
+    cost_drill = _build_revenue_cost_drill(revenue_facts, cost_facts, base="cost")
+    assert cost_drill["months"]["2026-05"]["lines"][0]["quantity"] == 30
+    assert cost_drill["months"]["2026-06"]["lines"][0]["quantity"] == 40
+
+
+def test_revenue_drill_joins_exact_operation_and_counts_quantity_once():
+    common = {
+        "kpi_l1": "Выручка",
+        "nomenclature": "Товар",
+        "period": "2026-06",
+        "month": "Июнь",
+    }
+    revenue_facts = [
+        _fact(
+            **common,
+            document="Реализация А от 01.06.2026",
+            amount_buh=600,
+            amount_nu=600,
+            quantity=2,
+        ),
+        # Та же операция разбита на две бухгалтерские проводки:
+        # сумму складываем, количество повторно не учитываем.
+        _fact(
+            **common,
+            document="Реализация А от 01.06.2026",
+            amount_buh=400,
+            amount_nu=400,
+            quantity=2,
+        ),
+        _fact(
+            **common,
+            document="Реализация Б от 02.06.2026",
+            amount_buh=2_000,
+            amount_nu=2_000,
+            quantity=3,
+        ),
+    ]
+    cost_facts = [
+        _fact(
+            kpi_l1="Себестоимость",
+            nomenclature="товар",
+            document="Реализация А от 01.06.2026",
+            amount_buh=-300,
+            amount_nu=-300,
+            quantity=20,
+            period="2026-06",
+            month="Июнь",
+        ),
+        _fact(
+            kpi_l1="Себестоимость",
+            nomenclature="Товар",
+            document="Реализация Б от 02.06.2026",
+            amount_buh=-800,
+            amount_nu=-800,
+            quantity=30,
+            period="2026-06",
+            month="Июнь",
+        ),
+        _fact(
+            kpi_l1="Себестоимость",
+            nomenclature="Товар",
+            document="Чужая реализация от 03.06.2026",
+            amount_buh=-9_000,
+            amount_nu=-9_000,
+            quantity=90,
+            period="2026-06",
+            month="Июнь",
+        ),
+    ]
+
+    drill = _build_revenue_cost_drill(revenue_facts, cost_facts, base="revenue")
+    line = drill["months"]["2026-06"]["lines"][0]
+    assert line["quantity"] == 5
+    assert line["revenue"]["buh"] == 3_000
+    assert line["cost"]["buh"] == 1_100
+    assert line["profit"]["buh"] == 1_900
+
+
 def test_revenue_drill_hides_cost_only_and_attaches_exact_name():
     drill = _build_revenue_cost_drill(
         [
@@ -550,12 +874,79 @@ def test_revenue_cost_drill_matches_name_case_insensitively():
     assert line["profit"]["buh"] == 600
 
 
-def test_revenue_month_drill_attaches_same_document_cost_from_later_month():
+def test_revenue_month_drill_keeps_same_sku_independent_across_months():
+    sku = "Настольный двухканальный ЯМР-спектрометр Spinsolve 90 Carbon"
+    document = "Реализация 00БП-15 от 15.01.2026"
+    revenue_facts = [
+        _fact(
+            kpi_l1="Выручка",
+            nomenclature=sku,
+            amount_buh=46_090,
+            amount_nu=46_090,
+            quantity=1,
+            period="2026-05",
+            month="Май",
+            document=document,
+        ),
+        _fact(
+            kpi_l1="Выручка",
+            nomenclature=sku,
+            amount_buh=100_000,
+            amount_nu=100_000,
+            quantity=1,
+            period="2026-06",
+            month="Июнь",
+            document=document,
+        ),
+    ]
+    cost_facts = [
+        _fact(
+            kpi_l1="Себестоимость",
+            nomenclature=sku,
+            amount_buh=-20_000,
+            amount_nu=-20_000,
+            quantity=1,
+            period="2026-05",
+            month="Май",
+            document=document,
+        ),
+        _fact(
+            kpi_l1="Себестоимость",
+            nomenclature=sku,
+            amount_buh=-40_000,
+            amount_nu=-40_000,
+            quantity=1,
+            period="2026-06",
+            month="Июнь",
+            document=document,
+        ),
+    ]
+    drill = _build_revenue_cost_drill(revenue_facts, cost_facts)
+    may = {line["name"]: line for line in drill["months"]["2026-05"]["lines"]}
+    june = {line["name"]: line for line in drill["months"]["2026-06"]["lines"]}
+    assert may[sku]["revenue"]["buh"] == 46_090
+    assert may[sku]["cost"]["buh"] == 20_000
+    assert may[sku]["profit"]["buh"] == 26_090
+    assert june[sku]["revenue"]["buh"] == 100_000
+    assert june[sku]["cost"]["buh"] == 40_000
+    assert june[sku]["profit"]["buh"] == 60_000
+
+    total = {line["name"]: line for line in drill["total"]["lines"]}
+    assert total[sku]["revenue"]["buh"] == 146_090
+    assert total[sku]["cost"]["buh"] == 60_000
+
+    cost_drill = _build_revenue_cost_drill(revenue_facts, cost_facts, base="cost")
+    cost_june = {line["name"]: line for line in cost_drill["months"]["2026-06"]["lines"]}
+    assert cost_june[sku]["revenue"]["buh"] == 100_000
+    assert cost_june[sku]["cost"]["buh"] == 40_000
+
+
+def test_revenue_month_drill_does_not_take_other_month_cost():
     drill = _build_revenue_cost_drill(
         [
             _fact(
                 kpi_l1="Выручка",
-                nomenclature="Настольный двухканальный ЯМР-спектрометр Spinsolve 90 Carbon",
+                nomenclature="Настольный ЯМР Spinsolve",
                 amount_buh=46_090,
                 amount_nu=46_090,
                 quantity=1,
@@ -567,45 +958,13 @@ def test_revenue_month_drill_attaches_same_document_cost_from_later_month():
         [
             _fact(
                 kpi_l1="Себестоимость",
-                nomenclature="Настольный двухканальный ЯМР-спектрометр Spinsolve 90 Carbon",
+                nomenclature="Настольный ЯМР Spinsolve",
                 amount_buh=-40_000,
                 amount_nu=-40_000,
                 quantity=1,
                 period="2026-02",
                 month="Февраль",
                 document="Реализация 00БП-15 от 15.01.2026",
-            ),
-        ],
-    )
-    january = {line["name"]: line for line in drill["months"]["2026-01"]["lines"]}
-    line = january["Настольный двухканальный ЯМР-спектрометр Spinsolve 90 Carbon"]
-    assert line["revenue"]["buh"] == 46_090
-    assert line["cost"]["buh"] == 40_000
-    assert line["profit"]["buh"] == 6_090
-
-
-def test_revenue_month_drill_does_not_take_other_month_cost_without_document():
-    drill = _build_revenue_cost_drill(
-        [
-            _fact(
-                kpi_l1="Выручка",
-                nomenclature="Настольный ЯМР Spinsolve",
-                amount_buh=46_090,
-                amount_nu=46_090,
-                quantity=1,
-                period="2026-01",
-                month="Январь",
-            ),
-        ],
-        [
-            _fact(
-                kpi_l1="Себестоимость",
-                nomenclature="Настольный ЯМР Spinsolve",
-                amount_buh=-40_000,
-                amount_nu=-40_000,
-                quantity=1,
-                period="2026-02",
-                month="Февраль",
             ),
             _fact(
                 kpi_l1="Себестоимость",
@@ -624,7 +983,7 @@ def test_revenue_month_drill_does_not_take_other_month_cost_without_document():
     assert "Другой товар" not in january
 
 
-def test_revenue_month_drill_does_not_take_other_year_cost_even_with_document():
+def test_revenue_month_drill_does_not_take_other_year_cost():
     drill = _build_revenue_cost_drill(
         [
             _fact(

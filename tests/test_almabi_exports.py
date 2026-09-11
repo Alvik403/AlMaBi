@@ -107,7 +107,13 @@ def create_buh_workbook(
     workbook.save(path)
 
 
-def create_realization_workbook(path: Path, *, document: str = "Реализация товаров и услуг 00АМ-000017 от 31.01.2026 21:00:00") -> None:
+def create_realization_workbook(
+    path: Path,
+    *,
+    document: str = "Реализация товаров и услуг 00АМ-000017 от 31.01.2026 21:00:00",
+    nomenclature: str = "Лицензия ПО",
+    quantity: float | None = None,
+) -> None:
     workbook = Workbook()
     sheet = workbook.active
     _pad_rows(sheet, 7)
@@ -120,18 +126,21 @@ def create_realization_workbook(path: Path, *, document: str = "Реализац
         "Выручка",
         "Валовая прибыль",
     ]
+    if quantity is not None:
+        headers.append("Количество")
     sheet.append(headers)
-    sheet.append(
-        [
-            document,
-            "Лицензия ПО",
-            "Обслуживание Долго",
-            "Обслуживание",
-            "Услуги",
-            1_000_000,
-            600_000,
-        ]
-    )
+    values = [
+        document,
+        nomenclature,
+        "Обслуживание Долго",
+        "Обслуживание",
+        "Услуги",
+        1_000_000,
+        600_000,
+    ]
+    if quantity is not None:
+        values.append(quantity)
+    sheet.append(values)
     sheet.append(["Итого"])
     workbook.save(path)
 
@@ -140,6 +149,7 @@ def create_cost_workbook(
     path: Path,
     *,
     document: str = "Реализация товаров и услуг 00АМ-000017 от 31.01.2026 21:00:00",
+    nomenclature: str = "Лицензия ПО",
     quantity: float = 1,
 ) -> None:
     workbook = Workbook()
@@ -157,7 +167,7 @@ def create_cost_workbook(
     sheet.append(headers)
     sheet.append(
         [
-            "Лицензия ПО",
+            nomenclature,
             "20",
             "Сырье и материалы",
             document,
@@ -571,6 +581,76 @@ def test_revenue_and_cost_facts_get_quantity_from_cost_file(tmp_path: Path):
     assert drill_lines["Лицензия ПО"]["quantity"] == 12.5
     assert drill_lines["Лицензия ПО"]["revenue"]["buh"] == 1_000_000
     assert drill_lines["Лицензия ПО"]["cost"]["buh"] == 400_000
+
+
+def test_revenue_fact_uses_realization_nomenclature_from_export(tmp_path: Path):
+    from almabi_export_parsers import parse_exports
+    from almabi_pipeline import build_facts
+
+    long_name = "Комплект ЭПР Матриц реактивной моторной лодки Г11779-4"
+    paths = {
+        "buh": tmp_path / "buh.xlsx",
+        "realization": tmp_path / "realization.xlsx",
+        "cost": tmp_path / "cost.xlsx",
+    }
+    create_buh_workbook(paths["buh"])
+    create_realization_workbook(
+        paths["realization"],
+        nomenclature=long_name,
+        quantity=2,
+    )
+    create_cost_workbook(paths["cost"], nomenclature=long_name, quantity=2)
+
+    result = build_facts(parse_exports(paths))
+    revenue = next(
+        fact
+        for fact in result.facts
+        if fact.kpi_l1 == "Выручка" and abs(float(fact.amount_nu or 0)) > 0
+    )
+    assert revenue.nomenclature == long_name
+    assert revenue.quantity == 2
+
+    dashboard = load_almabi_dashboard_from_exports(
+        paths,
+        upload_names={key: path.name for key, path in paths.items()},
+    )
+    revenue_row = next(row for row in dashboard["summary_rows"] if row["name"] == "Выручка")
+    lines = {line["name"]: line for line in revenue_row["drill"]["total"]["lines"]}
+    assert long_name in lines
+    assert lines[long_name]["quantity"] == 2
+
+
+def test_revenue_fact_prefers_quantity_from_new_realization_export(tmp_path: Path):
+    from almabi_export_parsers import parse_exports
+    from almabi_pipeline import build_facts
+    from almabi_test_pipeline import build_test_facts
+
+    paths = {
+        "buh": tmp_path / "buh.xlsx",
+        "realization": tmp_path / "realization.xlsx",
+        "cost": tmp_path / "cost.xlsx",
+    }
+    create_buh_workbook(paths["buh"])
+    create_realization_workbook(paths["realization"], quantity=7.5)
+    create_cost_workbook(paths["cost"], quantity=99)
+
+    exports = parse_exports(paths)
+    assert exports.realization[0].quantity == 7.5
+
+    for result in (build_facts(exports), build_test_facts(exports)):
+        revenue = next(
+            fact
+            for fact in result.facts
+            if fact.kpi_l1 == "Выручка" and fact.nomenclature == "Лицензия ПО"
+        )
+        cost = next(
+            fact
+            for fact in result.facts
+            if fact.kpi_l1 == "Себестоимость" and fact.nomenclature == "Лицензия ПО"
+        )
+        assert revenue.quantity == 7.5
+        assert cost.quantity == 99
+        assert revenue.amount_buh == 1_000_000
 
 
 def test_validate_export_types(tmp_path: Path):

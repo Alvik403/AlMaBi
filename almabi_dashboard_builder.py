@@ -16,12 +16,22 @@ from almabi_excel_utils import (
     period_sort_key,
     tax_bucket,
 )
+from almabi_drill_matching import (
+    build_drill_cost_lookup,
+    covered_document_keys_for_realization_rows,
+    drill_operation_key,
+    lookup_drill_cost,
+    scope_realization_rows_for_drill,
+    should_exclude_rev_fact_from_drill_fallback,
+)
+from almabi_export_parsers import RealizationRow
 from almabi_export_parsers import classify_cost_section_pq
 from almabi_mock_data import MONTHS, SCENARIOS, UNITS
 from almabi_pq_common import (
     build_davaltz_document_totals,
     davaltz_cost_tree_group,
     is_black_metal_scrap_nomenclature,
+    is_buh_revenue_activity_nomenclature,
     is_davaltz_cost_document,
     nomenclature_key,
     should_include_in_cost_structure,
@@ -295,64 +305,181 @@ def _remember_revenue_cost_drill_display(
         display_names[group_key] = name
 
 
+def _realization_row_period(row: RealizationRow) -> str:
+    return normalize_text(row.period) or period_or_month(row) or ""
+
+
+def _build_revenue_cost_leaf_lines_from_realization(
+    realization_rows: list[RealizationRow],
+    rev_subset: list[Fact],
+    cost_subset: list[Fact],
+) -> list[dict[str, Any]]:
+    """Строки расшифровки выручки по номенклатуре и количеству из «Реализация проекты»."""
+    scoped = scope_realization_rows_for_drill(realization_rows, rev_subset)
+    if not scoped:
+        return []
+
+    cost_lookup = build_drill_cost_lookup(
+        cost_subset,
+        period_for_fact=_fact_period,
+        display_name_for_fact=_fact_drill_display_name,
+    )
+
+    lines: list[dict[str, Any]] = []
+    for row in scoped:
+        period = _realization_row_period(row)
+        revenue_amount = float(row.revenue or 0)
+        cost = lookup_drill_cost(
+            cost_lookup,
+            period=period,
+            document=row.document,
+            nomenclature=row.nomenclature,
+        )
+        lines.append(
+            _revenue_cost_line_metrics(
+                name=row.nomenclature,
+                revenue_buh=revenue_amount,
+                revenue_nu=revenue_amount,
+                cost_buh=cost["buh"],
+                cost_nu=cost["nu"],
+                quantity=float(row.quantity or 0),
+            )
+        )
+
+    lines.sort(
+        key=lambda item: (
+            -max(abs(float(item["revenue"]["buh"])), abs(float(item["revenue"]["nu"]))),
+            item["name"],
+        )
+    )
+    return lines
+
+
 def _build_revenue_cost_leaf_lines(
     rev_subset: list[Fact],
     cost_subset: list[Fact],
     *,
     base: DrillBase = "revenue",
+    realization_rows: list[RealizationRow] | None = None,
 ) -> list[dict[str, Any]]:
-    grouped: dict[str, dict[str, float]] = defaultdict(
-        lambda: {
-            "revenue_buh": 0.0,
-            "revenue_nu": 0.0,
-            "cost_buh": 0.0,
-            "cost_nu": 0.0,
-            "rev_quantity": 0.0,
-            "cost_quantity": 0.0,
-        }
-    )
-    display_names: dict[str, str] = {}
-    revenue_keys: set[str] = set()
-    cost_keys: set[str] = set()
-    for fact in rev_subset:
-        name = _fact_drill_display_name(fact)
-        group_key = _revenue_cost_drill_group_key(name)
-        revenue_keys.add(group_key)
-        rev_amount = _revenue_amount_for_drill(fact)
-        grouped[group_key]["revenue_buh"] += rev_amount
-        grouped[group_key]["revenue_nu"] += rev_amount
-        grouped[group_key]["rev_quantity"] = max(
-            grouped[group_key]["rev_quantity"], float(fact.quantity or 0)
+    """Строки расшифровки внутри выбранной клетки.
+
+    Сначала строки «Реализация проекты» (период + документ + номенклатура),
+    затем оставшиеся факты бухгалтерии без дублирования по документу.
+    """
+    if base == "revenue" and realization_rows:
+        realization_lines = _build_revenue_cost_leaf_lines_from_realization(
+            realization_rows,
+            rev_subset,
+            cost_subset,
         )
-        _remember_revenue_cost_drill_display(
-            display_names, group_key, name, from_revenue=True, prefer=base
-        )
-    for fact in cost_subset:
-        name = _fact_drill_display_name(fact)
-        group_key = _revenue_cost_drill_group_key(name)
-        cost_keys.add(group_key)
-        grouped[group_key]["cost_buh"] += abs(float(fact.amount_buh or 0))
-        grouped[group_key]["cost_nu"] += abs(float(fact.amount_nu or 0))
-        grouped[group_key]["cost_quantity"] = max(
-            grouped[group_key]["cost_quantity"], float(fact.quantity or 0)
-        )
-        _remember_revenue_cost_drill_display(
-            display_names, group_key, name, from_revenue=False, prefer=base
+        if realization_lines:
+            scoped_rows = scope_realization_rows_for_drill(realization_rows, rev_subset)
+            covered_document_keys = covered_document_keys_for_realization_rows(scoped_rows)
+            uncovered_rev = [
+                fact
+                for fact in rev_subset
+                if not should_exclude_rev_fact_from_drill_fallback(
+                    fact,
+                    covered_document_keys=covered_document_keys,
+                )
+            ]
+            if not uncovered_rev:
+                return realization_lines
+            return realization_lines + _build_revenue_cost_leaf_lines(
+                uncovered_rev,
+                cost_subset,
+                base=base,
+                realization_rows=None,
+            )
+
+    if base == "revenue":
+        rev_subset = [
+            fact
+            for fact in rev_subset
+            if not is_buh_revenue_activity_nomenclature(fact.nomenclature)
+        ]
+
+    TransactionKey = tuple[str, str, str]
+
+    def transaction_key(fact: Fact) -> TransactionKey:
+        return drill_operation_key(
+            period=_fact_period(fact),
+            document=fact.document,
+            nomenclature=_fact_drill_display_name(fact),
         )
 
-    keep_keys = revenue_keys if base == "revenue" else cost_keys
-    lines = [
-        _revenue_cost_line_metrics(
-            name=display_names.get(group_key, group_key),
-            revenue_buh=float(values["revenue_buh"]),
-            revenue_nu=float(values["revenue_nu"]),
-            cost_buh=float(values["cost_buh"]),
-            cost_nu=float(values["cost_nu"]),
-            quantity=max(float(values["rev_quantity"]), float(values["cost_quantity"])),
+    def amount_index(
+        facts: list[Fact],
+        *,
+        revenue: bool,
+    ) -> dict[TransactionKey, dict[str, float]]:
+        indexed: dict[TransactionKey, dict[str, float]] = defaultdict(
+            lambda: {"buh": 0.0, "nu": 0.0}
         )
-        for group_key, values in grouped.items()
-        if group_key in keep_keys
-    ]
+        for fact in facts:
+            key = transaction_key(fact)
+            if revenue:
+                amount = _revenue_amount_for_drill(fact)
+                indexed[key]["buh"] += amount
+                indexed[key]["nu"] += amount
+            else:
+                indexed[key]["buh"] += abs(float(fact.amount_buh or 0))
+                indexed[key]["nu"] += abs(float(fact.amount_nu or 0))
+        return indexed
+
+    revenue_by_operation = amount_index(rev_subset, revenue=True)
+    cost_by_operation = amount_index(cost_subset, revenue=False)
+    base_facts = rev_subset if base == "revenue" else cost_subset
+
+    operation_keys_by_name: dict[str, set[TransactionKey]] = defaultdict(set)
+    quantity_by_event: dict[str, dict[tuple[object, ...], float]] = defaultdict(dict)
+    display_names: dict[str, str] = {}
+    for index, fact in enumerate(base_facts):
+        name = _fact_drill_display_name(fact)
+        group_key = _revenue_cost_drill_group_key(name)
+        operation_key = transaction_key(fact)
+        operation_keys_by_name[group_key].add(operation_key)
+
+        # Одна операция может породить несколько бухгалтерских проводок.
+        # Количество из реализации учитывается один раз; без документа каждая
+        # фактическая строка считается самостоятельной.
+        document_key = normalize_text(fact.document).casefold()
+        quantity_event = (
+            operation_key
+            if document_key
+            else (_fact_period(fact), group_key, "row", index)
+        )
+        current_quantity = quantity_by_event[group_key].get(quantity_event, 0.0)
+        quantity_by_event[group_key][quantity_event] = max(
+            current_quantity,
+            float(fact.quantity or 0),
+        )
+        _remember_revenue_cost_drill_display(
+            display_names,
+            group_key,
+            name,
+            from_revenue=base == "revenue",
+            prefer=base,
+        )
+
+    lines: list[dict[str, Any]] = []
+    for group_key, operation_keys in operation_keys_by_name.items():
+        revenue_buh = sum(revenue_by_operation[key]["buh"] for key in operation_keys)
+        revenue_nu = sum(revenue_by_operation[key]["nu"] for key in operation_keys)
+        cost_buh = sum(cost_by_operation[key]["buh"] for key in operation_keys)
+        cost_nu = sum(cost_by_operation[key]["nu"] for key in operation_keys)
+        lines.append(
+            _revenue_cost_line_metrics(
+                name=display_names.get(group_key, group_key),
+                revenue_buh=revenue_buh,
+                revenue_nu=revenue_nu,
+                cost_buh=cost_buh,
+                cost_nu=cost_nu,
+                quantity=sum(quantity_by_event[group_key].values()),
+            )
+        )
+
     lines.sort(
         key=lambda item: (
             -max(abs(float(item["revenue"]["buh"])), abs(float(item["revenue"]["nu"]))),
@@ -422,47 +549,8 @@ def _build_revenue_cost_tree(
     return nodes
 
 
-def _period_calendar_year(period: str) -> str:
-    text = normalize_text(period)
-    if len(text) >= 7 and text[4] == "-" and text[:4].isdigit():
-        return text[:4]
-    return ""
-
-
-def _facts_for_drill_window(facts: list[Fact], period: str) -> list[Fact]:
-    year = _period_calendar_year(period)
-    if year:
-        return [fact for fact in facts if _period_calendar_year(_fact_period(fact)) == year]
+def _facts_in_period(facts: list[Fact], period: str) -> list[Fact]:
     return [fact for fact in facts if _fact_period(fact) == period]
-
-
-def _drill_documents_overlap(left: Fact, right: Fact) -> bool:
-    left_keys = document_match_keys(left.document)
-    right_keys = document_match_keys(right.document)
-    return bool(left_keys and right_keys and left_keys & right_keys)
-
-
-def _related_counterpart_facts(base_facts: list[Fact], other_facts: list[Fact]) -> list[Fact]:
-    """Себес/выручка для расшифровки: документ+имя, иначе то же имя в том же периоде."""
-    if not base_facts or not other_facts:
-        return []
-    by_name: dict[str, list[Fact]] = defaultdict(list)
-    for fact in base_facts:
-        by_name[_revenue_cost_drill_group_key(_fact_drill_display_name(fact))].append(fact)
-
-    selected: list[Fact] = []
-    leftover: list[Fact] = []
-    for other in other_facts:
-        partners = by_name.get(_revenue_cost_drill_group_key(_fact_drill_display_name(other)), [])
-        if any(_drill_documents_overlap(other, base) for base in partners):
-            selected.append(other)
-        else:
-            leftover.append(other)
-    for other in leftover:
-        partners = by_name.get(_revenue_cost_drill_group_key(_fact_drill_display_name(other)), [])
-        if any(_fact_period(other) == _fact_period(base) for base in partners):
-            selected.append(other)
-    return selected
 
 
 def _build_revenue_cost_drill(
@@ -471,13 +559,19 @@ def _build_revenue_cost_drill(
     *,
     group_path: list[str] | None = None,
     base: DrillBase = "revenue",
+    realization_rows: list[RealizationRow] | None = None,
 ) -> dict[str, Any]:
-    """Расшифровка выручки/себестоимости: каркас с выбранной стороны, вторая сумма по полному имени."""
+    """Расшифровка клетки по точным операциям выбранного периода."""
     path = list(REVENUE_COST_GROUP_PATH if group_path is None else group_path)
 
     def _payload(rev_subset: list[Fact], cost_subset: list[Fact]) -> dict[str, Any]:
         tree = _build_revenue_cost_tree(rev_subset, cost_subset, list(path), base=base)
-        lines = _build_revenue_cost_leaf_lines(rev_subset, cost_subset, base=base)
+        lines = _build_revenue_cost_leaf_lines(
+            rev_subset,
+            cost_subset,
+            base=base,
+            realization_rows=realization_rows,
+        )
         return {
             "type": "revenue_cost",
             "path": list(path),
@@ -486,20 +580,16 @@ def _build_revenue_cost_drill(
         }
 
     periods = periods_from_facts(revenue_facts, cost_facts)
-
-    def _period_payload(period: str) -> dict[str, Any]:
-        if base == "revenue":
-            rev = [fact for fact in revenue_facts if _fact_period(fact) == period]
-            cost = _related_counterpart_facts(rev, _facts_for_drill_window(cost_facts, period))
-            return _payload(rev, cost)
-        cost = [fact for fact in cost_facts if _fact_period(fact) == period]
-        rev = _related_counterpart_facts(cost, _facts_for_drill_window(revenue_facts, period))
-        return _payload(rev, cost)
-
     return {
         "type": "revenue_cost",
         "total": _payload(revenue_facts, cost_facts),
-        "months": {period: _period_payload(period) for period in periods},
+        "months": {
+            period: _payload(
+                _facts_in_period(revenue_facts, period),
+                _facts_in_period(cost_facts, period),
+            )
+            for period in periods
+        },
     }
 
 
@@ -510,7 +600,7 @@ def _scope_revenue_cost_facts(
     *,
     base: DrillBase = "revenue",
 ) -> tuple[list[Fact], list[Fact]]:
-    """Режет только каркас расшифровки; вторая сторона клеится по имени номенклатуры."""
+    """Ограничивает факты текущим узлом только для построения расшифровки."""
     rev = list(revenue_facts)
     cost = list(cost_facts)
     for key, name in filters:
@@ -542,6 +632,7 @@ def _attach_revenue_cost_level_drills(
     group_path_keys: list[str] | None = None,
     filters: list[tuple[str, str]] | None = None,
     base: DrillBase = "revenue",
+    realization_rows: list[RealizationRow] | None = None,
 ) -> None:
     """Вешает расшифровку на узел и всех потомков в рамках текущего среза."""
     active_filters = list(filters or [])
@@ -556,6 +647,7 @@ def _attach_revenue_cost_level_drills(
             group_path_keys=group_path_keys,
         ),
         base=base,
+        realization_rows=realization_rows,
     )
     if not child_path:
         return
@@ -569,6 +661,7 @@ def _attach_revenue_cost_level_drills(
             group_path_keys=group_path_keys,
             filters=[*active_filters, (key, child["name"])],
             base=base,
+            realization_rows=realization_rows,
         )
 
 
@@ -1424,6 +1517,7 @@ def _build_summary_rows(
     *,
     plan_facts: list[Fact] | None = None,
     forecast_facts: list[Fact] | None = None,
+    realization_rows: list[RealizationRow] | None = None,
 ) -> list[dict[str, Any]]:
     global _id_seq
     _id_seq = 0
@@ -1462,6 +1556,7 @@ def _build_summary_rows(
                 cost_facts,
                 child_path=list(REVENUE_PATH),
                 base="revenue",
+                realization_rows=realization_rows,
             )
         elif node["name"] == "Себестоимость":
             _attach_revenue_cost_level_drills(
@@ -1471,6 +1566,7 @@ def _build_summary_rows(
                 child_path=list(COST_PATH),
                 group_path_keys=list(COST_GROUP_PATH),
                 base="cost",
+                realization_rows=realization_rows,
             )
 
     operating_component_names = [
@@ -2176,6 +2272,7 @@ def build_dashboard_from_pipeline(
         result.facts,
         plan_facts=plan_facts,
         forecast_facts=forecast_facts,
+        realization_rows=list(result.realization_rows),
     )
     contractor_details = build_contractor_details(result.facts)
     contractor_cards = build_contractor_cards(contractor_details)
