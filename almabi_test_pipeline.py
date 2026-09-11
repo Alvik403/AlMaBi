@@ -61,6 +61,7 @@ from almabi_realization_lookup import (
     lookup_exact_realization_operation,
     lookup_realization_for_revenue_amount,
     resolve_realization_match,
+    resolve_revenue_analytics_match,
 )
 
 INCOME_SECTIONS = frozenset({"Выручка", "Прочие доходы"})
@@ -440,6 +441,11 @@ def build_test_facts(
         )
 
         for cost_match, amount_buh in zip(cost_iterations, cost_buh_amounts):
+            if section == "Себестоимость":
+                amount_nu = 0.0
+            else:
+                amount_nu = _amount_nu_for_section(section, row.amount_nu_dt, row.amount_nu_kt)
+
             rev_match = None
             if exports.realization:
                 buh_contract = analytics_value(row.contract, default="") or _lookup_contract(row.document, doc_contract)
@@ -450,6 +456,15 @@ def build_test_facts(
                         buh_contract=buh_contract,
                         index=realization_index,
                         prefer_cost_chain=True,
+                    )
+                elif section == "Выручка":
+                    rev_match = resolve_revenue_analytics_match(
+                        buh_row=row,
+                        buh_contract=buh_contract,
+                        amount_buh=amount_buh,
+                        amount_nu=amount_nu,
+                        index=realization_index,
+                        realization_rows=exports.realization,
                     )
                 elif section in INCOME_SECTIONS:
                     rev_match = resolve_realization_match(
@@ -467,11 +482,6 @@ def build_test_facts(
                         index=realization_index,
                         prefer_cost_chain=bool(cost_match),
                     )
-
-            if section == "Себестоимость":
-                amount_nu = 0.0
-            else:
-                amount_nu = _amount_nu_for_section(section, row.amount_nu_dt, row.amount_nu_kt)
             lookup_document = (
                 cost_match.document
                 if cost_match and cost_match.document
@@ -524,6 +534,12 @@ def build_test_facts(
                     exact_revenue_operation = revenue_realization
                 if exact_revenue_operation is not None and exact_revenue_operation.nomenclature:
                     nomenclature = exact_revenue_operation.nomenclature
+                if exact_revenue_operation is not None:
+                    direction, project_group, project = _resolve_analytics_pq(
+                        cost_match=cost_match,
+                        rev_match=exact_revenue_operation,
+                        project_meta=project_meta,
+                    )
 
             audit_log.log_buh_line(
                 section=section,

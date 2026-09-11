@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from almabi_excel_utils import contract_match_keys, document_match_keys, normalize_text
 from almabi_export_parsers import BuhRow, CostRow, RealizationRow
+from almabi_pq_common import is_buh_revenue_activity_nomenclature
 
 
 @dataclass
@@ -140,6 +141,7 @@ def lookup_realization_row(
     nomenclature: str = "",
     contract: str = "",
     index: RealizationIndex,
+    allow_contract_only: bool = True,
 ) -> RealizationRow | None:
     """Поиск строки «Реализация проекты»: договор+номенклатура → договор → документ+номенклатура → документ."""
     nom = nomenclature.casefold()
@@ -150,7 +152,7 @@ def lookup_realization_row(
             if match is not None:
                 return match
 
-    if contract:
+    if contract and allow_contract_only:
         for contract_key in contract_match_keys(contract):
             match = index.by_contract.get(contract_key)
             if match is not None:
@@ -164,6 +166,53 @@ def lookup_realization_row(
 
     for doc_key in document_match_keys(document):
         match = index.by_document.get(doc_key)
+        if match is not None:
+            return match
+
+    return None
+
+
+def resolve_revenue_analytics_match(
+    *,
+    buh_row: BuhRow,
+    buh_contract: str,
+    amount_buh: float,
+    amount_nu: float,
+    index: RealizationIndex,
+    realization_rows: list[RealizationRow],
+) -> RealizationRow | None:
+    """Строка реализации для аналитики выручки: сумма по документу, затем документ, без fallback «первая строка договора»."""
+    by_amount = lookup_realization_for_revenue_amount(
+        document=buh_row.document,
+        amount_buh=amount_buh,
+        amount_nu=amount_nu,
+        rows=realization_rows,
+    )
+    if by_amount is not None:
+        return by_amount
+
+    nomenclature = buh_row.nomenclature_kt
+    if is_buh_revenue_activity_nomenclature(nomenclature):
+        nomenclature = ""
+
+    match = lookup_realization_row(
+        document=buh_row.document,
+        nomenclature=nomenclature,
+        contract=buh_contract,
+        index=index,
+        allow_contract_only=False,
+    )
+    if match is not None:
+        return match
+
+    if nomenclature:
+        match = lookup_realization_row(
+            document=buh_row.document,
+            nomenclature=nomenclature,
+            contract="",
+            index=index,
+            allow_contract_only=False,
+        )
         if match is not None:
             return match
 

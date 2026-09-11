@@ -29,6 +29,115 @@ def test_coalesce_pq_prefers_single_source():
     assert _coalesce_pq_value("", "") == ""
 
 
+def test_revenue_direction_not_stolen_by_contract_fallback(tmp_path: Path):
+    from openpyxl import Workbook
+
+    from tests.test_almabi_exports import _pad_rows
+
+    contract = "АМ-843/25"
+    doc_shelves = "Реализация товаров и услуг 00АМ-000133 от 01.06.2026 21:00:00"
+    doc_cabinet = "Реализация товаров и услуг 00АМ-000148 от 01.06.2026 21:00:00"
+
+    buh_path = tmp_path / "buh.xlsx"
+    workbook = Workbook()
+    sheet = workbook.active
+    _pad_rows(sheet, 8)
+    sheet.append(
+        [
+            "Документ",
+            "Счет Дт",
+            "Вид субконто2 Дт",
+            "Субконто2 Дт",
+            "Счет Кт",
+            "Вид субконто1 Кт",
+            "Субконто1 Кт",
+            "Дата",
+            "Договор",
+            "Сумма",
+            "Сумма НУ Дт",
+            "Сумма НУ Кт",
+        ]
+    )
+    for document, amount_nu in (
+        (doc_shelves, 57_523_450),
+        (doc_cabinet, 95_000),
+    ):
+        sheet.append(
+            [
+                document,
+                "62.01",
+                "Варианты налогообложения прибыли",
+                "Общие условия налогообложения",
+                "90.01.3",
+                "Номенклатура",
+                "Реализация товаров",
+                "01.06.2026",
+                contract,
+                amount_nu,
+                0,
+                amount_nu,
+            ]
+        )
+    sheet.append(["Итого"])
+    workbook.save(buh_path)
+
+    realization_path = tmp_path / "realization.xlsx"
+    workbook = Workbook()
+    sheet = workbook.active
+    _pad_rows(sheet, 7)
+    sheet.append(
+        [
+            "Заказ клиента / Реализация",
+            "Номенклатура",
+            "Проект",
+            "Группа проектов",
+            "Направление",
+            "Выручка",
+            "Валовая прибыль",
+            "Количество",
+        ]
+    )
+    sheet.append(
+        [
+            doc_shelves,
+            "Фронтальные стеллажи индивидуального изготовления",
+            "Синергия 11 этап 12",
+            "Прочие проекты",
+            "Производство (Мебель)",
+            57_523_450,
+            10_000_000,
+            1,
+        ]
+    )
+    sheet.append(
+        [
+            doc_cabinet,
+            "Шкаф P  медицинский ШАМ11",
+            "Синергия 11 этап 12",
+            "Продажа ТМЦ",
+            "Перепродажа",
+            95_000,
+            10_000,
+            4,
+        ]
+    )
+    sheet.append(["Итого"])
+    workbook.save(realization_path)
+
+    cost_path = tmp_path / "cost.xlsx"
+    create_cost_workbook(cost_path, document=doc_shelves, nomenclature="Фронтальные стеллажи индивидуального изготовления")
+    create_cost_workbook(cost_path, document=doc_cabinet, nomenclature="Шкаф P  медицинский ШАМ11")
+
+    result = build_test_facts(
+        parse_exports({"buh": buh_path, "realization": realization_path, "cost": cost_path}),
+        cost_path=cost_path,
+        projects_path=realization_path,
+    )
+    revenue = {round(fact.amount_nu): fact for fact in result.facts if fact.kpi_l1 == "Выручка"}
+    assert revenue[57_523_450].direction == "Производство (Мебель)"
+    assert revenue[95_000].direction == "Перепродажа"
+
+
 def test_revenue_direction_from_realization_join(tmp_path: Path):
     paths = {
         "buh": tmp_path / "buh.xlsx",

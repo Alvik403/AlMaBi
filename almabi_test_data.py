@@ -19,7 +19,7 @@ from settings import Settings
 from starlette.requests import Request
 
 # Меняйте при правках pipeline/dashboard — сбрасывает in-memory кэш.
-PIPELINE_BUILD_ID = "drill_v2_realization_quantity_v3"
+PIPELINE_BUILD_ID = "revenue_direction_by_amount_v4"
 
 FileCacheKey = tuple[tuple[str, str, int, int], ...]
 FilterCacheKey = tuple[tuple[str, str], ...]

@@ -30,6 +30,7 @@ from almabi_realization_lookup import (
     lookup_exact_realization_operation,
     lookup_realization_for_revenue_amount,
     resolve_realization_match,
+    resolve_revenue_analytics_match,
 )
 
 OTHER_PNL_SECTIONS = frozenset({"Прочие доходы", "Прочие расходы"})
@@ -1520,17 +1521,6 @@ def build_facts(exports: ParsedExports) -> PipelineResult:
         if section == "Себестоимость" and exports.cost:
             cost_match = _lookup_cost_row(row.document, row.nomenclature_kt, cost_lookup)
 
-        rev_match = None
-        if exports.realization and section in {"Выручка", "Себестоимость"}:
-            buh_contract = analytics_value(row.contract, default="") or _lookup_contract(row.document, doc_contract)
-            rev_match = resolve_realization_match(
-                buh_row=row,
-                cost_match=cost_match,
-                buh_contract=buh_contract,
-                index=realization_index,
-                prefer_cost_chain=section == "Себестоимость",
-            )
-
         lookup_document = (
             cost_match.document
             if cost_match and cost_match.document
@@ -1547,6 +1537,27 @@ def build_facts(exports: ParsedExports) -> PipelineResult:
             amount_nu = 0.0
         else:
             amount_nu = _amount_nu_for_section(section, row.amount_nu_dt, row.amount_nu_kt)
+
+        rev_match = None
+        if exports.realization and section in {"Выручка", "Себестоимость"}:
+            buh_contract = analytics_value(row.contract, default="") or _lookup_contract(row.document, doc_contract)
+            if section == "Выручка":
+                rev_match = resolve_revenue_analytics_match(
+                    buh_row=row,
+                    buh_contract=buh_contract,
+                    amount_buh=amount_buh,
+                    amount_nu=amount_nu,
+                    index=realization_index,
+                    realization_rows=exports.realization,
+                )
+            else:
+                rev_match = resolve_realization_match(
+                    buh_row=row,
+                    cost_match=cost_match,
+                    buh_contract=buh_contract,
+                    index=realization_index,
+                    prefer_cost_chain=True,
+                )
 
         fallback_project = lookup_project(
             row.document,
@@ -1593,6 +1604,12 @@ def build_facts(exports: ParsedExports) -> PipelineResult:
                 exact_revenue_operation = revenue_realization
             if exact_revenue_operation is not None and exact_revenue_operation.nomenclature:
                 nomenclature = exact_revenue_operation.nomenclature
+            if exact_revenue_operation is not None:
+                analytics = _coalesce_analytics(
+                    cost_match=cost_match,
+                    rev_match=exact_revenue_operation,
+                    fallback=fallback_project,
+                )
         if exact_revenue_operation is not None and exact_revenue_operation.quantity is not None:
             quantity = float(exact_revenue_operation.quantity or 0)
         else:
