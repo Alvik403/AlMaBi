@@ -1073,9 +1073,10 @@ body.almabi-toolbar-collapsed > header {
 }
 
 [data-cell-drill-table] td.is-drill-negative,
+[data-cell-drill-table] td.is-drill-negative .drill-value-negative,
 [data-cell-drill-table] .drill-value-negative,
 [data-cell-drill-table] .drill-value-negative .drill-sign {
-  color: #8b4545;
+  color: #8b4545 !important;
 }
 
 [data-cell-drill-table] td.is-drill-negative {

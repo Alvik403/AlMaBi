@@ -1164,32 +1164,25 @@
     return formatDrillSignedValue(value, { kind: "percent" });
   }
 
-  function revenueDrillAmount(pair) {
-    const nu = Number(pair?.nu || 0);
-    const buh = Number(pair?.buh || 0);
-    if (Math.abs(nu) > 1e-9) return nu;
-    return buh;
-  }
-
   function lineScenarioAmount(pair) {
     return scenarioDrillAmount(pair || { buh: 0, nu: 0 });
   }
 
-  function revenueCostMetrics(node) {
-    const revenue = revenueDrillAmount(node.revenue);
-    const cost = lineScenarioAmount(node.cost);
-    const profit = node?.profit && typeof node.profit === "object"
-      ? lineScenarioAmount(node.profit)
-      : revenue - cost;
-    let margin;
-    if (node?.margin && typeof node.margin === "object") {
-      margin = lineScenarioAmount(node.margin);
-      if (profit < 0 && Math.abs(margin) < 1e-9 && Math.abs(revenue) > 1e-9) {
-        margin = (profit / revenue) * 100;
-      }
-    } else {
-      margin = Math.abs(revenue) > 1e-9 ? (profit / revenue) * 100 : 0;
+  function revenueCostMarginPercent(revenue, cost, profit) {
+    if (Math.abs(revenue) > 1e-9) {
+      return (profit / revenue) * 100;
     }
+    if (profit < 0 && Math.abs(cost) > 1e-9) {
+      return (profit / cost) * 100;
+    }
+    return 0;
+  }
+
+  function revenueCostMetrics(node) {
+    const revenue = lineScenarioAmount(node.revenue);
+    const cost = lineScenarioAmount(node.cost);
+    const profit = revenue - cost;
+    const margin = revenueCostMarginPercent(revenue, cost, profit);
     return { revenue, cost, profit, margin };
   }
 
@@ -1369,8 +1362,9 @@
     blocksRoot?.classList.add("hidden");
     tablePanel?.classList.remove("hidden");
 
-    const tree = payload?.tree || [];
-    const lines = payload?.lines || [];
+    const lines = (payload?.lines || []).length
+      ? payload.lines
+      : flattenRevenueCostLeaves(payload?.tree || []);
     modal.querySelector("[data-cell-drill-title]").textContent = "Расшифровки";
     modal.querySelector("[data-cell-drill-subtitle]").textContent = `${row.name} · ${monthLabel} · ${orderedSelectedScenarios().join(" · ")} · номенклатура`;
 
@@ -1385,41 +1379,17 @@
 
     const tbody = modal.querySelector("[data-cell-drill-rows]");
     const empty = modal.querySelector("[data-cell-drill-empty]");
-    const hasRows = tree.length > 0 || lines.length > 0;
-    if (!hasRows) {
+    if (!lines.length) {
       tbody.innerHTML = "";
       empty?.classList.remove("hidden");
       tbody.onclick = null;
       return;
     }
     empty?.classList.add("hidden");
-
-    function renderRevenueCostDrillRows() {
-      if (tree.length) {
-        tbody.innerHTML = tree
-          .map((node, index) => revenueCostRowHtml(node, `0:${index}:${node.name}`, 0))
-          .join("");
-        tbody.onclick = (event) => {
-          const button = event.target.closest("[data-drill-expand]");
-          if (!button) return;
-          event.preventDefault();
-          const pathKey = button.getAttribute("data-drill-expand");
-          if (drillExpandState.expandedIds.has(pathKey)) {
-            drillExpandState.expandedIds.delete(pathKey);
-          } else {
-            drillExpandState.expandedIds.add(pathKey);
-          }
-          renderRevenueCostDrillRows();
-        };
-        return;
-      }
-      tbody.innerHTML = lines
-        .map((line) => revenueCostRowHtml({ ...line, expandable: false, children: [] }, line.name, 0))
-        .join("");
-      tbody.onclick = null;
-    }
-
-    renderRevenueCostDrillRows();
+    tbody.innerHTML = lines
+      .map((line) => revenueCostRowHtml({ ...line, expandable: false, children: [] }, line.name, 0))
+      .join("");
+    tbody.onclick = null;
   }
 
   function openOtherPnlDrillModal(modal, row, periodKey, payload, monthLabel) {
