@@ -326,6 +326,16 @@
     </div>
   </section>
 
+  <style>
+    [data-cell-drill-modal] .drill-value-negative,
+    [data-cell-drill-modal] .drill-value-negative .drill-sign,
+    [data-cell-drill-modal] .drill-value-negative span,
+    [data-cell-drill-modal] td.is-drill-negative,
+    [data-cell-drill-modal] .is-drill-negative {
+      color: #8b4545 !important;
+      -webkit-text-fill-color: #8b4545 !important;
+    }
+  </style>
   <div
     class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/40 p-4 sm:p-6 backdrop-blur-sm"
     data-cell-drill-modal
@@ -1145,15 +1155,22 @@
     return String(Math.round(num));
   }
 
+  const DRILL_NEGATIVE_COLOR = "#8b4545";
+  const DRILL_NEGATIVE_STYLE = `color:${DRILL_NEGATIVE_COLOR};-webkit-text-fill-color:${DRILL_NEGATIVE_COLOR}`;
+
   function formatDrillSignedValue(value, { kind = "money" } = {}) {
     const num = Number(value || 0);
     if (!Number.isFinite(num)) return kind === "money" ? "0" : "0";
     const formatted = kind === "money" ? formatMoneyAbs(num) : String(Math.round(Math.abs(num)));
     if (num < 0) {
-      return `<span class="drill-value-negative"><span class="drill-sign" aria-hidden="true">−</span>${formatted}</span>`;
+      return `<span class="drill-value-negative" style="${DRILL_NEGATIVE_STYLE}"><span class="drill-sign" aria-hidden="true" style="${DRILL_NEGATIVE_STYLE}">−</span><span style="${DRILL_NEGATIVE_STYLE}">${formatted}</span></span>`;
     }
     if (num === 0) return kind === "money" ? formatMoneyAbs(0) : "0";
     return formatted;
+  }
+
+  function formatDrillModalAmount(value) {
+    return formatDrillSignedValue(value, { kind: "money" });
   }
 
   function formatDrillProfit(value) {
@@ -1186,13 +1203,60 @@
     return { revenue, cost, profit, margin };
   }
 
-  function drillSignedMetricTd(value, positiveClass) {
+  function isDrillNegativeValue(value) {
     const num = Number(value || 0);
-    const isNegative = Number.isFinite(num) && num < 0;
-    if (isNegative) {
-      return `${DRILL_NUM_CELL} is-drill-negative font-semibold`;
+    return Number.isFinite(num) && num < 0;
+  }
+
+  function drillMetricCellAttrs(value, positiveClass) {
+    if (isDrillNegativeValue(value)) {
+      return {
+        className: `${DRILL_NUM_CELL} is-drill-negative font-semibold`,
+        style: DRILL_NEGATIVE_STYLE,
+      };
     }
-    return `${DRILL_NUM_CELL} ${positiveClass}`.trim();
+    return {
+      className: `${DRILL_NUM_CELL} ${positiveClass}`.trim(),
+      style: "",
+    };
+  }
+
+  function drillMetricCellHtml(value, positiveClass, formatted) {
+    const attrs = drillMetricCellAttrs(value, positiveClass);
+    const styleAttr = attrs.style ? ` style="${attrs.style}"` : "";
+    return `<td class="${attrs.className}"${styleAttr}>${formatted}</td>`;
+  }
+
+  function setDrillSummaryAmount(node, value) {
+    if (!node) return;
+    node.innerHTML = formatDrillModalAmount(value);
+    node.classList.toggle("text-slate-900", !isDrillNegativeValue(value));
+    node.classList.toggle("is-drill-negative", isDrillNegativeValue(value));
+    if (isDrillNegativeValue(value)) {
+      node.style.cssText = DRILL_NEGATIVE_STYLE;
+    } else {
+      node.style.removeProperty("color");
+      node.style.removeProperty("-webkit-text-fill-color");
+    }
+  }
+
+  function drillArticlesAmountCell(value, toneClass) {
+    if (isDrillNegativeValue(value)) {
+      return {
+        className: "py-3 pl-2 pr-3 text-right tabular-nums font-semibold is-drill-negative",
+        style: DRILL_NEGATIVE_STYLE,
+      };
+    }
+    return {
+      className: `py-3 pl-2 pr-3 text-right tabular-nums ${toneClass}`,
+      style: "",
+    };
+  }
+
+  function drillArticlesAmountCellHtml(value, toneClass, formatted) {
+    const attrs = drillArticlesAmountCell(value, toneClass);
+    const styleAttr = attrs.style ? ` style="${attrs.style}"` : "";
+    return `<td class="${attrs.className}"${styleAttr}>${formatted}</td>`;
   }
 
   function setDrillTableHead(modal, columns) {
@@ -1250,9 +1314,9 @@
       nonPrivilegedSum += totals.nonPrivileged;
     });
 
-    modal.querySelector("[data-cell-drill-privileged]").innerHTML = formatPlAmount(row.name, privilegedSum);
-    modal.querySelector("[data-cell-drill-non-privileged]").innerHTML = formatPlAmount(row.name, nonPrivilegedSum);
-    modal.querySelector("[data-cell-drill-total]").innerHTML = formatPlAmount(row.name, privilegedSum + nonPrivilegedSum);
+    setDrillSummaryAmount(modal.querySelector("[data-cell-drill-privileged]"), privilegedSum);
+    setDrillSummaryAmount(modal.querySelector("[data-cell-drill-non-privileged]"), nonPrivilegedSum);
+    setDrillSummaryAmount(modal.querySelector("[data-cell-drill-total]"), privilegedSum + nonPrivilegedSum);
 
     setDrillTableHead(modal, [
       { label: "Статья", width: "40%" },
@@ -1274,9 +1338,9 @@
           return `
             <tr class="border-b border-slate-100 last:border-0${zebra}">
               <td class="py-3 pr-4 font-medium text-slate-700">${escapeHtml(article.name)}</td>
-              <td class="py-3 pl-2 pr-3 text-right tabular-nums text-sky-800">${formatPlAmount(row.name, totals.privileged)}</td>
-              <td class="py-3 pl-2 pr-3 text-right tabular-nums text-rose-700">${formatPlAmount(row.name, totals.nonPrivileged)}</td>
-              <td class="py-3 pl-2 pr-3 text-right tabular-nums font-semibold">${formatPlAmount(row.name, totals.total)}</td>
+              ${drillArticlesAmountCellHtml(totals.privileged, "text-sky-800", formatDrillModalAmount(totals.privileged))}
+              ${drillArticlesAmountCellHtml(totals.nonPrivileged, "text-rose-700", formatDrillModalAmount(totals.nonPrivileged))}
+              ${drillArticlesAmountCellHtml(totals.total, "font-semibold", formatDrillModalAmount(totals.total))}
             </tr>
           `;
         })
@@ -1342,8 +1406,8 @@
         <td class="${DRILL_NUM_CELL} text-slate-700">${qtyLabel}</td>
         <td class="${DRILL_NUM_CELL} text-slate-800">${formatMoneyAbs(revenue)}</td>
         <td class="${DRILL_NUM_CELL} text-slate-800">${formatMoneyAbs(cost)}</td>
-        <td class="${drillSignedMetricTd(profit, "font-semibold text-slate-900")}">${formatDrillProfit(profit)}</td>
-        <td class="${drillSignedMetricTd(margin, "text-slate-800")}">${formatDrillMarginPercent(margin)}</td>
+        ${drillMetricCellHtml(profit, "font-semibold text-slate-900", formatDrillProfit(profit))}
+        ${drillMetricCellHtml(margin, "text-slate-800", formatDrillMarginPercent(margin))}
       </tr>`;
 
     if (expandable && isExpanded) {
