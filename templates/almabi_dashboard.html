@@ -1145,16 +1145,23 @@
     return String(Math.round(num));
   }
 
-  function formatDrillProfit(value) {
+  function formatDrillSignedValue(value, { kind = "money" } = {}) {
     const num = Number(value || 0);
-    if (!Number.isFinite(num)) return "0";
-    return formatMoneyAbs(Math.max(0, num));
+    if (!Number.isFinite(num)) return kind === "money" ? "0" : "0";
+    const formatted = kind === "money" ? formatMoneyAbs(num) : String(Math.round(Math.abs(num)));
+    if (num < 0) {
+      return `<span class="drill-value-negative"><span class="drill-sign" aria-hidden="true">−</span>${formatted}</span>`;
+    }
+    if (num === 0) return kind === "money" ? formatMoneyAbs(0) : "0";
+    return formatted;
+  }
+
+  function formatDrillProfit(value) {
+    return formatDrillSignedValue(value, { kind: "money" });
   }
 
   function formatDrillMarginPercent(value) {
-    const num = Number(value || 0);
-    if (!Number.isFinite(num)) return "0";
-    return String(Math.max(0, Math.round(num)));
+    return formatDrillSignedValue(value, { kind: "percent" });
   }
 
   function revenueDrillAmount(pair) {

@@ -12,14 +12,16 @@ from almabi_test_builder import (
     build_empty_test_dashboard,
     build_test_dashboard_from_pipeline,
     filter_facts_by_dimensions_and_period,
+    has_active_dimension_filters,
     join_filter_values,
+    strip_non_project_kpi_facts,
 )
 from almabi_test_pipeline import TestPipelineResult, run_test_pipeline
 from settings import Settings
 from starlette.requests import Request
 
 # Меняйте при правках pipeline/dashboard — сбрасывает in-memory кэш.
-PIPELINE_BUILD_ID = "revenue_direction_by_amount_v4"
+PIPELINE_BUILD_ID = "project_scoped_filter_excludes_overhead_v1"
 
 FileCacheKey = tuple[tuple[str, str, int, int], ...]
 FilterCacheKey = tuple[tuple[str, str], ...]
@@ -122,6 +124,7 @@ def _decorate_dashboard_meta(
             "cost_nu_loaded": cost_nu_loaded,
             "april_cost_nu": _april_cost_nu_from_dashboard(data),
             "applied_filters": {name: value for name, value in applied_filters if value},
+            "project_scoped_view": has_active_dimension_filters(applied_filters),
         }
     )
     if not cost_nu_loaded:
@@ -214,6 +217,11 @@ def resolve_almabi_dashboard_api_data(
             forecast_facts,
             **scenario_filters,
         )
+        project_scoped_view = has_active_dimension_filters(normalized)
+        if project_scoped_view:
+            filtered_facts = strip_non_project_kpi_facts(filtered_facts)
+            filtered_plan = strip_non_project_kpi_facts(filtered_plan)
+            filtered_forecast = strip_non_project_kpi_facts(filtered_forecast)
         actual_years = {
             fact.period[:4]
             for fact in pipeline.result.facts
@@ -251,6 +259,7 @@ def resolve_almabi_dashboard_api_data(
             plan_facts=filtered_plan,
             forecast_facts=filtered_forecast,
             plan_warnings=plan_warnings,
+            project_scoped_view=project_scoped_view,
         )
         if any(value for _, value in normalized):
             full_key = (pipeline_key, plan_key, _normalized_filters({}))

@@ -212,6 +212,7 @@ def build_test_summary_rows_from_facts(
     forecast_facts: list[Fact] | None = None,
     pq_cost_rows: list[dict[str, object]] | None = None,
     realization_rows: list[RealizationRow] | None = None,
+    project_scoped_view: bool = False,
 ) -> list[dict[str, Any]]:
     dashboard_builder._id_seq = 0
 
@@ -225,12 +226,17 @@ def build_test_summary_rows_from_facts(
         else None
     )
 
-    base_kpis = [
+    base_kpis: list[tuple[str, int, bool]] = [
         ("Выручка", 1, True),
         ("Себестоимость", 1, False),
-        ("Коммерческие расходы", 1, False),
-        ("Управленческие расходы", 1, False),
     ]
+    if not project_scoped_view:
+        base_kpis.extend(
+            [
+                ("Коммерческие расходы", 1, False),
+                ("Управленческие расходы", 1, False),
+            ]
+        )
     nodes: list[dict[str, Any]] = []
     for name, sign, always_nu in base_kpis:
         child_items = cost_structure_facts if name == "Себестоимость" and cost_structure_facts else None
@@ -277,22 +283,30 @@ def build_test_summary_rows_from_facts(
                 realization_rows=realization_rows,
             )
 
-    operating_component_names = [
-        "Выручка",
-        "Себестоимость",
-        "Коммерческие расходы",
-        "Управленческие расходы",
-    ]
-    operating_lookup = {node["name"]: node for node in nodes}
-    operating_totals = _month_totals_from_nodes(nodes, operating_component_names)
-    operating_facts = _merge_signed_fact_groups(
-        [
-            (_group_facts(facts, kpi_l1="Выручка"), 1),
-            (_group_facts(facts, kpi_l1="Себестоимость"), 1),
-            (_group_facts(facts, kpi_l1="Коммерческие расходы"), 1),
-            (_group_facts(facts, kpi_l1="Управленческие расходы"), 1),
+    operating_component_names = (
+        ["Выручка", "Себестоимость"]
+        if project_scoped_view
+        else [
+            "Выручка",
+            "Себестоимость",
+            "Коммерческие расходы",
+            "Управленческие расходы",
         ]
     )
+    operating_lookup = {node["name"]: node for node in nodes}
+    operating_totals = _month_totals_from_nodes(nodes, operating_component_names)
+    operating_fact_groups: list[tuple[list[Fact], int]] = [
+        (_group_facts(facts, kpi_l1="Выручка"), 1),
+        (_group_facts(facts, kpi_l1="Себестоимость"), 1),
+    ]
+    if not project_scoped_view:
+        operating_fact_groups.extend(
+            [
+                (_group_facts(facts, kpi_l1="Коммерческие расходы"), 1),
+                (_group_facts(facts, kpi_l1="Управленческие расходы"), 1),
+            ]
+        )
+    operating_facts = _merge_signed_fact_groups(operating_fact_groups)
     nodes.append(
         _build_calculated_node(
             "Операционная прибыль",
@@ -304,37 +318,44 @@ def build_test_summary_rows_from_facts(
         )
     )
 
-    for name, sign, always_nu in (("Прочие доходы", 1, False), ("Прочие расходы", 1, False)):
-        nodes.append(
-            _build_test_kpi_node(
-                name,
-                _group_facts(facts, kpi_l1=name),
-                sign=sign,
-                always_nu=always_nu,
-                plan_items=_group_facts(plan_facts, kpi_l1=name),
-                forecast_items=_group_facts(forecast_facts, kpi_l1=name),
-                plan_forecast_from_file=plan_forecast_from_file,
+    if not project_scoped_view:
+        for name, sign, always_nu in (("Прочие доходы", 1, False), ("Прочие расходы", 1, False)):
+            nodes.append(
+                _build_test_kpi_node(
+                    name,
+                    _group_facts(facts, kpi_l1=name),
+                    sign=sign,
+                    always_nu=always_nu,
+                    plan_items=_group_facts(plan_facts, kpi_l1=name),
+                    forecast_items=_group_facts(forecast_facts, kpi_l1=name),
+                    plan_forecast_from_file=plan_forecast_from_file,
+                )
             )
+
+        other_pnl_drill = dashboard_builder._build_other_pnl_drill(
+            _group_facts(facts, kpi_l1="Прочие доходы"),
+            _group_facts(facts, kpi_l1="Прочие расходы"),
         )
+        for node in nodes:
+            if node["name"] in dashboard_builder.OTHER_PNL_KPIS:
+                node["drill"] = other_pnl_drill
 
-    other_pnl_drill = dashboard_builder._build_other_pnl_drill(
-        _group_facts(facts, kpi_l1="Прочие доходы"),
-        _group_facts(facts, kpi_l1="Прочие расходы"),
+    pbt_component_names = (
+        ["Операционная прибыль"]
+        if project_scoped_view
+        else ["Операционная прибыль", "Прочие доходы", "Прочие расходы"]
     )
-    for node in nodes:
-        if node["name"] in dashboard_builder.OTHER_PNL_KPIS:
-            node["drill"] = other_pnl_drill
-
-    pbt_component_names = ["Операционная прибыль", "Прочие доходы", "Прочие расходы"]
     pbt_lookup = {node["name"]: node for node in nodes}
     pbt_totals = _month_totals_from_nodes(nodes, pbt_component_names)
-    pbt_facts = _merge_signed_fact_groups(
-        [
-            (operating_facts, 1),
-            (_group_facts(facts, kpi_l1="Прочие доходы"), 1),
-            (_group_facts(facts, kpi_l1="Прочие расходы"), 1),
-        ]
-    )
+    pbt_fact_groups: list[tuple[list[Fact], int]] = [(operating_facts, 1)]
+    if not project_scoped_view:
+        pbt_fact_groups.extend(
+            [
+                (_group_facts(facts, kpi_l1="Прочие доходы"), 1),
+                (_group_facts(facts, kpi_l1="Прочие расходы"), 1),
+            ]
+        )
+    pbt_facts = _merge_signed_fact_groups(pbt_fact_groups)
     nodes.append(
         _build_calculated_node(
             "Прибыль/убыток до налогообложения",

@@ -7,8 +7,10 @@ import pytest
 from almabi_pipeline import Fact, PipelineResult
 from almabi_pipeline_audit import PipelineAuditLog
 from almabi_test_builder import (
+    PROJECT_SCOPED_EXCLUDED_KPIS,
     build_test_dashboard_from_pipeline,
     filter_facts_by_dimensions_and_period,
+    strip_non_project_kpi_facts,
 )
 from almabi_dashboard_builder import calendar_periods_for_years
 from almabi_test_pipeline import TestPipelineResult as _TestPipelineResult
@@ -171,6 +173,65 @@ def test_available_periods_include_full_calendar_year():
     assert dashboard["data_periods"] == ["2026-01"]
     assert dashboard["period_labels"]["2026-12"] == "Декабрь 2026"
     assert dashboard["months"] == ["2026-01"]
+
+
+def test_dimension_filter_excludes_non_project_kpis_from_summary():
+    facts = [
+        _fact(
+            period="2025-01",
+            direction="Услуги",
+            project_group="Группа",
+            project="Проект",
+            contract="Д-001",
+            amount=1_000,
+        ),
+        Fact(
+            kpi_l1="Себестоимость",
+            month="Январь",
+            period="2025-01",
+            amount_buh=-200,
+            amount_nu=-200,
+            direction="Услуги",
+            project_group="Группа",
+            project="Проект",
+            contract="Д-001",
+        ),
+        Fact(
+            kpi_l1="Коммерческие расходы",
+            month="Январь",
+            period="2025-01",
+            amount_buh=-50,
+            amount_nu=-50,
+            direction="Услуги",
+        ),
+        Fact(
+            kpi_l1="Прочие доходы",
+            month="Январь",
+            period="2025-01",
+            amount_buh=30,
+            amount_nu=30,
+        ),
+    ]
+    filtered = strip_non_project_kpi_facts(
+        filter_facts_by_dimensions_and_period(facts, direction="Услуги")
+    )
+    dashboard = build_test_dashboard_from_pipeline(
+        _TestPipelineResult(
+            result=PipelineResult(facts=filtered),
+            audit=PipelineAuditLog(),
+        ),
+        upload_names={},
+        project_scoped_view=True,
+    )
+
+    row_names = [row["name"] for row in dashboard["summary_rows"]]
+    assert not PROJECT_SCOPED_EXCLUDED_KPIS.intersection(row_names)
+    operating = next(row for row in dashboard["summary_rows"] if row["name"] == "Операционная прибыль")
+    pbt = next(
+        row for row in dashboard["summary_rows"] if row["name"] == "Прибыль/убыток до налогообложения"
+    )
+    assert operating["total_fact"] == 800
+    assert pbt["total_fact"] == 800
 
 
 def test_cross_year_range_rebuilds_summary_calculated_charts_and_drills():

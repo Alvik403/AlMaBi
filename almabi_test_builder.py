@@ -34,6 +34,15 @@ FACT_DIMENSION_FILTERS = {
     "project": ("project", "проекта"),
     "contract": ("contract", "договора"),
 }
+DIMENSION_FILTER_KEYS = frozenset(FACT_DIMENSION_FILTERS)
+PROJECT_SCOPED_EXCLUDED_KPIS = frozenset(
+    {
+        "Коммерческие расходы",
+        "Управленческие расходы",
+        "Прочие доходы",
+        "Прочие расходы",
+    }
+)
 
 CONSOLIDATED_KPI_ORDER = (
     "Выручка",
@@ -82,6 +91,16 @@ def _build_consolidated_by_tax(summary_by_tax: dict[str, list[dict[str, Any]]]) 
 
 def filter_facts_by_tax_bucket(facts: list[Fact], bucket: str) -> list[Fact]:
     return [fact for fact in facts if tax_bucket(fact.tax_type) == bucket]
+
+
+def has_active_dimension_filters(filters: dict[str, str] | FilterCacheKey) -> bool:
+    if isinstance(filters, tuple):
+        return any(name in DIMENSION_FILTER_KEYS and value for name, value in filters)
+    return any(filters.get(name) for name in DIMENSION_FILTER_KEYS)
+
+
+def strip_non_project_kpi_facts(facts: list[Fact]) -> list[Fact]:
+    return [fact for fact in facts if fact.kpi_l1 not in PROJECT_SCOPED_EXCLUDED_KPIS]
 
 
 def split_filter_values(value: str | list[str] | tuple[str, ...] | None) -> list[str]:
@@ -172,6 +191,7 @@ def _build_summary_by_tax(
     forecast_facts: list[Fact] | None = None,
     pq_cost_rows: list[dict[str, object]] | None = None,
     realization_rows: list | None = None,
+    project_scoped_view: bool = False,
 ) -> dict[str, list[dict[str, Any]]]:
     periods = periods_from_facts(facts, plan_facts, forecast_facts)
     result = {
@@ -181,6 +201,7 @@ def _build_summary_by_tax(
             forecast_facts=forecast_facts,
             pq_cost_rows=pq_cost_rows,
             realization_rows=realization_rows,
+            project_scoped_view=project_scoped_view,
         ),
         **{
             bucket: build_test_summary_rows_from_facts(
@@ -188,6 +209,7 @@ def _build_summary_by_tax(
                 plan_facts=filter_facts_by_tax_bucket(plan_facts or [], bucket),
                 forecast_facts=filter_facts_by_tax_bucket(forecast_facts or [], bucket),
                 realization_rows=realization_rows,
+                project_scoped_view=project_scoped_view,
             )
             for bucket in TAX_BUCKET_OPTIONS
         },
@@ -239,6 +261,7 @@ def build_test_dashboard_from_pipeline(
     plan_facts: list[Fact] | None = None,
     forecast_facts: list[Fact] | None = None,
     plan_warnings: list[str] | None = None,
+    project_scoped_view: bool = False,
 ) -> dict[str, Any]:
     result = pipeline.result
     audit = pipeline.audit
@@ -250,6 +273,7 @@ def build_test_dashboard_from_pipeline(
         forecast_facts=forecast_facts,
         pq_cost_rows=pipeline.pq_cost_rows,
         realization_rows=list(result.realization_rows),
+        project_scoped_view=project_scoped_view,
     )
     charts_by_tax = _build_charts_by_tax(
         result.facts,
