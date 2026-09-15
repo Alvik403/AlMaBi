@@ -1077,8 +1077,8 @@ body.almabi-toolbar-collapsed > header {
 [data-cell-drill-modal] .drill-value-negative,
 [data-cell-drill-modal] .drill-value-negative .drill-sign,
 [data-cell-drill-modal] .drill-value-negative span {
-  color: #8b4545 !important;
-  -webkit-text-fill-color: #8b4545 !important;
+  color: #943f3f !important;
+  -webkit-text-fill-color: #943f3f !important;
 }
 
 [data-cell-drill-modal] td.is-drill-negative,
