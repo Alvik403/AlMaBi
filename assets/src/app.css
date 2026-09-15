@@ -1072,19 +1072,27 @@ body.almabi-toolbar-collapsed > header {
   color: #64748b;
 }
 
-.drill-value-negative {
+[data-cell-drill-table] td.is-drill-negative,
+[data-cell-drill-table] .drill-value-negative,
+[data-cell-drill-table] .drill-value-negative .drill-sign {
+  color: #8b4545;
+}
+
+[data-cell-drill-table] td.is-drill-negative {
+  font-weight: 600;
+}
+
+[data-cell-drill-table] .drill-value-negative {
   display: inline-flex;
   align-items: baseline;
   gap: 0.1rem;
   font-variant-numeric: tabular-nums;
   font-weight: 600;
-  color: #8b4545;
 }
 
-.drill-value-negative .drill-sign {
+[data-cell-drill-table] .drill-value-negative .drill-sign {
   flex-shrink: 0;
   font-weight: 600;
-  color: #8b4545;
 }
 
 .almabi-table .cell-plan-fact--fact-only .pl-amount {
