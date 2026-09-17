@@ -7,7 +7,12 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
-from almabi_data_source import get_almabi_plan_forecast_path, get_almabi_upload_paths, get_almabi_upload_set
+from almabi_data_source import (
+    adopt_latest_user_uploads,
+    get_almabi_plan_forecast_path,
+    get_almabi_upload_paths,
+    get_almabi_upload_set,
+)
 from almabi_file_validation import REQUIRED_EXPORT_TYPES
 from almabi_pipeline import PipelineResult
 from almabi_plan_forecast_parser import PlanForecastParseResult, parse_plan_forecast_workbook
@@ -242,6 +247,7 @@ def resolve_almabi_dashboard_api_data(
         }
     )
     filters = dict(normalized)
+    adopt_latest_user_uploads(request, settings)
     upload_paths = get_almabi_upload_paths(request, settings)
     upload_set = get_almabi_upload_set(request)
     upload_names = {
