@@ -50,20 +50,27 @@ class _DashboardLruCache:
     def __init__(self, max_entries: int) -> None:
         self.max_entries = max(1, max_entries)
         self._entries: OrderedDict[DashboardCacheKey, dict[str, Any]] = OrderedDict()
+        self._lock = threading.RLock()
 
     def get(self, key: DashboardCacheKey) -> dict[str, Any] | None:
-        value = self._entries.get(key)
-        if value is None:
-            return None
-        self._entries.move_to_end(key)
-        return value
+        with self._lock:
+            value = self._entries.get(key)
+            if value is None:
+                return None
+            self._entries.move_to_end(key)
+            return value
 
     def set(self, key: DashboardCacheKey, value: dict[str, Any]) -> None:
-        if key in self._entries:
-            self._entries.move_to_end(key)
-        self._entries[key] = value
-        while len(self._entries) > self.max_entries:
-            self._entries.popitem(last=False)
+        with self._lock:
+            if key in self._entries:
+                self._entries.move_to_end(key)
+            self._entries[key] = value
+            while len(self._entries) > self.max_entries:
+                self._entries.popitem(last=False)
+
+    def contains(self, key: DashboardCacheKey) -> bool:
+        with self._lock:
+            return key in self._entries
 
 
 _dashboard_cache = _DashboardLruCache(max_entries=8)
@@ -90,13 +97,24 @@ def _pipeline_cache_key(upload_paths: dict[str, Path]) -> FileCacheKey:
     return tuple(parts)
 
 
+def _base_dashboard_cache_key(
+    request: Request,
+    settings: Settings,
+    upload_paths: dict[str, Path],
+) -> DashboardCacheKey:
+    plan_path = get_almabi_plan_forecast_path(request, settings)
+    plan_key = _file_signature(plan_path) if plan_path is not None else None
+    return (_pipeline_cache_key(upload_paths), plan_key, _normalized_filters({}))
+
+
 def _public_dashboard_build_state(state: dict[str, Any]) -> dict[str, Any]:
     started_at = state.get("started_at")
     queued_at = float(state.get("queued_at") or time.time())
     elapsed_from = float(started_at or queued_at)
+    elapsed_until = float(state.get("finished_at") or time.time())
     return {
         "state": state["state"],
-        "elapsed_seconds": max(0, round(time.time() - elapsed_from)),
+        "elapsed_seconds": max(0, round(elapsed_until - elapsed_from)),
         "message": state["message"],
     }
 
@@ -115,6 +133,11 @@ def _set_dashboard_build_state(
             "message": message,
             "queued_at": current.get("queued_at", time.time()),
             "started_at": started_at if started_at is not None else current.get("started_at"),
+            "finished_at": (
+                current.get("finished_at") or time.time()
+                if state in {"ready", "failed"}
+                else None
+            ),
         }
         _dashboard_build_states[cache_key] = updated
         _dashboard_build_states.move_to_end(cache_key)
@@ -141,6 +164,12 @@ def prepare_almabi_dashboard_warmup(
         }, False
 
     cache_key = _pipeline_cache_key(upload_paths)
+    if _dashboard_cache.contains(_base_dashboard_cache_key(request, settings, upload_paths)):
+        return _set_dashboard_build_state(
+            cache_key,
+            state="ready",
+            message="Дашборд готов.",
+        ), False
     with _dashboard_build_states_lock:
         current = _dashboard_build_states.get(cache_key)
         if current and current["state"] in {"queued", "running", "ready"}:
@@ -150,6 +179,7 @@ def prepare_almabi_dashboard_warmup(
             "message": "Сборка дашборда поставлена в очередь.",
             "queued_at": time.time(),
             "started_at": None,
+            "finished_at": None,
         }
         _dashboard_build_states[cache_key] = queued
         _dashboard_build_states.move_to_end(cache_key)
@@ -175,6 +205,12 @@ def get_almabi_dashboard_warmup_status(
             "message": "Для сборки нужны бухрегистр, реализация и себестоимость.",
         }
     cache_key = _pipeline_cache_key(upload_paths)
+    if _dashboard_cache.contains(_base_dashboard_cache_key(request, settings, upload_paths)):
+        return _set_dashboard_build_state(
+            cache_key,
+            state="ready",
+            message="Дашборд готов.",
+        )
     with _dashboard_build_states_lock:
         current = _dashboard_build_states.get(cache_key)
         if current is None:

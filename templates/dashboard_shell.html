@@ -6,7 +6,7 @@
     <meta name="csrf-token" content="{{ csrf_token | default('', true) }}" />
     <title>{% block title %}{{ app_brand }}{% endblock %}</title>
     
-    <link rel="stylesheet" href="/static/dist/app.css">
+    <link rel="stylesheet" href="/static/dist/app.css?v={{ asset_version }}">
     
     {% block extra_head %}{% endblock %}
   </head>
@@ -245,7 +245,7 @@
       </main>
     </div>
 
-    <script type="module" src="/static/dist/app.js"></script>
+    <script type="module" src="/static/dist/app.js?v={{ asset_version }}"></script>
     {% block scripts %}{% endblock %}
   </body>
 </html>

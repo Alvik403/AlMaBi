@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import logging
 import secrets
 import time
@@ -75,6 +76,12 @@ auth_store = AuthStore(settings.resolved_auth_db)
 login_throttle = LoginThrottle()
 
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+_static_asset_digest = hashlib.sha256()
+for _asset_name in ("app.css", "app.js"):
+    _asset_path = BASE_DIR / "static" / "dist" / _asset_name
+    if _asset_path.is_file():
+        _static_asset_digest.update(_asset_path.read_bytes())
+STATIC_ASSET_VERSION = _static_asset_digest.hexdigest()[:12]
 app = FastAPI(title=APP_BRAND, docs_url="/api/docs", redoc_url="/api/redoc", openapi_url="/api/openapi.json")
 app.add_middleware(
     RequestBodyLimitMiddleware,
@@ -187,6 +194,7 @@ def templated(request: Request, template_name: str, context: dict[str, Any], sta
         "url_for": template_url_for(request),
         "almabi_data_context": almabi_data_context(request, settings),
         "app_brand": APP_BRAND,
+        "asset_version": STATIC_ASSET_VERSION,
         "almabi_nav_tabs": ALMABI_NAV_TABS,
         "current_nav_tab": "dashboard",
         **context,

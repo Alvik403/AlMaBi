@@ -313,12 +313,19 @@ function initAlmabiDataSourceMenu() {
 
   void (async () => {
     try {
+      const initialBuildState =
+        document.querySelector("[data-dashboard-build-state]")?.dataset.dashboardBuildState || "";
       const response = await fetch("/api/almabi/dashboard/status", {
         cache: "no-store",
         headers: { Accept: "application/json" },
       });
       const status = await response.json().catch(() => ({}));
-      if (!response.ok || !["queued", "running"].includes(status.state)) return;
+      if (!response.ok) return;
+      if (status.state === "ready" && ["queued", "running"].includes(initialBuildState)) {
+        window.location.reload();
+        return;
+      }
+      if (!["queued", "running"].includes(status.state)) return;
       setUploading(true);
       showStatus(status.message || "Сборка дашборда продолжается в фоне…", "progress");
       await waitForDashboardBuild();

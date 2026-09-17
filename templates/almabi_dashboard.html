@@ -40,7 +40,11 @@
 {% endblock %}
 
 {% block content %}
-<div class="flex min-h-0 flex-1 flex-col text-slate-800" data-almabi-dashboard>
+<div
+  class="flex min-h-0 flex-1 flex-col text-slate-800"
+  data-almabi-dashboard
+  data-dashboard-build-state="{{ dashboard.meta.dashboard_build.state if dashboard.meta and dashboard.meta.dashboard_build else '' }}"
+>
   <div class="almabi-dashboard-toolbar sticky top-0 z-20 shrink-0 border-b border-slate-200 bg-white/95 px-5 py-3 shadow-sm backdrop-blur" data-dashboard-toolbar>
     <div id="almabiDashboardToolbarBody" data-dashboard-toolbar-body class="space-y-3">
     <div class="flex flex-wrap items-center justify-between gap-4">

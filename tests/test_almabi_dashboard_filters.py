@@ -313,9 +313,13 @@ def test_upload_bundle_warms_dashboard_and_exposes_ready_status(app_client, tmp_
     _upload_dashboard_bundle(app_client, tmp_path)
 
     response = app_client.get("/api/almabi/dashboard/status")
+    dashboard = app_client.get("/dashboard/almabi")
 
     assert response.status_code == 200
     assert response.json()["state"] == "ready"
+    assert dashboard.status_code == 200
+    assert 'data-dashboard-build-state=""' in dashboard.text
+    assert "/static/dist/app.js?v=" in dashboard.text
 
 
 @pytest.mark.parametrize(
