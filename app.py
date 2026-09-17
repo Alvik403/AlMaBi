@@ -11,6 +11,7 @@ from fastapi import FastAPI, File, Form, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.concurrency import run_in_threadpool
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
@@ -417,7 +418,7 @@ def api_almabi_data_source(request: Request) -> dict:
 
 
 @app.get("/api/almabi/dashboard")
-def api_almabi_dashboard(
+async def api_almabi_dashboard(
     request: Request,
     direction: list[str] | None = Query(None),
     project_group: list[str] | None = Query(None),
@@ -427,7 +428,8 @@ def api_almabi_dashboard(
     period_to: str | None = None,
 ) -> JSONResponse:
     try:
-        payload = resolve_almabi_dashboard_api_data(
+        payload = await run_in_threadpool(
+            resolve_almabi_dashboard_api_data,
             request,
             settings,
             direction=direction,
@@ -495,13 +497,14 @@ def api_almabi_upload_bundle(
 
 
 @app.get("/dashboard/almabi", response_class=HTMLResponse, name="almabi_dashboard")
-def almabi_dashboard(request: Request):
+async def almabi_dashboard(request: Request):
     url_fn = template_url_for(request)
+    dashboard = await run_in_threadpool(resolve_almabi_dashboard_data, request, settings)
     return templated(
         request,
         "almabi_dashboard.html",
         {
-            "dashboard": resolve_almabi_dashboard_data(request, settings),
+            "dashboard": dashboard,
             "current_nav_tab": "almabi_dashboard",
             "dashboard_page_title": "BI",
             "current_level": 1,

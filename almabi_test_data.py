@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import logging
+import time
+from collections import OrderedDict
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
@@ -20,18 +23,47 @@ from almabi_test_pipeline import TestPipelineResult, run_test_pipeline
 from settings import Settings
 from starlette.requests import Request
 
+logger = logging.getLogger("almabi.dashboard")
+
 # Меняйте при правках pipeline/dashboard — сбрасывает in-memory кэш.
-PIPELINE_BUILD_ID = "project_scoped_filter_excludes_overhead_v1"
+PIPELINE_BUILD_ID = "dashboard_perf_pq_dedupe_v1"
 
 FileCacheKey = tuple[tuple[str, str, int, int], ...]
 FilterCacheKey = tuple[tuple[str, str], ...]
+DashboardCacheKey = tuple[FileCacheKey, tuple[str, int, int] | None, FilterCacheKey]
 
 _pipeline_cache: dict[FileCacheKey, TestPipelineResult] = {}
 _plan_cache: dict[tuple[str, int, int], PlanForecastParseResult] = {}
-_dashboard_cache: dict[
-    tuple[FileCacheKey, tuple[str, int, int] | None, FilterCacheKey],
-    dict[str, Any],
-] = {}
+
+
+class _DashboardLruCache:
+    def __init__(self, max_entries: int) -> None:
+        self.max_entries = max(1, max_entries)
+        self._entries: OrderedDict[DashboardCacheKey, dict[str, Any]] = OrderedDict()
+
+    def get(self, key: DashboardCacheKey) -> dict[str, Any] | None:
+        value = self._entries.get(key)
+        if value is None:
+            return None
+        self._entries.move_to_end(key)
+        return value
+
+    def set(self, key: DashboardCacheKey, value: dict[str, Any]) -> None:
+        if key in self._entries:
+            self._entries.move_to_end(key)
+        self._entries[key] = value
+        while len(self._entries) > self.max_entries:
+            self._entries.popitem(last=False)
+
+
+_dashboard_cache = _DashboardLruCache(max_entries=8)
+
+
+def _configure_dashboard_cache(settings: Settings) -> None:
+    global _dashboard_cache
+    max_entries = settings.dashboard_cache_max_entries
+    if _dashboard_cache.max_entries != max_entries:
+        _dashboard_cache = _DashboardLruCache(max_entries=max_entries)
 
 
 def _file_signature(path: Path) -> tuple[str, int, int]:
@@ -75,6 +107,10 @@ def _april_cost_nu_from_dashboard(data: dict[str, Any]) -> float | None:
     return None
 
 
+def _should_skip_duplicate_analysis(settings: Settings) -> bool:
+    return settings.pipeline_skip_audit_when_disabled and not settings.audit_detail_enabled
+
+
 def _load_pipeline(
     upload_paths: dict[str, Path],
     settings: Settings,
@@ -86,6 +122,7 @@ def _load_pipeline(
             upload_paths,
             logs_dir=settings.resolved_logs_dir if settings.audit_detail_enabled else None,
             write_audit=settings.audit_detail_enabled,
+            skip_duplicate_analysis=_should_skip_duplicate_analysis(settings),
         )
         _pipeline_cache.clear()
         _pipeline_cache[cache_key] = pipeline
@@ -106,7 +143,7 @@ def _load_plan(
     return signature, parsed
 
 
-def _decorate_dashboard_meta(
+def _build_dashboard_meta(
     data: dict[str, Any],
     *,
     upload_paths: dict[str, Path],
@@ -131,9 +168,53 @@ def _decorate_dashboard_meta(
         meta.setdefault("warnings", [])
         warning = "Файл «Себестоимость НУ» не загружен — колонка «Факт НУ» по себестоимости будет нулевой."
         if warning not in meta["warnings"]:
-            meta["warnings"].insert(0, warning)
-    data["meta"] = meta
+            meta["warnings"] = [warning, *meta["warnings"]]
+    return meta
+
+
+def _decorate_dashboard_meta(
+    data: dict[str, Any],
+    *,
+    upload_paths: dict[str, Path],
+    applied_filters: FilterCacheKey,
+) -> dict[str, Any]:
+    data["meta"] = _build_dashboard_meta(
+        data,
+        upload_paths=upload_paths,
+        applied_filters=applied_filters,
+    )
     return data
+
+
+def _materialize_dashboard_response(
+    cached: dict[str, Any],
+    *,
+    settings: Settings,
+    upload_paths: dict[str, Path],
+    applied_filters: FilterCacheKey,
+) -> dict[str, Any]:
+    if settings.dashboard_skip_deep_copy:
+        return {
+            **cached,
+            "meta": _build_dashboard_meta(
+                cached,
+                upload_paths=upload_paths,
+                applied_filters=applied_filters,
+            ),
+        }
+    return _decorate_dashboard_meta(
+        deepcopy(cached),
+        upload_paths=upload_paths,
+        applied_filters=applied_filters,
+    )
+
+
+def _strip_admin_audit_summary(dashboard: dict[str, Any], settings: Settings, request: Request) -> None:
+    user = getattr(request.state, "current_user", None)
+    if not settings.audit_detail_enabled or getattr(user, "role", None) != "admin":
+        audit = dashboard.get("meta", {}).get("audit")
+        if isinstance(audit, dict):
+            audit.pop("summary", None)
 
 
 def resolve_almabi_dashboard_api_data(
@@ -148,6 +229,8 @@ def resolve_almabi_dashboard_api_data(
     period_to: str | None = None,
 ) -> dict[str, Any]:
     """Собрать dashboard из отфильтрованных сырых Fact."""
+    started = time.perf_counter()
+    _configure_dashboard_cache(settings)
     normalized = _normalized_filters(
         {
             "direction": direction,
@@ -177,16 +260,21 @@ def resolve_almabi_dashboard_api_data(
             "missing_exports": missing_required,
             "message": "Загрузите обязательные выгрузки: бухрегистр, реализация и себестоимость.",
         }
-        return _decorate_dashboard_meta(
+        dashboard = _decorate_dashboard_meta(
             data,
             upload_paths=upload_paths,
             applied_filters=normalized,
         )
+        _strip_admin_audit_summary(dashboard, settings, request)
+        if settings.perf_log_enabled:
+            logger.info("dashboard.resolve empty exports %.3fs", time.perf_counter() - started)
+        return dashboard
 
     pipeline_key, pipeline = _load_pipeline(upload_paths, settings)
     plan_key, parsed_plan = _load_plan(get_almabi_plan_forecast_path(request, settings))
-    cache_key = (pipeline_key, plan_key, normalized)
+    cache_key: DashboardCacheKey = (pipeline_key, plan_key, normalized)
     cached = _dashboard_cache.get(cache_key)
+    cache_hit = cached is not None
     if cached is None:
         plan_facts = list(parsed_plan.plan_facts) if parsed_plan else []
         forecast_facts = list(parsed_plan.forecast_facts) if parsed_plan else []
@@ -244,9 +332,6 @@ def resolve_almabi_dashboard_api_data(
             ),
             audit=pipeline.audit,
             audit_path=pipeline.audit_path,
-            # PQ rows are not independently scoped by all BI dimensions.
-            # For a filtered rebuild use the already scoped Fact set so that
-            # cost structure, charts and drill-down cannot retain full totals.
             pq_cost_rows=(
                 None
                 if any(value for _, value in normalized)
@@ -262,7 +347,7 @@ def resolve_almabi_dashboard_api_data(
             project_scoped_view=project_scoped_view,
         )
         if any(value for _, value in normalized):
-            full_key = (pipeline_key, plan_key, _normalized_filters({}))
+            full_key: DashboardCacheKey = (pipeline_key, plan_key, _normalized_filters({}))
             full_dashboard = _dashboard_cache.get(full_key)
             if full_dashboard is None:
                 full_dashboard = build_test_dashboard_from_pipeline(
@@ -272,9 +357,9 @@ def resolve_almabi_dashboard_api_data(
                     forecast_facts=forecast_facts,
                     plan_warnings=list(plan_warnings),
                 )
-                _dashboard_cache[full_key] = full_dashboard
-            cached["filters"] = deepcopy(full_dashboard.get("filters") or {})
-            cached["filter_tree"] = deepcopy(full_dashboard.get("filter_tree") or [])
+                _dashboard_cache.set(full_key, full_dashboard)
+            cached["filters"] = dict(full_dashboard.get("filters") or {})
+            cached["filter_tree"] = list(full_dashboard.get("filter_tree") or [])
             cached["available_periods"] = list(
                 full_dashboard.get("available_periods")
                 or full_dashboard.get("periods")
@@ -289,17 +374,21 @@ def resolve_almabi_dashboard_api_data(
                 **(full_dashboard.get("period_labels") or {}),
                 **(cached.get("period_labels") or {}),
             }
-        _dashboard_cache[cache_key] = cached
-    dashboard = _decorate_dashboard_meta(
-        deepcopy(cached),
+        _dashboard_cache.set(cache_key, cached)
+    dashboard = _materialize_dashboard_response(
+        cached,
+        settings=settings,
         upload_paths=upload_paths,
         applied_filters=normalized,
     )
-    user = getattr(request.state, "current_user", None)
-    if not settings.audit_detail_enabled or getattr(user, "role", None) != "admin":
-        audit = dashboard.get("meta", {}).get("audit")
-        if isinstance(audit, dict):
-            audit.pop("summary", None)
+    _strip_admin_audit_summary(dashboard, settings, request)
+    if settings.perf_log_enabled:
+        logger.info(
+            "dashboard.resolve cache_hit=%s filters=%s %.3fs",
+            cache_hit,
+            normalized,
+            time.perf_counter() - started,
+        )
     return dashboard
 
 

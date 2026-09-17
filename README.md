@@ -30,12 +30,39 @@ docker compose up --build -d
 - `AUTH_DB` — SQLite с пользователями и отзывными сессиями.
 - `ALLOWED_HOSTS` — допустимые Host-заголовки через запятую.
 - `MAX_UPLOAD_BYTES`, `UPLOAD_QUOTA_BYTES` — лимит запроса и пользовательская квота.
+- `REQUEST_TIMEOUT_SECONDS` — таймаут HTTP-запроса (по умолчанию `900`; для больших выгрузок не уменьшайте).
+- `UVICORN_WORKERS` — число worker-процессов uvicorn (для сервера 4 GB рекомендуется `1`).
+- `DASHBOARD_CACHE_MAX_ENTRIES` — LRU-кэш собранных dashboard по комбинациям фильтров.
+- `DASHBOARD_SKIP_DEEP_COPY` — не клонировать весь dashboard на каждый ответ (быстрее warm cache).
+- `PIPELINE_SKIP_AUDIT_WHEN_DISABLED` — пропускать тяжёлый audit-анализ, если `AUDIT_DETAIL_ENABLED=false`.
+- `PERF_LOG_ENABLED` — логировать время сборки dashboard в `almabi.dashboard`.
 - `UPLOADS_DIR` — папка загруженных Excel-файлов AlMaBi.
 - `RUNTIME_DIR` — runtime-папка приложения.
 - `LOGS_DIR` — JSON-логи приложения и audit.
 
 При `AUTH_ENABLED=true` и `DEBUG=false` приложение не запускается со слабым
 `SESSION_SECRET` или без `SESSION_HTTPS_ONLY=true`.
+
+### Большие выгрузки (2+ года)
+
+Первый заход на `/dashboard/almabi` после деплоя или смены Excel может занимать
+несколько минут: сервер парсит файлы и строит drill-кэш в памяти.
+
+Рекомендуемый env для сервера **2 CPU / 4 GB RAM**:
+
+```env
+REQUEST_TIMEOUT_SECONDS=900
+UVICORN_WORKERS=1
+DASHBOARD_CACHE_MAX_ENTRIES=8
+DASHBOARD_SKIP_DEEP_COPY=true
+PIPELINE_SKIP_AUDIT_WHEN_DISABLED=true
+AUDIT_DETAIL_ENABLED=false
+```
+
+После первого успешного открытия дашборда повторные запросы с теми же файлами и
+фильтрами обслуживаются из in-memory кэша заметно быстрее. Не открывайте дашборд
+одновременно с нескольких ПК во время первого cold load — при `UVICORN_WORKERS=1`
+второй запрос будет ждать завершения первого.
 
 Первый администратор создаётся интерактивно:
 

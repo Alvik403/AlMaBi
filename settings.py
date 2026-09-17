@@ -54,8 +54,28 @@ class Settings(BaseSettings):
         validation_alias="MAX_UPLOAD_BYTES",
     )
     request_timeout_seconds: int = Field(
-        default=300,
+        default=900,
         validation_alias="REQUEST_TIMEOUT_SECONDS",
+    )
+    uvicorn_workers: int = Field(
+        default=1,
+        validation_alias="UVICORN_WORKERS",
+    )
+    dashboard_cache_max_entries: int = Field(
+        default=8,
+        validation_alias="DASHBOARD_CACHE_MAX_ENTRIES",
+    )
+    dashboard_skip_deep_copy: bool = Field(
+        default=True,
+        validation_alias="DASHBOARD_SKIP_DEEP_COPY",
+    )
+    pipeline_skip_audit_when_disabled: bool = Field(
+        default=True,
+        validation_alias="PIPELINE_SKIP_AUDIT_WHEN_DISABLED",
+    )
+    perf_log_enabled: bool = Field(
+        default=False,
+        validation_alias="PERF_LOG_ENABLED",
     )
     upload_quota_bytes: int = Field(
         default=500 * 1024 * 1024,
@@ -147,6 +167,12 @@ class Settings(BaseSettings):
             raise RuntimeError("MAX_UPLOAD_BYTES must be greater than zero")
         if self.upload_quota_bytes < self.max_upload_bytes:
             raise RuntimeError("UPLOAD_QUOTA_BYTES must be greater than or equal to MAX_UPLOAD_BYTES")
+        if self.request_timeout_seconds <= 0:
+            raise RuntimeError("REQUEST_TIMEOUT_SECONDS must be greater than zero")
+        if self.uvicorn_workers <= 0:
+            raise RuntimeError("UVICORN_WORKERS must be greater than zero")
+        if self.dashboard_cache_max_entries <= 0:
+            raise RuntimeError("DASHBOARD_CACHE_MAX_ENTRIES must be greater than zero")
 
 
 @lru_cache

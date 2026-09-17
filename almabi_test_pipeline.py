@@ -182,18 +182,21 @@ def _build_raw_cost_lookup(
 
 def _build_pq_cost_lookup(
     *,
-    cost_path: Path,
-    projects_path: Path | None,
+    cost_path: Path | None = None,
+    projects_path: Path | None = None,
+    pq_cost_rows: list[dict[str, object]] | None = None,
 ) -> tuple[
     dict[tuple[str, str, str], list[dict[str, object]]],
     dict[tuple[str, str], list[dict[str, object]]],
 ]:
     """Lookup как в PQ «Бух.регистр»: сгруппированная себестоимость + «Основной раздел»."""
-    from almabi_pq_cost import build_pq_cost_table
+    if pq_cost_rows is None:
+        from almabi_pq_cost import build_pq_cost_table
 
-    return build_cost_pq_lookup(
-        build_pq_cost_table(cost_path, projects_path=projects_path),
-    )
+        if cost_path is None:
+            raise ValueError("cost_path is required when pq_cost_rows is not provided")
+        pq_cost_rows = build_pq_cost_table(cost_path, projects_path=projects_path)
+    return build_cost_pq_lookup(pq_cost_rows)
 
 
 def _prepare_cost_lookup(
@@ -201,11 +204,15 @@ def _prepare_cost_lookup(
     cost_path: Path | None,
     projects_path: Path | None,
     fallback_rows: list[CostRow],
+    pq_cost_rows: list[dict[str, object]] | None = None,
 ) -> tuple[
     dict[tuple[str, str, str], list[object]],
     dict[tuple[str, str], list[object]],
     bool,
 ]:
+    if pq_cost_rows is not None:
+        by_full, by_doc_section = _build_pq_cost_lookup(pq_cost_rows=pq_cost_rows)
+        return by_full, by_doc_section, True
     if cost_path is not None and cost_path.exists():
         by_full, by_doc_section = _build_pq_cost_lookup(
             cost_path=cost_path,
@@ -354,6 +361,8 @@ def build_test_facts(
     audit: PipelineAuditLog | None = None,
     cost_path: Path | None = None,
     projects_path: Path | None = None,
+    pq_cost_rows: list[dict[str, object]] | None = None,
+    skip_duplicate_analysis: bool = False,
 ) -> PipelineResult:
     """Сбор фактов для «Тест BI» — join аналитики как в Power Query «Свод_нов»."""
     facts: list[Fact] = []
@@ -374,6 +383,7 @@ def build_test_facts(
         cost_path=cost_path,
         projects_path=projects_path,
         fallback_rows=exports.cost,
+        pq_cost_rows=pq_cost_rows,
     )
     cost_qty_lookup = _build_cost_quantity_lookup(exports.cost)
     duplicate_cost_buh_keys = _build_duplicate_cost_buh_keys(exports)
@@ -734,7 +744,8 @@ def build_test_facts(
     if exports.cost_nu:
         _apply_cost_nu_to_buh_facts(facts, exports.cost_nu, exports.buh)
 
-    audit_log.analyze_duplicates(facts, exports.buh)
+    if not skip_duplicate_analysis:
+        audit_log.analyze_duplicates(facts, exports.buh)
 
     ordered_facts = sorted(facts, key=lambda fact: period_sort_key(fact.period, fallback=fact.month))
     months = list(dict.fromkeys(fact.month for fact in ordered_facts))
@@ -754,6 +765,7 @@ def run_test_pipeline(
     *,
     logs_dir: Path | None = None,
     write_audit: bool = True,
+    skip_duplicate_analysis: bool = False,
 ) -> TestPipelineResult:
     audit = PipelineAuditLog()
     exports = parse_exports(paths)
@@ -769,6 +781,8 @@ def run_test_pipeline(
         audit=audit,
         cost_path=cost_path,
         projects_path=projects_path,
+        pq_cost_rows=pq_cost_rows,
+        skip_duplicate_analysis=skip_duplicate_analysis,
     )
     audit_path = audit.write_report(logs_dir) if logs_dir and write_audit else None
     return TestPipelineResult(result=result, audit=audit, audit_path=audit_path, pq_cost_rows=pq_cost_rows)
