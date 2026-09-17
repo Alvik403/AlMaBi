@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from collections import OrderedDict
 from copy import deepcopy
@@ -39,6 +40,10 @@ DashboardCacheKey = tuple[FileCacheKey, tuple[str, int, int] | None, FilterCache
 
 _pipeline_cache: dict[FileCacheKey, TestPipelineResult] = {}
 _plan_cache: dict[tuple[str, int, int], PlanForecastParseResult] = {}
+_dashboard_build_lock = threading.Lock()
+_dashboard_build_states_lock = threading.Lock()
+_dashboard_build_states: OrderedDict[FileCacheKey, dict[str, Any]] = OrderedDict()
+_DASHBOARD_BUILD_STATES_MAX_ENTRIES = 32
 
 
 class _DashboardLruCache:
@@ -83,6 +88,147 @@ def _pipeline_cache_key(upload_paths: dict[str, Path]) -> FileCacheKey:
         for export_type, path in sorted(upload_paths.items())
     )
     return tuple(parts)
+
+
+def _public_dashboard_build_state(state: dict[str, Any]) -> dict[str, Any]:
+    started_at = state.get("started_at")
+    queued_at = float(state.get("queued_at") or time.time())
+    elapsed_from = float(started_at or queued_at)
+    return {
+        "state": state["state"],
+        "elapsed_seconds": max(0, round(time.time() - elapsed_from)),
+        "message": state["message"],
+    }
+
+
+def _set_dashboard_build_state(
+    cache_key: FileCacheKey,
+    *,
+    state: str,
+    message: str,
+    started_at: float | None = None,
+) -> dict[str, Any]:
+    with _dashboard_build_states_lock:
+        current = _dashboard_build_states.get(cache_key, {})
+        updated = {
+            "state": state,
+            "message": message,
+            "queued_at": current.get("queued_at", time.time()),
+            "started_at": started_at if started_at is not None else current.get("started_at"),
+        }
+        _dashboard_build_states[cache_key] = updated
+        _dashboard_build_states.move_to_end(cache_key)
+        while len(_dashboard_build_states) > _DASHBOARD_BUILD_STATES_MAX_ENTRIES:
+            _dashboard_build_states.popitem(last=False)
+        return _public_dashboard_build_state(updated)
+
+
+def prepare_almabi_dashboard_warmup(
+    request: Request,
+    settings: Settings,
+) -> tuple[dict[str, Any], bool]:
+    """Пометить текущий комплект файлов для фоновой single-flight сборки."""
+    adopt_latest_user_uploads(request, settings)
+    upload_paths = get_almabi_upload_paths(request, settings)
+    missing = [
+        export_type for export_type in REQUIRED_EXPORT_TYPES if export_type not in upload_paths
+    ]
+    if missing:
+        return {
+            "state": "waiting_for_files",
+            "elapsed_seconds": 0,
+            "message": "Для сборки нужны бухрегистр, реализация и себестоимость.",
+        }, False
+
+    cache_key = _pipeline_cache_key(upload_paths)
+    with _dashboard_build_states_lock:
+        current = _dashboard_build_states.get(cache_key)
+        if current and current["state"] in {"queued", "running", "ready"}:
+            return _public_dashboard_build_state(current), False
+        queued = {
+            "state": "queued",
+            "message": "Сборка дашборда поставлена в очередь.",
+            "queued_at": time.time(),
+            "started_at": None,
+        }
+        _dashboard_build_states[cache_key] = queued
+        _dashboard_build_states.move_to_end(cache_key)
+        while len(_dashboard_build_states) > _DASHBOARD_BUILD_STATES_MAX_ENTRIES:
+            _dashboard_build_states.popitem(last=False)
+        return _public_dashboard_build_state(queued), True
+
+
+def get_almabi_dashboard_warmup_status(
+    request: Request,
+    settings: Settings,
+) -> dict[str, Any]:
+    """Вернуть короткий статус фоновой сборки для polling из браузера."""
+    adopt_latest_user_uploads(request, settings)
+    upload_paths = get_almabi_upload_paths(request, settings)
+    missing = [
+        export_type for export_type in REQUIRED_EXPORT_TYPES if export_type not in upload_paths
+    ]
+    if missing:
+        return {
+            "state": "waiting_for_files",
+            "elapsed_seconds": 0,
+            "message": "Для сборки нужны бухрегистр, реализация и себестоимость.",
+        }
+    cache_key = _pipeline_cache_key(upload_paths)
+    with _dashboard_build_states_lock:
+        current = _dashboard_build_states.get(cache_key)
+        if current is None:
+            return {
+                "state": "idle",
+                "elapsed_seconds": 0,
+                "message": "Фоновая сборка не запускалась.",
+            }
+        return _public_dashboard_build_state(current)
+
+
+def build_almabi_dashboard_warmup_placeholder(status: dict[str, Any]) -> dict[str, Any]:
+    """Лёгкая HTML-модель, пока тяжёлая сборка выполняется вне запроса страницы."""
+    dashboard = build_empty_test_dashboard()
+    dashboard["meta"] = {
+        **(dashboard.get("meta") or {}),
+        "mode": "bi",
+        "title": "BI",
+        "message": status.get("message") or "Дашборд собирается в фоне.",
+        "dashboard_build": status,
+    }
+    return dashboard
+
+
+def run_almabi_dashboard_warmup(request: Request, settings: Settings) -> None:
+    """Собрать базовый dashboard после upload, не удерживая запрос браузера."""
+    adopt_latest_user_uploads(request, settings)
+    upload_paths = get_almabi_upload_paths(request, settings)
+    if any(export_type not in upload_paths for export_type in REQUIRED_EXPORT_TYPES):
+        return
+    cache_key = _pipeline_cache_key(upload_paths)
+
+    with _dashboard_build_lock:
+        _set_dashboard_build_state(
+            cache_key,
+            state="running",
+            message="Файлы обрабатываются, дашборд собирается.",
+            started_at=time.time(),
+        )
+        try:
+            resolve_almabi_dashboard_data(request, settings)
+        except Exception:
+            logger.exception("dashboard.warmup failed")
+            _set_dashboard_build_state(
+                cache_key,
+                state="failed",
+                message="Не удалось собрать дашборд. Проверьте журнал сервера.",
+            )
+            return
+        _set_dashboard_build_state(
+            cache_key,
+            state="ready",
+            message="Дашборд готов.",
+        )
 
 
 def _normalized_filters(filters: dict[str, str | list[str] | None]) -> FilterCacheKey:

@@ -309,6 +309,15 @@ def _upload_dashboard_bundle(app_client, tmp_path: Path) -> None:
     assert response.status_code == 201
 
 
+def test_upload_bundle_warms_dashboard_and_exposes_ready_status(app_client, tmp_path: Path):
+    _upload_dashboard_bundle(app_client, tmp_path)
+
+    response = app_client.get("/api/almabi/dashboard/status")
+
+    assert response.status_code == 200
+    assert response.json()["state"] == "ready"
+
+
 @pytest.mark.parametrize(
     ("query_name", "query_value"),
     [

@@ -7,11 +7,12 @@ from typing import Any
 from urllib.parse import quote, urlencode
 from uuid import uuid4
 
-from fastapi import FastAPI, File, Form, Query, Request, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, Form, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.concurrency import run_in_threadpool
+from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
@@ -44,7 +45,14 @@ from almabi_commercial_expense_report_data import load_commercial_expense_report
 from almabi_other_expense_report_data import load_other_expense_report_payload, store_other_expense_report_upload
 from almabi_other_income_report_data import load_other_income_report_payload, store_other_income_report_upload
 from almabi_revenue_report_data import load_revenue_report_payload, store_revenue_report_upload
-from almabi_test_data import resolve_almabi_dashboard_api_data, resolve_almabi_dashboard_data
+from almabi_test_data import (
+    build_almabi_dashboard_warmup_placeholder,
+    get_almabi_dashboard_warmup_status,
+    prepare_almabi_dashboard_warmup,
+    resolve_almabi_dashboard_api_data,
+    resolve_almabi_dashboard_data,
+    run_almabi_dashboard_warmup,
+)
 from almabi_test_excel_data import (
     load_test_excel_buh_payload,
     load_test_excel_cost_payload,
@@ -75,6 +83,7 @@ app.add_middleware(
     quota_bytes=settings.upload_quota_bytes,
 )
 app.add_middleware(RequestTimeoutMiddleware, timeout_seconds=settings.request_timeout_seconds)
+app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=5)
 app.add_middleware(SecurityHeadersMiddleware, hsts=settings.session_https_only)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_host_list)
 app.add_middleware(AuthMiddleware, store=auth_store, enabled=settings.auth_enabled)
@@ -420,6 +429,7 @@ def api_almabi_data_source(request: Request) -> dict:
 @app.get("/api/almabi/dashboard")
 async def api_almabi_dashboard(
     request: Request,
+    background_tasks: BackgroundTasks,
     direction: list[str] | None = Query(None),
     project_group: list[str] | None = Query(None),
     project: list[str] | None = Query(None),
@@ -427,6 +437,20 @@ async def api_almabi_dashboard(
     period_from: str | None = None,
     period_to: str | None = None,
 ) -> JSONResponse:
+    build_status = get_almabi_dashboard_warmup_status(request, settings)
+    if build_status["state"] in {"idle", "failed"}:
+        build_status, should_schedule = prepare_almabi_dashboard_warmup(request, settings)
+        if should_schedule:
+            background_tasks.add_task(run_almabi_dashboard_warmup, request, settings)
+    if build_status["state"] in {"queued", "running"}:
+        return JSONResponse(
+            {
+                "detail": "Дашборд собирается в фоне. Повторите запрос после завершения.",
+                "dashboard_build": build_status,
+            },
+            status_code=503,
+            headers={"Retry-After": "3"},
+        )
     try:
         payload = await run_in_threadpool(
             resolve_almabi_dashboard_api_data,
@@ -444,14 +468,27 @@ async def api_almabi_dashboard(
     return JSONResponse(payload)
 
 
+@app.get("/api/almabi/dashboard/status")
+def api_almabi_dashboard_status(request: Request) -> JSONResponse:
+    return JSONResponse(get_almabi_dashboard_warmup_status(request, settings))
+
+
 @app.post("/api/almabi/files/upload")
-def api_almabi_upload_file(request: Request, file: UploadFile = File(...)) -> JSONResponse:
+def api_almabi_upload_file(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+) -> JSONResponse:
     try:
         payload = store_almabi_upload(request, settings, file)
+        build_status, should_schedule = prepare_almabi_dashboard_warmup(request, settings)
+        if should_schedule:
+            background_tasks.add_task(run_almabi_dashboard_warmup, request, settings)
         return JSONResponse(
             {
                 **payload,
                 "context": almabi_data_context(request, settings),
+                "dashboard_build": build_status,
             },
             status_code=201,
         )
@@ -462,6 +499,7 @@ def api_almabi_upload_file(request: Request, file: UploadFile = File(...)) -> JS
 @app.post("/api/almabi/files/upload-set")
 def api_almabi_upload_bundle(
     request: Request,
+    background_tasks: BackgroundTasks,
     buh_file: UploadFile | None = File(None),
     realization_file: UploadFile | None = File(None),
     cost_file: UploadFile | None = File(None),
@@ -481,10 +519,14 @@ def api_almabi_upload_bundle(
             files,
             plan_forecast_file=plan_forecast_file,
         )
+        build_status, should_schedule = prepare_almabi_dashboard_warmup(request, settings)
+        if should_schedule:
+            background_tasks.add_task(run_almabi_dashboard_warmup, request, settings)
         return JSONResponse(
             {
                 **payload,
                 "context": almabi_data_context(request, settings),
+                "dashboard_build": build_status,
             },
             status_code=201,
         )
@@ -497,9 +539,17 @@ def api_almabi_upload_bundle(
 
 
 @app.get("/dashboard/almabi", response_class=HTMLResponse, name="almabi_dashboard")
-async def almabi_dashboard(request: Request):
+async def almabi_dashboard(request: Request, background_tasks: BackgroundTasks):
     url_fn = template_url_for(request)
-    dashboard = await run_in_threadpool(resolve_almabi_dashboard_data, request, settings)
+    build_status = get_almabi_dashboard_warmup_status(request, settings)
+    if build_status["state"] in {"idle", "failed"}:
+        build_status, should_schedule = prepare_almabi_dashboard_warmup(request, settings)
+        if should_schedule:
+            background_tasks.add_task(run_almabi_dashboard_warmup, request, settings)
+    if build_status["state"] in {"queued", "running"}:
+        dashboard = build_almabi_dashboard_warmup_placeholder(build_status)
+    else:
+        dashboard = await run_in_threadpool(resolve_almabi_dashboard_data, request, settings)
     return templated(
         request,
         "almabi_dashboard.html",

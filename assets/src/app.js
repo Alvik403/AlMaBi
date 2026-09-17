@@ -210,6 +210,42 @@ function initAlmabiDataSourceMenu() {
     assignFiles(pastedFiles, "pasted");
   });
 
+  const waitForDashboardBuild = async () => {
+    const deadline = Date.now() + 25 * 60 * 1000;
+    let transientFailures = 0;
+    while (Date.now() < deadline) {
+      try {
+        const response = await fetch("/api/almabi/dashboard/status", {
+          cache: "no-store",
+          headers: { Accept: "application/json" },
+        });
+        const status = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(status.detail || `Ошибка статуса (${response.status})`);
+        }
+        transientFailures = 0;
+        if (status.state === "ready") return;
+        if (status.state === "failed") {
+          throw new Error(status.message || "Не удалось собрать дашборд");
+        }
+        if (status.state === "waiting_for_files") {
+          throw new Error(status.message || "Не загружены обязательные файлы");
+        }
+        const elapsed = Number(status.elapsed_seconds || 0);
+        const elapsedText = elapsed ? ` Прошло: ${Math.floor(elapsed / 60)} мин ${elapsed % 60} сек.` : "";
+        showStatus(`${status.message || "Собираем дашборд…"}${elapsedText}`, "progress");
+      } catch (error) {
+        transientFailures += 1;
+        if (transientFailures >= 5 || /Не удалось|обязательные файлы/.test(error.message)) {
+          throw error;
+        }
+        showStatus("Сборка продолжается. Временно не удалось получить статус…", "progress");
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, 2500));
+    }
+    throw new Error("Сборка дашборда заняла более 25 минут. Проверьте журнал сервера.");
+  };
+
   uploadForm?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const missingRequired = ALMABI_REQUIRED_EXPORTS.filter((key) => !selectedFiles[key]);
@@ -250,18 +286,49 @@ function initAlmabiDataSourceMenu() {
       const warningText = Array.isArray(payload.warnings) && payload.warnings.length
         ? payload.warnings.join(" ")
         : "";
+      if (payload.dashboard_build?.state === "waiting_for_files") {
+        showStatus(
+          warningText
+            ? `Файлы загружены. ${warningText}`
+            : "Файлы загружены. Для сборки нужны все обязательные выгрузки.",
+          "success",
+        );
+        window.setTimeout(() => window.location.reload(), 700);
+        return;
+      }
       showStatus(
         warningText
-          ? `Выгрузки загружены. ${warningText} Обновляем дашборд...`
-          : "Выгрузки загружены. Обновляем дашборд...",
-        "success",
+          ? `Выгрузки загружены. ${warningText} Сборка выполняется в фоне…`
+          : "Выгрузки загружены. Сборка выполняется в фоне…",
+        "progress",
       );
-      window.setTimeout(() => window.location.reload(), 700);
+      await waitForDashboardBuild();
+      showStatus("Дашборд готов. Открываем…", "success");
+      window.setTimeout(() => window.location.reload(), 300);
     } catch (error) {
       showStatus(error.message, "error");
       setUploading(false);
     }
   });
+
+  void (async () => {
+    try {
+      const response = await fetch("/api/almabi/dashboard/status", {
+        cache: "no-store",
+        headers: { Accept: "application/json" },
+      });
+      const status = await response.json().catch(() => ({}));
+      if (!response.ok || !["queued", "running"].includes(status.state)) return;
+      setUploading(true);
+      showStatus(status.message || "Сборка дашборда продолжается в фоне…", "progress");
+      await waitForDashboardBuild();
+      showStatus("Дашборд готов. Открываем…", "success");
+      window.setTimeout(() => window.location.reload(), 300);
+    } catch (error) {
+      showStatus(error.message, "error");
+      setUploading(false);
+    }
+  })();
 }
 
 function initFileMenuOpeners() {
