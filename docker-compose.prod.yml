@@ -44,16 +44,15 @@ services:
       - runtime:/app/runtime
       - logs:/app/logs
       - ./ops/tls:/tls:ro
-      - ${ALMABI_SESSION_SECRET_FILE:-./ops/secrets/session_secret}:/run/secrets/session_secret:ro
-      - ${ALMABI_DATA_KEY_FILE:-./ops/secrets/data_key}:/run/secrets/data_key:ro
-      - ${ALMABI_DB_PASSWORD_FILE:-./ops/secrets/db_password}:/run/secrets/db_password:ro
-      - ${ALMABI_KEYCLOAK_SECRET_FILE:-./ops/secrets/keycloak_client_secret}:/run/secrets/keycloak_client_secret:ro
+      - staged_secrets:/run/secrets:ro
     networks:
       - backend
       - edge
     depends_on:
       db:
         condition: service_healthy
+      secret-init:
+        condition: service_completed_successfully
     read_only: true
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
@@ -125,6 +124,42 @@ services:
     restart: unless-stopped
     stop_grace_period: 15s
 
+  secret-init:
+    image: "${ALMABI_IMAGE:-almabi-web:local}"
+    user: "0:0"
+    restart: "no"
+    read_only: true
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+    pids_limit: 32
+    mem_limit: 64m
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=8m,mode=1777
+    secrets:
+      - session_secret
+      - data_key
+      - db_password
+      - keycloak_client_secret
+    volumes:
+      - staged_secrets:/secrets
+    networks:
+      - backend
+    command:
+      - sh
+      - -c
+      - |
+        set -eu
+        for name in session_secret data_key db_password keycloak_client_secret; do
+          cp "/run/secrets/$$name" "/secrets/$$name"
+          chmod 400 "/secrets/$$name"
+          chown 10001:10001 "/secrets/$$name"
+        done
+
   db:
     image: postgres:16-alpine
     environment:
@@ -155,6 +190,7 @@ volumes:
   runtime:
   logs:
   db:
+  staged_secrets:
 
 secrets:
   session_secret:

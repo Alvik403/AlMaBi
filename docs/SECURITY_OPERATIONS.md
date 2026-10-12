@@ -73,13 +73,15 @@ ops/secrets/keycloak_client_secret
 Каждый из `session_secret` и `data_key` — случайная строка не короче 32
 символов. Их можно сгенерировать командой
 `python -c "import secrets; print(secrets.token_urlsafe(48))"`.
-Production-compose отдаёт их контейнеру `web` bind-mount в `/run/secrets`
-(`SESSION_SECRET_FILE`, `DATA_KEY_FILE`, пароль Postgres, секрет клиента
-Keycloak). Процесс `web` работает от uid `10001`, поэтому эти четыре файла
-должны быть читаемы этим пользователем: `chown 10001:10001` и `chmod 400`.
-Пароль Postgres для контейнера `db` по-прежнему монтируется как Docker secret:
-образ Postgres читает его от root. Не кладите эти значения в `environment` и
-не передавайте через Docker build args.
+На хосте эти файлы остаются `root:root` и `chmod 600`. Docker монтирует секрет
+внутрь контейнера как `root:0400`, поэтому процесс `web` (uid `10001`, без
+capabilities) прочитать его напрямую не может. Короткий `secret-init`
+запускается от root без capabilities, кроме `CHOWN`: читает секрет как владелец,
+копирует в volume `staged_secrets`, ставит режим `0400` и владельца
+`10001:10001`. Дальше `web` монтирует этот volume только на чтение. Контейнер
+`db` по-прежнему читает пароль Postgres из Docker secret от root. Не кладите
+эти значения в `environment` и не передавайте через Docker build args. После
+ротации секрета пересоздайте init: `up -d --force-recreate secret-init web`.
 
 Ротация раз в 60 дней: `scripts/rotate_session_secret.py` (после рестарта все
 сессии сбрасываются), `scripts/rotate_data_key.py` (перешифровывает uploads),
