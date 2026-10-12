@@ -97,11 +97,15 @@ services:
     depends_on:
       web:
         condition: service_healthy
+      secret-init:
+        condition: service_completed_successfully
+    entrypoint: ["nginx"]
+    command: ["-g", "daemon off;"]
     ports:
       - "443:8443"
     volumes:
       - ./ops/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./ops/tls:/etc/nginx/tls:ro
+      - staged_tls:/etc/nginx/tls:ro
     networks:
       - edge
       - backend
@@ -152,6 +156,8 @@ services:
       - keycloak_client_secret
     volumes:
       - staged_secrets:/secrets
+      - ./ops/tls:/tls-src:ro
+      - staged_tls:/tls
     networks:
       - backend
     command:
@@ -160,6 +166,7 @@ services:
       - |
         set -eu
         find /secrets -mindepth 1 -maxdepth 1 -exec chown 0:0 {} +
+        find /tls -mindepth 1 -maxdepth 1 -exec chown 0:0 {} +
         for name in session_secret data_key db_password; do
           cp "/run/secrets/$$name" "/secrets/$$name"
           chmod 400 "/secrets/$$name"
@@ -174,6 +181,11 @@ services:
         fi
         chmod 400 "$$dst"
         chown 10001:10001 "$$dst"
+        cp /tls-src/fullchain.pem /tls/fullchain.pem
+        cp /tls-src/privkey.pem /tls/privkey.pem
+        chmod 444 /tls/fullchain.pem
+        chmod 400 /tls/privkey.pem
+        chown 101:101 /tls/fullchain.pem /tls/privkey.pem
 
   keycloak:
     image: quay.io/keycloak/keycloak:26.5.7
@@ -241,6 +253,7 @@ volumes:
   logs:
   db:
   staged_secrets:
+  staged_tls:
   keycloak_data:
 
 secrets:
