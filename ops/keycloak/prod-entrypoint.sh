@@ -37,4 +37,5 @@ chmod 600 "$admin_file"
 export KC_BOOTSTRAP_ADMIN_USERNAME="${KC_BOOTSTRAP_ADMIN_USERNAME:-almabi-admin}"
 export KC_BOOTSTRAP_ADMIN_PASSWORD="$admin_password"
 
-exec runuser -u keycloak -- /opt/keycloak/bin/kc.sh start --import-realm --http-enabled=true --hostname="$origin" --hostname-strict=false --proxy-headers=xforwarded
+export origin
+exec capsh --drop=all --user=keycloak -- -c 'exec /opt/keycloak/bin/kc.sh start --import-realm --http-enabled=true --hostname="$origin" --hostname-strict=false --proxy-headers=xforwarded'
