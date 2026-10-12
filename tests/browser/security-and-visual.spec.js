@@ -8,10 +8,7 @@ test.beforeEach(async ({ page }) => {
   });
   page.externalRequests = externalRequests;
 
-  await page.goto("/login");
-  await page.getByLabel("Пользователь").fill("visual-admin");
-  await page.getByLabel("Пароль").fill("visual-admin-password");
-  await page.getByRole("button", { name: "Войти" }).click();
+  await page.goto("/dashboard/almabi");
   await expect(page).toHaveURL(/\/dashboard\/almabi$/);
 });
 

@@ -1,0 +1,19 @@
+flowchart LR
+  B["Браузер<br/>localhost:18002"]
+  W["AlMaBi web<br/>своя страница /login"]
+  K["Keycloak 26.5.7<br/>localhost:8088<br/>realm almabi-test"]
+  G["Локальные группы<br/>AlMaBi-Admins<br/>AlMaBi-Uploaders<br/>AlMaBi-Viewers"]
+
+  B -->|"Войти"| W
+  W -->|"редирект"| K
+  K -->|"пароль тестовой учётки"| G
+  K -->|"id_token с группой"| W
+  W -->|"роль admin / uploader / viewer"| B
+
+  classDef a fill:#E8F4FF,stroke:#2B6CB0,color:#123048
+  classDef b fill:#FFF7ED,stroke:#C05621,color:#123048
+  classDef c fill:#F0FFF4,stroke:#276749,color:#123048
+
+  class B a
+  class W b
+  class K,G c

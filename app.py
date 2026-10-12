@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 import hashlib
 import logging
 import secrets
+import threading
 import time
+from pathlib import Path
 from typing import Any
-from urllib.parse import quote, urlencode
+from datetime import UTC, datetime
+from urllib.parse import quote, urlencode, urlsplit
 from uuid import uuid4
 
 from fastapi import BackgroundTasks, FastAPI, File, Form, Query, Request, UploadFile
@@ -19,12 +23,11 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from almabi_auth import (
     AuthMiddleware,
-    LoginThrottle,
     SESSION_CSRF_KEY,
     SESSION_TOKEN_KEY,
     SESSION_USER_ID_KEY,
 )
-from almabi_auth_store import AuthStore, AuthStoreError, normalize_username
+from almabi_auth_store import AuthStore, AuthStoreError, UserNotFoundError, normalize_username
 from almabi_http_security import (
     RequestBodyLimitMiddleware,
     RequestTimeoutMiddleware,
@@ -65,6 +68,18 @@ from almabi_test_excel_data import (
     store_test_excel_projects_upload,
     store_test_excel_revenue_upload,
 )
+from almabi_file_crypto import purge_plaintext_temps
+from almabi_keycloak import (
+    authorization_url,
+    code_challenge,
+    end_session_url,
+    exchange_code,
+    load_jwks,
+    map_role,
+    upsert_user,
+    verify_rs256,
+)
+from almabi_retention import run_scheduled_cleanup
 from branding import ALMABI_NAV_TABS, APP_BRAND
 from logging_config import configure_logging
 from settings import BASE_DIR, get_settings
@@ -72,8 +87,11 @@ from settings import BASE_DIR, get_settings
 settings = get_settings()
 configure_logging(settings)
 logger = logging.getLogger("almabi.app")
-auth_store = AuthStore(settings.resolved_auth_db)
-login_throttle = LoginThrottle()
+auth_store = AuthStore(
+    settings.resolved_auth_db,
+    database_url=settings.resolved_auth_database_url,
+    idle_seconds=settings.session_idle_seconds,
+)
 
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 _static_asset_digest = hashlib.sha256()
@@ -82,7 +100,46 @@ for _asset_name in ("app.css", "app.js"):
     if _asset_path.is_file():
         _static_asset_digest.update(_asset_path.read_bytes())
 STATIC_ASSET_VERSION = _static_asset_digest.hexdigest()[:12]
-app = FastAPI(title=APP_BRAND, docs_url="/api/docs", redoc_url="/api/redoc", openapi_url="/api/openapi.json")
+
+
+@asynccontextmanager
+async def _lifespan(_app):
+    purge_plaintext_temps(settings.resolved_uploads_dir, max_age_seconds=0)
+    if settings.resolved_auth_database_url:
+        try:
+            auth_store.import_sqlite_users(settings.resolved_auth_db)
+        except Exception:
+            logger.exception("sqlite_user_import_failed")
+    stop = threading.Event()
+
+    def _retention_loop() -> None:
+        while not stop.is_set():
+            try:
+                run_scheduled_cleanup(
+                    runtime_dir=settings.resolved_runtime_dir,
+                    uploads_dir=settings.resolved_uploads_dir,
+                    logs_dir=settings.resolved_logs_dir,
+                    upload_retention_days=settings.upload_retention_days,
+                    log_retention_days=settings.log_retention_days,
+                    interval_days=settings.retention_interval_days,
+                )
+            except Exception:
+                logger.exception("retention_failed")
+            stop.wait(3600)
+
+    thread = threading.Thread(target=_retention_loop, name="retention", daemon=True)
+    thread.start()
+    yield
+    stop.set()
+
+
+app = FastAPI(
+    title=APP_BRAND,
+    docs_url="/api/docs",
+    redoc_url="/api/redoc",
+    openapi_url="/api/openapi.json",
+    lifespan=_lifespan,
+)
 app.add_middleware(
     RequestBodyLimitMiddleware,
     max_bytes=settings.max_upload_bytes,
@@ -91,9 +148,28 @@ app.add_middleware(
 )
 app.add_middleware(RequestTimeoutMiddleware, timeout_seconds=settings.request_timeout_seconds)
 app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=5)
-app.add_middleware(SecurityHeadersMiddleware, hsts=settings.session_https_only)
+def _keycloak_browser_origin() -> str:
+    issuer = settings.keycloak_issuer.strip()
+    if not issuer:
+        return ""
+    parts = urlsplit(issuer)
+    if parts.scheme not in {"http", "https"} or not parts.hostname:
+        return ""
+    return f"{parts.scheme}://{parts.netloc}"
+
+
+app.add_middleware(
+    SecurityHeadersMiddleware,
+    hsts=settings.session_https_only,
+    form_action_origins=tuple(origin for origin in (_keycloak_browser_origin(),) if origin),
+)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_host_list)
-app.add_middleware(AuthMiddleware, store=auth_store, enabled=settings.auth_enabled)
+app.add_middleware(
+    AuthMiddleware,
+    store=auth_store,
+    enabled=settings.auth_enabled,
+    password_max_age_days=0 if settings.keycloak_enabled else settings.secret_max_age_days,
+)
 app.add_middleware(
     SessionMiddleware,
     secret_key=settings.session_secret,
@@ -222,6 +298,9 @@ def _auth_template(
 def _safe_next(value: str | None) -> str:
     if not value or not value.startswith("/") or value.startswith("//"):
         return "/dashboard/almabi"
+    path = value.split("?", 1)[0]
+    if path in {"/logout", "/login"} or path.startswith("/login/"):
+        return "/dashboard/almabi"
     return value
 
 
@@ -237,54 +316,38 @@ def login_page(request: Request, next: str | None = Query(default=None)):
     token = request.session.get(SESSION_TOKEN_KEY)
     if isinstance(token, str) and auth_store.resolve_session(token) is not None:
         return RedirectResponse(url=_safe_next(next), status_code=303)
+    if settings.keycloak_enabled:
+        return RedirectResponse(url=f"/login/keycloak?next={quote(_safe_next(next))}", status_code=303)
     request.session.setdefault(SESSION_CSRF_KEY, secrets.token_urlsafe(32))
-    return _auth_template(request, "login.html", {"next_url": _safe_next(next), "error": None})
+    return _auth_template(
+        request,
+        "login.html",
+        {
+            "next_url": _safe_next(next),
+            "error": None,
+            "keycloak": settings.keycloak_enabled,
+        },
+    )
 
 
-@app.post("/login", response_class=HTMLResponse)
-def login_submit(
-    request: Request,
-    username: str = Form(...),
-    password: str = Form(...),
-    csrf_token: str = Form(...),
-    next_url: str = Form(default="/dashboard/almabi"),
-):
-    if not settings.auth_enabled:
-        return RedirectResponse(url="/dashboard/almabi", status_code=303)
-    if not _valid_csrf(request, csrf_token):
-        return _auth_template(
-            request,
-            "login.html",
-            {"next_url": _safe_next(next_url), "error": "Сессия формы устарела. Повторите вход."},
-            status_code=403,
-        )
-    client_ip = request.client.host if request.client else "unknown"
-    throttle_key = f"{client_ip}:{username.strip().casefold()}"
-    retry_after = login_throttle.retry_after(throttle_key)
-    if retry_after:
-        return _auth_template(
-            request,
-            "login.html",
-            {
-                "next_url": _safe_next(next_url),
-                "error": f"Слишком много попыток. Повторите через {retry_after} сек.",
-            },
-            status_code=429,
-        )
-    user = auth_store.authenticate(username, password)
-    if user is None:
-        login_throttle.failure(throttle_key)
-        return _auth_template(
-            request,
-            "login.html",
-            {"next_url": _safe_next(next_url), "error": "Неверное имя пользователя или пароль."},
-            status_code=401,
-        )
-    login_throttle.success(throttle_key)
+def _keycloak_redirect_uri(request: Request) -> str:
+    if settings.keycloak_redirect_uri.strip():
+        return settings.keycloak_redirect_uri.strip()
+    return str(request.url_for("login_callback"))
+
+
+def _keycloak_backchannel_issuer() -> str:
+    """Адрес Keycloak для сервера. В тесте браузер ходит на localhost, контейнер — на имя сервиса."""
+    internal = settings.keycloak_internal_issuer.strip()
+    return internal or settings.keycloak_issuer.strip()
+
+
+def _establish_session(request: Request, user, next_url: str, id_token: str = "") -> RedirectResponse:
     request.session.clear()
     request.session[SESSION_TOKEN_KEY] = auth_store.create_session(
         user.id,
         settings.session_max_age_seconds,
+        id_token=id_token,
     )
     request.session[SESSION_USER_ID_KEY] = user.id
     request.session[SESSION_CSRF_KEY] = secrets.token_urlsafe(32)
@@ -292,14 +355,114 @@ def login_submit(
     return RedirectResponse(url=_safe_next(next_url), status_code=303)
 
 
+@app.get("/login/keycloak")
+def login_keycloak(request: Request, next: str | None = Query(default=None)):
+    if not settings.keycloak_enabled:
+        return RedirectResponse(url="/login", status_code=303)
+    verifier = secrets.token_urlsafe(48)
+    state = secrets.token_urlsafe(24)
+    nonce = secrets.token_urlsafe(24)
+    request.session["oidc_state"] = state
+    request.session["oidc_nonce"] = nonce
+    request.session["oidc_verifier"] = verifier
+    request.session["oidc_next"] = _safe_next(next)
+    url = authorization_url(
+        issuer=settings.keycloak_issuer,
+        client_id=settings.keycloak_client_id,
+        redirect_uri=_keycloak_redirect_uri(request),
+        state=state,
+        nonce=nonce,
+        code_challenge=code_challenge(verifier),
+    )
+    return RedirectResponse(url=url, status_code=303)
+
+
+@app.get("/login/callback", name="login_callback")
+def login_callback(request: Request, code: str = "", state: str = "", error: str = ""):
+    next_url = _safe_next(request.session.get("oidc_next"))
+    if error or not code:
+        return _auth_template(
+            request,
+            "login.html",
+            {"next_url": next_url, "error": "Авторизация отменена.", "keycloak": True},
+            status_code=401,
+        )
+    expected_state = request.session.get("oidc_state")
+    nonce = request.session.get("oidc_nonce")
+    verifier = request.session.get("oidc_verifier")
+    if not expected_state or not secrets.compare_digest(str(state), str(expected_state)) or not verifier or not nonce:
+        return _auth_template(
+            request,
+            "login.html",
+            {"next_url": next_url, "error": "Сессия входа устарела. Повторите.", "keycloak": True},
+            status_code=403,
+        )
+    try:
+        token = exchange_code(
+            issuer=_keycloak_backchannel_issuer(),
+            client_id=settings.keycloak_client_id,
+            client_secret=settings.keycloak_client_secret,
+            code=code,
+            redirect_uri=_keycloak_redirect_uri(request),
+            code_verifier=str(verifier),
+        )
+        claims = verify_rs256(
+            str(token["id_token"]),
+            load_jwks(_keycloak_backchannel_issuer()),
+            issuer=settings.keycloak_issuer,
+            audience=settings.keycloak_client_id,
+            nonce=str(nonce),
+        )
+        username = str(claims.get("preferred_username") or claims.get("email") or "")
+        user = upsert_user(auth_store, username, map_role(claims, settings.keycloak_client_id))
+    except (ValueError, KeyError, UserNotFoundError) as exc:
+        return _auth_template(
+            request,
+            "login.html",
+            {"next_url": next_url, "error": str(exc), "keycloak": True},
+            status_code=401,
+        )
+    return _establish_session(request, user, next_url, id_token=str(token.get("id_token") or ""))
+
+
+@app.post("/login")
+def login_submit(request: Request, next_url: str = Form(default="/dashboard/almabi")):
+    if not settings.auth_enabled:
+        return RedirectResponse(url="/dashboard/almabi", status_code=303)
+    if settings.keycloak_enabled:
+        return RedirectResponse(url=f"/login/keycloak?next={quote(_safe_next(next_url))}", status_code=303)
+    return _auth_template(
+        request,
+        "login.html",
+        {
+            "next_url": _safe_next(next_url),
+            "error": "Сервер авторизации не настроен. Задайте адрес, client id и секрет клиента.",
+            "keycloak": False,
+        },
+        status_code=503,
+    )
+
+
 @app.post("/logout")
 def logout(request: Request, csrf_token: str = Form(...)):
     if not _valid_csrf(request, csrf_token):
         return JSONResponse({"detail": "Invalid CSRF token"}, status_code=403)
     token = request.session.get(SESSION_TOKEN_KEY)
+    id_token = auth_store.take_idp_token(token) if isinstance(token, str) else ""
     if isinstance(token, str):
         auth_store.revoke_session(token)
     request.session.clear()
+    if settings.keycloak_enabled:
+        login_url = str(request.base_url).rstrip("/") + "/login"
+        return RedirectResponse(
+            url=end_session_url(
+                issuer=settings.keycloak_issuer,
+                client_id=settings.keycloak_client_id,
+                post_logout_redirect_uri=login_url,
+                id_token=id_token,
+            ),
+            status_code=303,
+        )
     return RedirectResponse(url="/login", status_code=303)
 
 
@@ -371,6 +534,46 @@ def admin_disable_user(request: Request, username: str, csrf_token: str = Form(.
     return RedirectResponse(url="/admin/users", status_code=303)
 
 
+@app.post("/admin/users/{username}/password")
+def admin_reset_password(
+    request: Request,
+    username: str,
+    password: str = Form(...),
+    csrf_token: str = Form(...),
+):
+    if not _valid_csrf(request, csrf_token):
+        return JSONResponse({"detail": "Invalid CSRF token"}, status_code=403)
+    try:
+        normalized_username = normalize_username(username)
+    except ValueError as exc:
+        return JSONResponse({"detail": str(exc)}, status_code=400)
+    if len(password) < 12:
+        return _auth_template(
+            request,
+            "admin_users.html",
+            {
+                "users": auth_store.list_users(),
+                "error": "Пароль должен содержать не менее 12 символов",
+                "message": None,
+            },
+            status_code=400,
+        )
+    try:
+        auth_store.update_password(normalized_username, password)
+    except AuthStoreError as exc:
+        return JSONResponse({"detail": str(exc)}, status_code=404)
+    current_user = getattr(request.state, "current_user", None)
+    if current_user is not None and current_user.username == normalized_username:
+        request.session.clear()
+        return RedirectResponse(url="/login", status_code=303)
+    return RedirectResponse(url="/admin/users", status_code=303)
+
+
+@app.get("/account/password", response_class=HTMLResponse, name="account_password")
+def account_password_page(request: Request):
+    return _auth_template(request, "account_password.html", {"error": None})
+
+
 @app.post("/account/password")
 def account_password(
     request: Request,
@@ -413,15 +616,66 @@ def ready() -> JSONResponse:
     if settings.auth_enabled:
         try:
             auth_store.init_schema()
-            checks["auth_store"] = settings.resolved_auth_db.is_file()
+            if settings.resolved_auth_database_url:
+                checks["auth_store"] = True
+            else:
+                checks["auth_store"] = settings.resolved_auth_db.is_file()
         except Exception:
             checks["auth_store"] = False
 
+    rotation = _rotation_status()
     is_ready = all(value is True for value in checks.values())
     return JSONResponse(
-        {"status": "ready" if is_ready else "not_ready", "checks": checks},
+        {"status": "ready" if is_ready else "not_ready", "checks": checks, "rotation": rotation},
         status_code=200 if is_ready else 503,
     )
+
+
+def _age_days(path: Path | None) -> int | None:
+    if path is None:
+        return None
+    resolved = settings.resolve_path(path)
+    if not resolved.is_file():
+        return None
+    modified = datetime.fromtimestamp(resolved.stat().st_mtime, tz=UTC)
+    return (datetime.now(UTC) - modified).days
+
+
+def _cert_age_days(path: Path | None) -> int | None:
+    if path is None:
+        return None
+    resolved = settings.resolve_path(path)
+    if not resolved.is_file():
+        return None
+    try:
+        from cryptography import x509
+
+        certificate = x509.load_pem_x509_certificate(resolved.read_bytes())
+        started = getattr(certificate, "not_valid_before_utc", None)
+        if started is None:
+            started = certificate.not_valid_before.replace(tzinfo=UTC)
+        return (datetime.now(UTC) - started).days
+    except Exception:
+        return None
+
+
+def _rotation_status() -> dict[str, int | bool | None]:
+    session_age = _age_days(settings.session_secret_file)
+    data_age = _age_days(settings.data_key_file)
+    cert_age = _cert_age_days(settings.tls_cert_file)
+    limit = settings.secret_max_age_days
+    status = {
+        "max_age_days": limit,
+        "session_secret_age_days": session_age,
+        "data_key_age_days": data_age,
+        "tls_cert_age_days": cert_age,
+        "session_secret_expired": session_age is not None and session_age > limit,
+        "data_key_expired": data_age is not None and data_age > limit,
+        "tls_cert_expired": cert_age is not None and cert_age > limit,
+    }
+    if status["session_secret_expired"] or status["data_key_expired"] or status["tls_cert_expired"]:
+        logger.warning("key_material_rotation_due", extra={"rotation": status})
+    return status
 
 
 @app.get("/", response_class=HTMLResponse, name="index")

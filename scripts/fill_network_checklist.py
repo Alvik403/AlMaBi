@@ -145,13 +145,15 @@ def fill_paragraphs(doc: Document) -> None:
         doc,
         P["containers"],
         "Требуются контейнеры (Docker, K8s): Docker Compose prod (docker-compose.prod.yml): "
-        "nginx (80→8080, 443→8443) и web (8000 только во внутренней Docker-сети)",
+        "nginx (только 443→8443), web (8000 только во внутренней Docker-сети), "
+        "db Postgres (5432 только во внутренней Docker-сети, учётки и сессии) "
+        "и Keycloak 26.5.7. AD и второй фактор к Keycloak подключает ИБ, вне этой ВМ",
     )
-    set_text(doc, P["vlan_yes"], "Да — только по решению ИТ/СБ; приложение отдельную VLAN не требует")
+    set_text(doc, P["vlan_yes"], "Да — не применяется")
     set_text(
         doc,
         P["vlan_no"],
-        "Нет (Будет использоваться имеющийся): серверный сегмент с доступом из согласованных LAN/VPN",
+        "Нет — отдельная VLAN/VRF для AlMaBi не требуется",
     )
     set_text(
         doc,
@@ -169,8 +171,8 @@ def fill_paragraphs(doc: Document) -> None:
     set_text(
         doc,
         P["users"],
-        "Конкретные пользователи или группы (указать): список сотрудников и роли "
-        "viewer/uploader/admin предоставляет владелец",
+        "Конкретные пользователи или группы (указать): AlMaBi-Admins (два администратора), "
+        "AlMaBi-Uploaders (сотрудники с загрузкой), AlMaBi-Viewers (остальные сотрудники)",
     )
     set_text(
         doc,
@@ -206,14 +208,15 @@ def fill_paragraphs(doc: Document) -> None:
         "Трансформация данных (процессы, которые изменяют формат или структуру данных, "
         "чтобы сделать их совместимыми с пунктом назначения или более полезными для анализа "
         "(например: очистка, агрегация): проверка XLSX, парсинг openpyxl, PQ pipeline, "
-        "агрегации P&L в памяти; SQLite только для УЗ и сессий",
+        "агрегации P&L в памяти; учётки и сессии — отдельный Postgres, не база расчётов",
     )
     set_text(
         doc,
         P["paths"],
         "Пути потоков данных (маршруты, по которым данные перемещаются между компонентами): "
-        "браузер → HTTPS:443 → nginx → HTTP web:8000 → uploads/almabi/users/{user_id}/ → "
-        "обработка в памяти → HTML/JSON; runtime/auth.sqlite3; logs",
+        "браузер → HTTPS:443 → nginx → HTTP web:8000 → uploads (шифротекст) → "
+        "обработка в памяти → HTML/JSON. Пароль браузер вводит на Keycloak сам. "
+        "Учётки и сессии — Postgres db:5432 только внутри Docker. Журналы с хоста в SIEM",
     )
     set_text(
         doc,
@@ -224,16 +227,18 @@ def fill_paragraphs(doc: Document) -> None:
     set_text(
         doc,
         P["auth_yes"],
-        "Да — локальные УЗ (SQLite auth.sqlite3), RBAC viewer/uploader/admin, Argon2id, CSRF; "
-        "управление через scripts/manage_users.py и /admin/users",
+        "Да — /login по HTTPS :443 через nginx, затем браузер сам открывает Keycloak 26.5.7 для пароля. "
+        "web забирает код и ключи. Роль из группы токена. AD и второй фактор вне ВМ, их к Keycloak подключает ИБ. "
+        "Группы: AlMaBi-Admins, AlMaBi-Uploaders, AlMaBi-Viewers",
     )
     set_text(doc, P["auth_no"], "Нет — не применяется для production")
-    set_text(doc, P["outbound_yes"], "Да (описать куда именно): —")
     set_text(
         doc,
-        P["outbound_no"],
-        "Нет — в runtime нет внешних API/CDN; только same-origin fetch в браузере",
+        P["outbound_yes"],
+        "Да (описать куда именно): журналы с хоста ВМ на srv-s.alabuga.ru (10.50.53.121), TCP 1514 и TCP 1515. "
+        "Приложение web в SIEM не ходит. Keycloak 26.5.7 связан с Active Directory и вторым фактором вне ВМ",
     )
+    set_text(doc, P["outbound_no"], "Нет — не применяется")
     set_text(
         doc,
         P["ssl_yes"],
@@ -245,7 +250,7 @@ def fill_paragraphs(doc: Document) -> None:
     set_text(
         doc,
         P["tls_yes"],
-        "Да — TLS 1.2/1.3 пользователь ↔ nginx (№1); nginx → web по HTTP во internal Docker-сети (№3)",
+        "Да — TLS 1.2/1.3 пользователь ↔ nginx (связь 1); nginx → web по HTTP во внутренней Docker-сети (связь 2)",
     )
     set_text(doc, P["tls_no"], "Нет — не применяется для внешнего пользовательского трафика")
     set_text(
@@ -257,9 +262,12 @@ def fill_paragraphs(doc: Document) -> None:
     set_text(
         doc,
         P["extra"],
-        " порт web:8000 не публиковать на хост; AUTH_ENABLED=true; SESSION_HTTPS_ONLY=true; "
-        "секреты в .env.prod; backup uploads/runtime/logs; лимит файла 50 МиБ, квота 500 МiБ; "
-        "retention uploads 90 дней, logs 30 дней",
+        "Порт web:8000 и Postgres :5432 не публиковать на хост. Учётки только в Postgres, расчёты в базу не пишутся. "
+        "AUTH_ENABLED=true; SESSION_HTTPS_ONLY=true; простой сессии 15 минут; абсолютный срок сессии 8 часов. "
+        "Ключ сессии и ключ данных — файлы ops/secrets, не .env.prod; ротация раз в 60 дней. "
+        "Ключ сессии подписывает cookie, ключ данных шифрует uploads и журналы. "
+        "Лимит файла 50 МиБ, квота 500 МиБ; retention uploads 90 дней, logs 30 дней. "
+        "Проверка входа без AD: docker-compose.test.yml",
     )
     set_text(doc, P["append_network"], "Схема сетевого взаимодействия (п. 3.3)")
     set_text(doc, P["append_dataflow"], "Схема потоков данных (п. 3.5)")
@@ -279,17 +287,44 @@ def fill_tables(doc: Document) -> None:
             "HTTPS, HSTS, rate limit, allow-list частных сетей",
         ),
         (
-            "Пользователь (браузер, LAN/VPN)",
-            "2",
-            "IP АРМ / VPN-пул — уточнить",
-            "IP production-хоста — уточнить",
+            "Администратор системы (доступ к AlMaBi)",
+            "1",
+            "IP АРМ администратора — уточнить",
+            "nginx на almabi.alabuga.ru",
             "TCP",
-            "80",
-            "HTTP → HTTPS redirect",
+            "443",
+            "Тот же HTTPS, что у пользователя. Роль admin в приложении, это не доступ к серверу",
+        ),
+        (
+            "Администратор сервера через PAM",
+            "3",
+            "Система PAM",
+            "хост ВМ almabi.alabuga.ru",
+            "TCP",
+            "22",
+            "SSH на хост ВМ. В nginx этот доступ не приходит",
+        ),
+        (
+            "Вход Keycloak → AD → мультифактор",
+            "2a",
+            "Браузер сотрудника",
+            "Keycloak 26.5.7 в проекте",
+            "TCP",
+            "8088",
+            "Пароль браузер вводит на Keycloak сам, не через nginx. web забирает код и ключи по keycloak:8080. AD и второй фактор вне ВМ, их к Keycloak подключает ИБ",
+        ),
+        (
+            "Keycloak → AD и второй фактор",
+            "2b",
+            "Keycloak 26.5.7",
+            "Active Directory и второй фактор вне ВМ",
+            "TCP",
+            "по схеме ИБ",
+            "AlMaBi к AD и второму фактору не подключается. Учётную запись и второй фактор проверяет Keycloak",
         ),
         (
             "nginx (контейнер)",
-            "3",
+            "2",
             "Docker-сеть backend",
             "web:8000",
             "TCP",
@@ -299,11 +334,29 @@ def fill_tables(doc: Document) -> None:
         (
             "Мониторинг",
             "4",
-            "IP мониторинга — уточнить",
+            "IP системы мониторинга — уточнить",
             "IP production-хоста — уточнить",
             "TCP",
             "443",
-            "GET /health, /ready через HTTPS",
+            "GET /health и /ready через nginx",
+        ),
+        (
+            "web (контейнер)",
+            "5",
+            "Docker-сеть backend",
+            "db:5432",
+            "TCP",
+            "5432",
+            "Postgres, учётки и сессии; порт не на хосте",
+        ),
+        (
+            "Журналы → SIEM",
+            "6",
+            "Хост ВМ almabi.alabuga.ru",
+            "srv-s.alabuga.ru (10.50.53.121)",
+            "TCP",
+            "1514, 1515",
+            "Журналы с хоста. Приложение web в SIEM не ходит. Продукт не фиксируется",
         ),
         ("", "", "", "", "", "", ""),
     ]

@@ -39,8 +39,14 @@ def test_almabi_dashboard_available(app_client):
     assert 'data-filter-select="contract"' in response.text
     assert "data-filter-search" in response.text
     assert "data-filter-select-all" in response.text
+    assert "data-filter-clear-all" in response.text
+    assert "data-filter-apply" in response.text
+    assert "data-filter-apply-all" in response.text
+    assert "data-period-apply" in response.text
     assert "data-filter-chips" in response.text
     assert "Выбрать все" in response.text
+    assert "Снять все" in response.text
+    assert "Применить" in response.text
     assert "data-period-trigger" in response.text
     assert "data-period-calendar" in response.text
     assert "data-period-year-nav" in response.text

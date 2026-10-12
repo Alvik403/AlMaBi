@@ -118,6 +118,17 @@ def validate_almabi_export(path: Path, *, expected_type: str | None = None) -> A
         raise ValueError("Файл пустой")
     if expected_type and expected_type not in EXPORT_TYPES:
         raise ValueError(f"Неизвестный тип выгрузки: {expected_type}")
+    from almabi_file_crypto import materialize_plaintext
+
+    opened = materialize_plaintext(path)
+    try:
+        return _validate_opened_export(opened, expected_type=expected_type)
+    finally:
+        if opened != path:
+            opened.unlink(missing_ok=True)
+
+
+def _validate_opened_export(path: Path, *, expected_type: str | None) -> AlmabiValidationResult:
     validate_xlsx_container(path)
 
     try:

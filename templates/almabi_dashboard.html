@@ -139,10 +139,16 @@
             <div class="almabi-select__menu hidden" role="listbox" aria-multiselectable="true">
               <div class="almabi-select__toolbar">
                 <input type="search" class="almabi-select__search" data-filter-search placeholder="Поиск" autocomplete="off" />
-                <button type="button" class="almabi-select__all" data-filter-select-all>Выбрать все</button>
+                <div class="almabi-select__bulk">
+                  <button type="button" class="almabi-select__all" data-filter-select-all>Выбрать все</button>
+                  <button type="button" class="almabi-select__all" data-filter-clear-all disabled>Снять все</button>
+                </div>
               </div>
               <div class="almabi-select__options" data-filter-options></div>
               <p class="almabi-select__empty hidden" data-filter-empty>Нет вариантов</p>
+              <div class="almabi-select__footer">
+                <button type="button" class="almabi-select__apply" data-filter-apply>Применить</button>
+              </div>
             </div>
           </div>
           {% endfor %}
@@ -167,10 +173,19 @@
               <div class="almabi-select__options" data-period-calendar></div>
               <div class="almabi-period-actions">
                 <button type="button" class="almabi-select__all" data-period-clear>Сбросить период</button>
+                <button type="button" class="almabi-select__apply" data-period-apply>Применить</button>
               </div>
             </div>
           </div>
         </div>
+        <button
+          type="button"
+          data-filter-apply-all
+          class="shrink-0 rounded-lg bg-sky-600 px-3 py-2.5 text-xs font-semibold text-white shadow-sm hover:bg-sky-700"
+          title="Загрузить данные по выбранным фильтрам"
+        >
+          Применить
+        </button>
         <button
           type="button"
           data-filter-reset
@@ -2078,7 +2093,10 @@
     const dimensions = FILTER_KEYS
       .filter((key) => !isDefaultFilter(key))
       .map((key) => `${document.querySelector(`[data-filter-select="${key}"]`)?.dataset.filterLabel || key}: ${state.filters[key].size}`);
-    hint.textContent = `Диапазон: ${from} — ${to}${dimensions.length ? ` · ${dimensions.join(" · ")}` : ""}`;
+    const pending = currentFilterSignature() !== appliedFilterSignature
+      ? " · Нажмите «Применить», чтобы загрузить данные"
+      : "";
+    hint.textContent = `Диапазон: ${from} — ${to}${dimensions.length ? ` · ${dimensions.join(" · ")}` : ""}${pending}`;
   }
 
   function renderSummary() {
@@ -2321,6 +2339,22 @@
     if (finishPeriodPick) commitIncompletePeriodPick();
   }
 
+  let appliedFilterSignature = "";
+
+  function currentFilterSignature() {
+    const parts = FILTER_KEYS.map((key) =>
+      [...state.filters[key]].sort((left, right) => left.localeCompare(right, "ru")).join("\u0001"),
+    );
+    return `${parts.join("\u0002")}|${state.periodFrom}|${state.periodTo}`;
+  }
+
+  function syncApplyButtons() {
+    const pending = currentFilterSignature() !== appliedFilterSignature;
+    document.querySelectorAll("[data-filter-apply], [data-period-apply], [data-filter-apply-all]").forEach((button) => {
+      button.classList.toggle("is-pending", pending);
+    });
+  }
+
   function availablePeriods() {
     return almabiData.available_periods || almabiData.periods || almabiData.months || [];
   }
@@ -2396,11 +2430,11 @@
       }).join("");
     }
     empty?.classList.toggle("hidden", options.length > 0);
+    const allSelected = options.length > 0 && options.every((value) => selected.has(value));
     const allButton = root.querySelector("[data-filter-select-all]");
-    if (allButton) {
-      const allSelected = options.length > 0 && options.every((value) => selected.has(value));
-      allButton.textContent = allSelected ? "Снять все" : "Выбрать все";
-    }
+    const clearButton = root.querySelector("[data-filter-clear-all]");
+    if (allButton) allButton.disabled = !options.length || allSelected;
+    if (clearButton) clearButton.disabled = selected.size === 0;
     const summary = root.querySelector("[data-filter-summary]");
     if (summary) {
       summary.textContent = selected.size
@@ -2504,7 +2538,6 @@
     state.periodPicking = false;
     state.periodHover = "";
     renderPeriodPicker();
-    scheduleDashboardReload();
   }
 
   function renderPeriodPicker() {
@@ -2555,13 +2588,21 @@
     renderFilterChips();
     renderPeriodPicker();
     updateFilterHint();
+    syncApplyButtons();
   }
 
-  function toggleFilterValue(key, value, checked) {
+  function toggleFilterValue(key, value, checked, { apply = false } = {}) {
     if (checked) state.filters[key].add(value);
     else state.filters[key].delete(value);
     pruneChildSelections(key);
     renderFilterControls();
+    if (apply) scheduleDashboardReload();
+  }
+
+  function applyDashboardFilters() {
+    commitIncompletePeriodPick();
+    closeAllFilterMenus();
+    if (currentFilterSignature() === appliedFilterSignature) return;
     scheduleDashboardReload();
   }
 
@@ -2590,9 +2631,13 @@
       errorNode.textContent = error;
       errorNode.classList.toggle("hidden", !error);
     }
-    document.querySelectorAll("[data-filter-select] button, [data-period-trigger], [data-period-clear], [data-filter-reset], [data-filter-search]").forEach((node) => {
+    document.querySelectorAll("[data-filter-select] button, [data-period-trigger], [data-period-clear], [data-period-apply], [data-filter-apply-all], [data-filter-reset], [data-filter-search]").forEach((node) => {
       node.disabled = loading;
     });
+    if (!loading) {
+      FILTER_KEYS.forEach(renderFilterOptions);
+      syncApplyButtons();
+    }
   }
 
   function validatePeriodRange() {
@@ -2655,6 +2700,7 @@
         state.selectedScenarios.add(almabiData.scenarios[0]);
       }
       syncScenarioPickerUi();
+      appliedFilterSignature = currentFilterSignature();
       renderFilterControls();
       renderAll();
       setFilterRequestState();
@@ -2670,6 +2716,7 @@
   }
 
   function initFilterSelects() {
+    appliedFilterSignature = currentFilterSignature();
     document.querySelectorAll("[data-filter-select]").forEach((root) => {
       const key = root.dataset.filterSelect;
       const trigger = root.querySelector(".almabi-select__trigger");
@@ -2694,12 +2741,23 @@
         event.stopPropagation();
         const query = (root.querySelector("[data-filter-search]")?.value || "").trim().toLowerCase();
         const options = optionsFor(key).filter((value) => !query || value.toLowerCase().includes(query));
-        const allSelected = options.length > 0 && options.every((value) => state.filters[key].has(value));
-        if (allSelected) options.forEach((value) => state.filters[key].delete(value));
-        else options.forEach((value) => state.filters[key].add(value));
+        if (!options.length || options.every((value) => state.filters[key].has(value))) return;
+        options.forEach((value) => state.filters[key].add(value));
         pruneChildSelections(key);
         renderFilterControls();
-        scheduleDashboardReload();
+      });
+      root.querySelector("[data-filter-clear-all]")?.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!state.filters[key].size) return;
+        state.filters[key] = new Set();
+        pruneChildSelections(key);
+        renderFilterControls();
+      });
+      root.querySelector("[data-filter-apply]")?.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        applyDashboardFilters();
       });
       root.querySelector("[data-filter-options]")?.addEventListener("change", (event) => {
         const input = event.target;
@@ -2752,8 +2810,13 @@
         state.periodPicking = false;
         state.periodHover = "";
         renderPeriodPicker();
-        closeAllFilterMenus();
-        scheduleDashboardReload();
+        syncApplyButtons();
+        updateFilterHint();
+        return;
+      }
+      if (event.target.closest("[data-period-apply]")) {
+        event.preventDefault();
+        applyDashboardFilters();
         return;
       }
       if (event.target.closest("[data-period-clear]")) {
@@ -2762,8 +2825,8 @@
         state.periodPicking = false;
         state.periodHover = "";
         renderPeriodPicker();
-        closeAllFilterMenus();
-        scheduleDashboardReload();
+        syncApplyButtons();
+        updateFilterHint();
       }
     });
     periodMenu?.addEventListener("mouseover", (event) => {
@@ -2778,12 +2841,15 @@
     document.querySelector("[data-filter-chips]")?.addEventListener("click", (event) => {
       const chip = event.target.closest("[data-filter-chip]");
       if (!chip) return;
-      toggleFilterValue(chip.dataset.filterChip, chip.dataset.value, false);
+      toggleFilterValue(chip.dataset.filterChip, chip.dataset.value, false, { apply: true });
     });
 
     document.addEventListener("click", (event) => {
       if (event.target.closest("[data-scenario-picker], [data-period-picker]")) return;
       closeAllFilterMenus();
+    });
+    document.querySelector("[data-filter-apply-all]")?.addEventListener("click", () => {
+      applyDashboardFilters();
     });
     document.querySelector("[data-filter-reset]")?.addEventListener("click", () => {
       clearTimeout(filterFetchTimer);
@@ -2936,30 +3002,59 @@
     });
     const periodSuffix = periodModeShortSuffix(state.chartPeriod);
 
-    let peakIndex = -1;
-    let peakValue = 0;
-    values.forEach((value, index) => {
-      if (value != null && value > peakValue) {
-        peakValue = value;
-        peakIndex = index;
-      }
-    });
-
-    const revenuePeakAnnotation = {
-      id: "revenuePeakAnnotation",
+    const revenuePointLabels = {
+      id: "revenuePointLabels",
       afterDatasetsDraw(chart) {
-        if (peakIndex < 0) return;
         const meta = chart.getDatasetMeta(0);
-        const point = meta?.data?.[peakIndex];
-        if (!point) return;
+        if (!meta?.data?.length) return;
         const ctx = chart.ctx;
-        const label = `${labels[peakIndex]} · ${formatCompactRu(peakValue)}`;
+        const fontSize = 11;
         ctx.save();
-        ctx.font = "600 11px system-ui, sans-serif";
-        ctx.fillStyle = "#0369A1";
+        ctx.font = `600 ${fontSize}px system-ui, sans-serif`;
         ctx.textAlign = "center";
         ctx.textBaseline = "bottom";
-        ctx.fillText(label, point.x, point.y - 10);
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.94)";
+        ctx.fillStyle = "#0369A1";
+        const placed = [];
+        meta.data.forEach((point, index) => {
+          const value = values[index];
+          if (value == null || !point || point.skip) return;
+          const text = formatCompactRu(value);
+          const width = ctx.measureText(text).width;
+          const half = width / 2 + 3;
+          const x = Math.min(Math.max(point.x, half), chart.width - half);
+          const above = point.y - 8;
+          const below = point.y + fontSize + 8;
+          const candidates = [above, below];
+          let y = above;
+          for (const candidate of candidates) {
+            const box = {
+              left: x - half,
+              right: x + half,
+              top: candidate - fontSize - 2,
+              bottom: candidate + 2,
+            };
+            const inside = box.top >= 1 && box.bottom <= chart.height - 1;
+            const overlaps = placed.some((item) =>
+              !(box.right < item.left || box.left > item.right || box.bottom < item.top || box.top > item.bottom),
+            );
+            if (inside && !overlaps) {
+              y = candidate;
+              break;
+            }
+          }
+          if (y - fontSize < 1) y = fontSize + 2;
+          if (y > chart.height - 2) y = chart.height - 2;
+          ctx.strokeText(text, x, y);
+          ctx.fillText(text, x, y);
+          placed.push({
+            left: x - half,
+            right: x + half,
+            top: y - fontSize - 2,
+            bottom: y + 2,
+          });
+        });
         ctx.restore();
       },
     };
@@ -2991,13 +3086,15 @@
             pointBackgroundColor: "#FFFFFF",
             pointBorderColor: CHART_PALETTE.revenue.point,
             pointBorderWidth: 2,
+            clip: false,
           },
         ],
       },
-      plugins: [revenuePeakAnnotation],
+      plugins: [revenuePointLabels],
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        layout: { padding: { top: 22, right: 12, left: 8, bottom: 4 } },
         interaction: { mode: "index", intersect: false },
         plugins: {
           legend: { display: false },
@@ -3029,6 +3126,7 @@
           },
           y: {
             beginAtZero: true,
+            grace: "18%",
             grid: { color: CHART_PALETTE.grid, drawBorder: false },
             ticks: {
               color: CHART_PALETTE.tick,

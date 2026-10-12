@@ -6,7 +6,7 @@ from uuid import uuid4
 
 from fastapi import HTTPException, Request, UploadFile
 
-from almabi_file_security import resolve_user_stored_xlsx
+from almabi_file_security import resolve_user_stored_xlsx, store_upload_bytes
 from almabi_file_validation import validate_almabi_export
 from almabi_taxes_report import TAX_BUCKETS, TAX_DETAIL_COLUMNS, build_taxes_report
 from almabi_test_excel_data import (
@@ -148,7 +148,7 @@ async def _store_uploaded_file(
     incoming_path = upload_dir / f"incoming-{uuid4().hex}.xlsx"
     stored_name = f"{prefix}-{uuid4().hex}.xlsx"
     final_path = upload_dir / stored_name
-    incoming_path.write_bytes(contents)
+    store_upload_bytes(incoming_path, contents)
     incoming_path.replace(final_path)
     return upload.filename, stored_name, final_path
 

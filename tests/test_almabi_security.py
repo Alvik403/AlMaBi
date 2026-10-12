@@ -124,12 +124,14 @@ def test_retention_is_dry_run_by_default_and_journals_apply(tmp_path: Path):
 
 
 def test_production_settings_reject_weak_session_secret(tmp_path: Path):
+    secret_file = tmp_path / "session_secret"
+    secret_file.write_text("change-me-in-production", encoding="utf-8")
     settings = Settings(
         _env_file=None,
         DEBUG=False,
         AUTH_ENABLED=True,
         SESSION_HTTPS_ONLY=True,
-        SESSION_SECRET="change-me-in-production",
+        SESSION_SECRET_FILE=secret_file,
         UPLOADS_DIR=tmp_path / "uploads",
         RUNTIME_DIR=tmp_path / "runtime",
         LOGS_DIR=tmp_path / "logs",
@@ -159,3 +161,119 @@ def test_dashboard_sources_escape_excel_text():
     assert "${escapeHtml(node.name)}" in dashboard
     assert "${escapeHtml(row.name)}" in dashboard
     assert "escapeHtml(row[column])" in test_excel
+
+
+def test_port_80_is_not_published():
+    nginx = Path("ops/nginx.conf").read_text(encoding="utf-8")
+    compose = Path("docker-compose.prod.yml").read_text(encoding="utf-8")
+    assert "listen 8080" not in nginx
+    assert "80:8080" not in compose
+    assert "443:8443" in compose
+    assert "5432" in compose
+    assert "SESSION_SECRET:" not in compose
+    assert "SESSION_SECRET_FILE" in compose
+
+
+def test_session_secret_file_overrides_environment(tmp_path: Path):
+    secret_file = tmp_path / "session_secret"
+    secret_file.write_text("file-secret-with-at-least-32-characters\n", encoding="utf-8")
+    settings = Settings(
+        _env_file=None,
+        DEBUG=True,
+        SESSION_SECRET="short",
+        SESSION_SECRET_FILE=secret_file,
+        UPLOADS_DIR=tmp_path / "uploads",
+        RUNTIME_DIR=tmp_path / "runtime",
+        LOGS_DIR=tmp_path / "logs",
+    )
+    assert settings.session_secret == "file-secret-with-at-least-32-characters"
+
+
+def test_production_requires_data_key_file(tmp_path: Path):
+    secret_file = tmp_path / "session_secret"
+    secret_file.write_text("production-secret-with-at-least-32-characters", encoding="utf-8")
+    settings = Settings(
+        _env_file=None,
+        DEBUG=False,
+        AUTH_ENABLED=True,
+        SESSION_HTTPS_ONLY=True,
+        SESSION_SECRET_FILE=secret_file,
+        UPLOADS_DIR=tmp_path / "uploads",
+        RUNTIME_DIR=tmp_path / "runtime",
+        LOGS_DIR=tmp_path / "logs",
+    )
+    with pytest.raises(RuntimeError, match="DATA_KEY_FILE"):
+        settings.validate_security()
+
+
+def test_encrypted_upload_roundtrip_matches_plaintext(tmp_path: Path):
+    from almabi_file_crypto import configure_data_key, encrypt_bytes, is_encrypted
+    from almabi_file_security import store_upload_bytes
+
+    key = b"k" * 32
+    configure_data_key(key)
+    try:
+        stored = tmp_path / "buh-0123456789abcdef.xlsx"
+        store_upload_bytes(stored, b"plain-xlsx-body")
+        assert is_encrypted(stored.read_bytes())
+        opened = resolve_stored_xlsx(tmp_path, stored.name)
+        assert opened is not None
+        assert opened.read_bytes() == b"plain-xlsx-body"
+        opened.unlink(missing_ok=True)
+    finally:
+        configure_data_key(None)
+
+
+def test_retention_keeps_files_younger_than_90_days(tmp_path: Path):
+    uploads = tmp_path / "uploads"
+    logs = tmp_path / "logs"
+    uploads.mkdir()
+    logs.mkdir()
+    fresh = uploads / "fresh.xlsx"
+    fresh.write_bytes(b"fresh")
+    report = cleanup(
+        uploads_dir=uploads,
+        logs_dir=logs,
+        upload_retention_days=90,
+        log_retention_days=30,
+        apply=True,
+    )
+    assert fresh.exists()
+    assert report["deleted"] == []
+
+
+def test_scheduled_cleanup_records_first_run_without_deleting(tmp_path: Path):
+    from datetime import UTC, datetime, timedelta
+
+    from almabi_retention import run_scheduled_cleanup
+
+    uploads = tmp_path / "uploads"
+    logs = tmp_path / "logs"
+    runtime = tmp_path / "runtime"
+    uploads.mkdir()
+    logs.mkdir()
+    old = uploads / "old.xlsx"
+    old.write_bytes(b"old")
+    old_timestamp = datetime(2020, 1, 1, tzinfo=UTC).timestamp()
+    os.utime(old, (old_timestamp, old_timestamp))
+    now = datetime.now(UTC)
+    assert run_scheduled_cleanup(
+        runtime_dir=runtime,
+        uploads_dir=uploads,
+        logs_dir=logs,
+        upload_retention_days=90,
+        log_retention_days=30,
+        interval_days=10,
+        now=now,
+    ) == "record"
+    assert old.exists()
+    assert run_scheduled_cleanup(
+        runtime_dir=runtime,
+        uploads_dir=uploads,
+        logs_dir=logs,
+        upload_retention_days=90,
+        log_retention_days=30,
+        interval_days=10,
+        now=now + timedelta(days=10),
+    ) == "run"
+    assert not old.exists()

@@ -24,7 +24,7 @@ docker compose up --build -d
 
 - `DEBUG` — включает debug-режим приложения.
 - `APP_HOST`, `APP_PORT` — параметры запуска uvicorn.
-- `SESSION_SECRET` — ключ signed-cookie сессий.
+- `SESSION_SECRET` или `SESSION_SECRET_FILE` — ключ signed-cookie сессий.
 - `AUTH_ENABLED` — локальная аутентификация; в production должна быть включена.
 - `SESSION_HTTPS_ONLY`, `SESSION_MAX_AGE_SECONDS` — защищённая cookie и срок сессии.
 - `AUTH_DB` — SQLite с пользователями и отзывными сессиями.

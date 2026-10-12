@@ -51,6 +51,11 @@
               <button class="rounded-lg border border-red-200 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-50">Отключить</button>
             </form>
             {% endif %}
+            <form method="post" action="/admin/users/{{ user.username | urlquote }}/password" class="flex items-center gap-2">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+              <input type="password" name="password" required minlength="12" placeholder="Новый пароль" autocomplete="new-password" class="w-40 rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+              <button class="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Сбросить пароль</button>
+            </form>
           </div>
           {% endfor %}
         </div>

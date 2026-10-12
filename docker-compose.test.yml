@@ -1,0 +1,61 @@
+name: almabi-test
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "18002:8000"
+    environment:
+      DEBUG: "true"
+      AUTH_ENABLED: "true"
+      APP_PORT: "8000"
+      SESSION_SECRET: test-session-secret-with-at-least-32-characters
+      SESSION_HTTPS_ONLY: "false"
+      ALLOWED_HOSTS: localhost,127.0.0.1
+      KEYCLOAK_ISSUER: http://localhost:8088/realms/almabi-test
+      KEYCLOAK_INTERNAL_ISSUER: http://keycloak:8080/realms/almabi-test
+      KEYCLOAK_CLIENT_ID: almabi
+      KEYCLOAK_CLIENT_SECRET: almabi-test-client-secret
+      KEYCLOAK_REDIRECT_URI: http://localhost:18002/login/callback
+      REQUEST_TIMEOUT_SECONDS: "900"
+      UVICORN_WORKERS: "1"
+      UPLOADS_DIR: /app/uploads
+      RUNTIME_DIR: /app/runtime
+      LOGS_DIR: /app/logs
+      LOG_TO_FILES: "true"
+    volumes:
+      - test_uploads:/app/uploads
+      - test_runtime:/app/runtime
+      - test_logs:/app/logs
+    depends_on:
+      keycloak:
+        condition: service_healthy
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.5.7
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_HTTP_PORT: "8080"
+      KC_HOSTNAME: http://localhost:8088
+      KC_HOSTNAME_STRICT: "false"
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+    ports:
+      - "8088:8080"
+    volumes:
+      - ./ops/keycloak/almabi-test-realm.json:/opt/keycloak/data/import/almabi-test-realm.json:ro
+      - ./ops/keycloak/themes/almabi:/opt/keycloak/themes/almabi:ro
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/127.0.0.1/8080'"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 40s
+
+volumes:
+  test_uploads:
+  test_runtime:
+  test_logs:

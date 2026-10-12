@@ -60,32 +60,49 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml ps
 Запись разрешена только в именованные volumes `uploads`, `runtime`, `logs` и
 в ограниченный временный `tmpfs`.
 
-Создайте `.env.prod` вне системы контроля версий:
+Создайте файлы секретов вне системы контроля версий (`ops/secrets/`, каталог в
+`.gitignore`):
 
-```dotenv
-SESSION_SECRET=<случайное значение не короче 32 байт>
-ALMABI_HOST=almabi.internal.example
-ALMABI_IMAGE=almabi-web:2026-08-19.1
-# Для воспроизводимого production лучше указать digest:
-# NGINX_IMAGE=nginx:stable-alpine@sha256:<проверенный-digest>
+```text
+ops/secrets/session_secret
+ops/secrets/data_key
+ops/secrets/db_password
+ops/secrets/keycloak_client_secret
 ```
 
-Секрет можно сгенерировать командой
-`python -c "import secrets; print(secrets.token_urlsafe(48))"`. Не передавайте
-секрет через Docker build args и не копируйте `.env.prod` в image.
-`.dockerignore` исключает env-файлы, ключи и TLS-каталог из build context, но
-не защищает их от случайного `git add`: проверяйте `git status`.
+Каждый из `session_secret` и `data_key` — случайная строка не короче 32
+символов. Их можно сгенерировать командой
+`python -c "import secrets; print(secrets.token_urlsafe(48))"`.
+Production-compose монтирует их как Docker secrets (`SESSION_SECRET_FILE`,
+`DATA_KEY_FILE`, пароль Postgres). Не кладите эти значения в `environment` и
+не передавайте через Docker build args.
 
-Приложение принимает `SESSION_SECRET` только как переменную окружения и не
-поддерживает Docker secrets (`*_FILE`). Поэтому секрет будет виден
-привилегированному оператору через `docker inspect`. Для устранения этого
-ограничения потребуется отдельное изменение Python-конфигурации.
+Ротация раз в 60 дней: `scripts/rotate_session_secret.py` (после рестарта все
+сессии сбрасываются), `scripts/rotate_data_key.py` (перешифровывает uploads),
+смена пароля admin в интерфейсе. TLS-ключ выпускает корпоративный CA;
+`/ready` показывает возраст `fullchain.pem` и не останавливает сайт.
 
-После первого запуска создайте администратора без передачи пароля в аргументах:
+Вход всех пользователей: своя страница `/login` → Keycloak 26.5. Локальной формы пароля нет. Иные версии Keycloak не используются. Active Directory и мультифактор подключает ИБ позже. Нужны `KEYCLOAK_ISSUER`, `KEYCLOAK_CLIENT_ID` и файл `ops/secrets/keycloak_client_secret`.
+
+Группы, которые Keycloak кладёт в токен:
+
+| Группа | Кто в ней | Роль в AlMaBi |
+|---|---|---|
+| `AlMaBi-Admins` | два именных администратора | `admin` |
+| `AlMaBi-Uploaders` | сотрудники, которые загружают Excel | `uploader` |
+| `AlMaBi-Viewers` | остальные сотрудники | `viewer` |
+
+Человека добавляют в группу. Отдельный локальный пароль в AlMaBi для входа не используется. Секреты сессии и ключа данных лежат в `ops/secrets/session_secret` и `ops/secrets/data_key`, не в `.env.prod`. Без ключа данных production не запускается, файлы открытым текстом не пишутся.
+
+Локальная проверка входа без AD и без второго фактора:
 
 ```powershell
-docker compose --env-file .env.prod -f docker-compose.prod.yml exec web python scripts/manage_users.py bootstrap admin
+docker compose -f docker-compose.test.yml up --build
 ```
+
+Сайт: http://localhost:18002/login. Keycloak 26.5.7: http://localhost:8088 (админ консоли `admin` / `admin`). Тестовые входы: `test-admin` / `test-admin-pass`, `test-uploader` / `test-uploader-pass`, `test-viewer` / `test-viewer-pass`. Обычный `docker-compose.yml` по-прежнему без входа и нужен для расчётов.
+
+После первого запуска администраторов в локальной базе паролем не создают: два человека должны быть в группе `AlMaBi-Admins`.
 
 Старые UUID-файлы не удаляются автоматически. После backup назначьте их
 конкретному пользователю: сначала сохраните dry-run отчёт, затем выполните
@@ -172,24 +189,12 @@ docker run --rm -v almabi-restore_uploads:/target -v "${PWD}\backup:/backup:ro" 
 ## Retention и очистка данных
 
 Переменные: `UPLOAD_RETENTION_DAYS` (по умолчанию 90),
-`LOG_RETENTION_DAYS` (30). Очистка **не выполняется автоматически** — её
-запускает администратор по регламенту, согласованному с СБ.
+`LOG_RETENTION_DAYS` (30). Процесс `web` сам запускает очистку не чаще чем
+раз в `RETENTION_INTERVAL_DAYS` (10). Первый старт только запоминает дату в
+`runtime/retention_state.json` и ничего не удаляет. Журнал удалений —
+`logs/retention.jsonl`. Файлы моложе срока хранения остаются на месте.
 
-Dry-run (только отчёт):
-
-```powershell
-docker compose --env-file .env.prod -f docker-compose.prod.yml exec web python scripts/cleanup_runtime.py
-```
-
-Применение (удаление файлов старше retention; журнал в `logs/retention.jsonl`):
-
-```powershell
-docker compose --env-file .env.prod -f docker-compose.prod.yml exec web python scripts/cleanup_runtime.py --apply
-```
-
-СБ должна утвердить: сроки retention, периодичность запуска, ответственного
-и порядок архивирования перед удалением (если uploads подлежат долгому
-хранению по политике организации).
+СБ утверждает сроки и то, что автоматический запуск заменяет ручной скрипт.
 
 ## Rollout и rollback
 
@@ -241,8 +246,7 @@ curl.exe -k https://localhost/health
 - Именованные volumes предпочтительнее bind mounts для рабочих данных:
   Windows ACL и Linux UID/GID отображаются неполно и могут дать неожиданные
   права. Доступ к ним выполняйте через контейнеры backup/restore.
-- Откройте в Windows Firewall входящие TCP 443 (и 80, если нужен redirect)
-  только для доверенных LAN-профилей и подсетей. Не публикуйте 8000.
+- Откройте в Windows Firewall входящий TCP 443 только для доверенных LAN-профилей и подсетей. Порт 80 не публикуется. Не публикуйте 8000 и 5432.
 - `ops/nginx.conf` по умолчанию разрешает только RFC1918/loopback. До rollout
   замените/дополните `allow` фактическими LAN/VPN CIDR; внешние адреса
   корпоративного VPN иначе будут отклонены.
@@ -256,18 +260,20 @@ curl.exe -k https://localhost/health
   пользовательская сессия влияют на доступность. Для повышенной надежности
   используйте выделенный Linux-host/VM и внешний мониторинг.
 
-## Мониторинг (рекомендации для СБ)
+## Мониторинг и SIEM
 
-Минимальный набор без отдельного SIEM:
+Журналы будут отправляться в SIEM после подключения. Назначение: `srv-s.alabuga.ru` (`10.50.53.121`), TCP/1514 и TCP/1515. Название системы не фиксируется. Приложение отправку не выполняет. Файлы в томе `logs` зашифрованы; для будущей отправки остаётся открытый JSON в консоли контейнера.
+
+Минимальный набор проверок:
 
 | Что проверять | Где | Периодичность |
 |---|---|---|
 | Доступность сервиса | `GET https://<host>/health` через TLS | 1–5 мин (внешний probe) |
 | Срок TLS-сертификата | `openssl s_client` / мониторинг CA | еженедельно |
 | Ошибки 401/403/429/5xx | логи nginx (stdout контейнера) | ежедневно |
-| Неудачные входы | JSON-логи приложения, события throttle | ежедневно |
+| Неудачные входы | журнал Keycloak и JSON-логи приложения | ежедневно |
 | Заполнение volumes | `docker system df -v` | еженедельно |
-| Актуальность пользователей | `manage_users.py list` vs матрица доступа | ежеквартально |
+| Актуальность пользователей | Keycloak 26.5, два именных администратора | ежеквартально |
 | Retention cleanup | `logs/retention.jsonl` | по регламенту |
 
 Алерты на множественные 401 с одного IP, резкий рост 413 (upload), падение
@@ -275,22 +281,7 @@ curl.exe -k https://localhost/health
 
 ## Управление учётными записями
 
-```powershell
-# список пользователей
-docker compose --env-file .env.prod -f docker-compose.prod.yml exec web python scripts/manage_users.py list
-
-# создание uploader
-docker compose --env-file .env.prod -f docker-compose.prod.yml exec web python scripts/manage_users.py create analyst uploader
-
-# смена пароля
-docker compose --env-file .env.prod -f docker-compose.prod.yml exec web python scripts/manage_users.py password analyst
-
-# отключение (без удаления истории)
-docker compose --env-file .env.prod -f docker-compose.prod.yml exec web python scripts/manage_users.py disable analyst
-```
-
-При компрометации учётной записи: `disable` + `revoke` сессий через перезапуск
-с новым `SESSION_SECRET` или отключение пользователя в `/admin/users`.
+Вход идёт через Keycloak 26.5. Сотрудника добавляют в группу `AlMaBi-Admins`, `AlMaBi-Uploaders` или `AlMaBi-Viewers`. Локальный пароль для входа не используется. Active Directory и мультифактор к этим группам подключает ИБ.
 
 ## Остаточные ограничения
 

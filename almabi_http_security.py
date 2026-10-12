@@ -126,9 +126,12 @@ class RequestBodyLimitMiddleware:
 
 
 class SecurityHeadersMiddleware:
-    def __init__(self, app: ASGIApp, *, hsts: bool = False) -> None:
+    def __init__(self, app: ASGIApp, *, hsts: bool = False, form_action_origins: tuple[str, ...] = ()) -> None:
         self.app = app
         self.hsts = hsts
+        self.form_action_origins = tuple(
+            origin for origin in form_action_origins if origin and " " not in origin and ";" not in origin
+        )
 
     async def __call__(self, scope: dict[str, Any], receive, send) -> None:
         if scope["type"] != "http":
@@ -149,6 +152,7 @@ class SecurityHeadersMiddleware:
                     "img-src 'self' data:; font-src 'self' data:; "
                     "connect-src 'self'; object-src 'none'; base-uri 'self'; "
                     "frame-ancestors 'none'; form-action 'self'"
+                    + "".join(f" {origin}" for origin in self.form_action_origins)
                 )
                 headers.extend(
                     [

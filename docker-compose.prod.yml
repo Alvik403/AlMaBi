@@ -11,8 +11,19 @@ services:
       AUTH_ENABLED: "true"
       APP_HOST: "0.0.0.0"
       APP_PORT: "8000"
-      SESSION_SECRET: "${SESSION_SECRET:?Set SESSION_SECRET in the production environment}"
+      SESSION_SECRET_FILE: /run/secrets/session_secret
+      DATA_KEY_FILE: /run/secrets/data_key
       SESSION_HTTPS_ONLY: "true"
+      SESSION_IDLE_SECONDS: "900"
+      SECRET_MAX_AGE_DAYS: "60"
+      RETENTION_INTERVAL_DAYS: "10"
+      AUTH_DATABASE_URL: postgresql://almabi@db:5432/almabi
+      AUTH_DATABASE_PASSWORD_FILE: /run/secrets/db_password
+      TLS_CERT_FILE: /tls/fullchain.pem
+      KEYCLOAK_ISSUER: ${KEYCLOAK_ISSUER:-}
+      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-}
+      KEYCLOAK_CLIENT_SECRET_FILE: /run/secrets/keycloak_client_secret
+      KEYCLOAK_REDIRECT_URI: ${KEYCLOAK_REDIRECT_URI:-}
       ALLOWED_HOSTS: "${ALMABI_HOST:?Set ALMABI_HOST to the production DNS name}"
       AUDIT_DETAIL_ENABLED: "false"
       REQUEST_TIMEOUT_SECONDS: "900"
@@ -26,14 +37,24 @@ services:
       UPLOADS_DIR: /app/uploads
       RUNTIME_DIR: /app/runtime
       LOGS_DIR: /app/logs
+    secrets:
+      - session_secret
+      - data_key
+      - db_password
+      - keycloak_client_secret
     expose:
       - "8000"
     volumes:
       - uploads:/app/uploads
       - runtime:/app/runtime
       - logs:/app/logs
+      - ./ops/tls:/tls:ro
     networks:
       - backend
+      - edge
+    depends_on:
+      db:
+        condition: service_healthy
     read_only: true
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
@@ -76,7 +97,6 @@ services:
       web:
         condition: service_healthy
     ports:
-      - "80:8080"
       - "443:8443"
     volumes:
       - ./ops/nginx.conf:/etc/nginx/nginx.conf:ro
@@ -106,6 +126,26 @@ services:
     restart: unless-stopped
     stop_grace_period: 15s
 
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: almabi
+      POSTGRES_DB: almabi
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets:
+      - db_password
+    volumes:
+      - db:/var/lib/postgresql/data
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U almabi -d almabi"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+
 networks:
   edge:
   backend:
@@ -115,3 +155,14 @@ volumes:
   uploads:
   runtime:
   logs:
+  db:
+
+secrets:
+  session_secret:
+    file: ${ALMABI_SESSION_SECRET_FILE:-ops/secrets/session_secret}
+  data_key:
+    file: ${ALMABI_DATA_KEY_FILE:-ops/secrets/data_key}
+  db_password:
+    file: ${ALMABI_DB_PASSWORD_FILE:-ops/secrets/db_password}
+  keycloak_client_secret:
+    file: ${ALMABI_KEYCLOAK_SECRET_FILE:-ops/secrets/keycloak_client_secret}

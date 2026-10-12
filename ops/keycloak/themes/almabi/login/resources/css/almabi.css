@@ -1,0 +1,77 @@
+:root {
+  --keycloak-bg-logo-url: none;
+  --keycloak-card-top-color: #2563eb;
+  --pf-v5-global--primary-color--100: #2563eb;
+}
+
+body#keycloak-bg,
+.login-pf body {
+  background: #f8fafc !important;
+  color: #0f172a;
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
+
+.pf-v5-c-login {
+  min-height: 100vh;
+}
+
+.pf-v5-c-login__container {
+  grid-template-columns: minmax(0, 28rem);
+  padding: 3rem 1rem;
+}
+
+.pf-v5-c-login__header {
+  margin-bottom: 0.5rem;
+}
+
+#kc-header-wrapper,
+.pf-v5-c-login__header .pf-v5-c-brand {
+  font-size: 1.875rem;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  color: #0f172a !important;
+  text-transform: none;
+  text-align: left;
+  padding: 0 0.25rem 0.75rem;
+}
+
+#kc-page-title:empty {
+  display: none;
+}
+
+.pf-v5-c-login__main {
+  border: 1px solid #e2e8f0;
+  border-radius: 1rem;
+  box-shadow: 0 20px 25px -5px rgb(15 23 42 / 8%), 0 8px 10px -6px rgb(15 23 42 / 8%);
+  background: #fff;
+}
+
+.pf-v5-c-login__main-header {
+  border-top: 0;
+  padding-bottom: 0;
+}
+
+.pf-v5-c-login__main-header:has(#kc-page-title:empty) {
+  display: none;
+}
+
+.pf-v5-c-form-control {
+  border-radius: 0.75rem;
+  border-color: #cbd5e1;
+}
+
+.pf-v5-c-form__label-text {
+  color: #334155;
+  font-weight: 600;
+}
+
+.pf-v5-c-button.pf-m-primary {
+  background-color: #2563eb;
+  border-radius: 0.75rem;
+  font-weight: 600;
+}
+
+.pf-v5-c-button.pf-m-primary:hover {
+  background-color: #1d4ed8;
+}

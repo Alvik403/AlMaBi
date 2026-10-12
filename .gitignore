@@ -46,6 +46,7 @@ env/
 .env
 .env.*
 !.env.example
+ops/secrets/
 *.pem
 *.key
 *.p12

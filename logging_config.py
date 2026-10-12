@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from almabi_file_crypto import append_protected_line, current_data_key
 from settings import Settings
 
 
@@ -66,6 +67,18 @@ def _logs_dir_writable(logs_dir: Path) -> bool:
         return False
 
 
+class EncryptedLineHandler(logging.Handler):
+    def __init__(self, path: Path) -> None:
+        super().__init__()
+        self.path = path
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            append_protected_line(self.path, self.format(record))
+        except Exception:
+            self.handleError(record)
+
+
 def _attach_file_handler(
     root: logging.Logger,
     *,
@@ -75,7 +88,10 @@ def _attach_file_handler(
 ) -> bool:
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        handler = logging.FileHandler(path, encoding="utf-8")
+        if current_data_key() is None:
+            handler: logging.Handler = logging.FileHandler(path, encoding="utf-8")
+        else:
+            handler = EncryptedLineHandler(path)
     except OSError:
         return False
     handler.setFormatter(formatter)

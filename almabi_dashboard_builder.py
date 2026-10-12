@@ -20,6 +20,7 @@ from almabi_drill_matching import (
     build_drill_cost_lookup,
     covered_document_keys_for_realization_rows,
     drill_operation_key,
+    drill_row_matches_rev_fact,
     lookup_drill_cost,
     scope_realization_rows_for_drill,
     should_exclude_rev_fact_from_drill_fallback,
@@ -309,6 +310,28 @@ def _realization_row_period(row: RealizationRow) -> str:
     return normalize_text(row.period) or period_or_month(row) or ""
 
 
+def _drill_quantity_for_realization_row(
+    row: RealizationRow,
+    rev_subset: list[Fact],
+) -> float:
+    """Количество из реализации, если колонка есть.
+
+    Старые выгрузки без колонки «Количество» берут число из факта выручки:
+    туда уже подставлено количество из файла себестоимости.
+    """
+    if row.quantity is not None:
+        return float(row.quantity)
+    period = _realization_row_period(row)
+    matched = [
+        float(fact.quantity or 0)
+        for fact in rev_subset
+        if drill_row_matches_rev_fact(row, fact, period=period)
+    ]
+    if matched:
+        return max(matched)
+    return 0.0
+
+
 def _build_revenue_cost_leaf_lines_from_realization(
     realization_rows: list[RealizationRow],
     rev_subset: list[Fact],
@@ -342,7 +365,7 @@ def _build_revenue_cost_leaf_lines_from_realization(
                 revenue_nu=revenue_amount,
                 cost_buh=cost["buh"],
                 cost_nu=cost["nu"],
-                quantity=float(row.quantity or 0),
+                quantity=_drill_quantity_for_realization_row(row, rev_subset),
             )
         )
 

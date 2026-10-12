@@ -1,26 +1,33 @@
+%%{init: {"theme": "base", "themeVariables": {"background": "#ffffff", "clusterBkg": "#f6f0ff", "clusterBorder": "#8a7340"}, "flowchart": {"curve": "linear", "htmlLabels": true, "nodeSpacing": 28, "rankSpacing": 40}}}%%
 flowchart LR
-  U["Пользователь<br/>Браузер / АРМ"]
-  N["Корпоративная сеть / VPN"]
-  P["Хост :80/:443 → nginx<br/>:8080/:8443"]
-  W["Docker: web<br/>FastAPI · :8000<br/>RBAC · CSRF"]
-  S["Docker volumes<br/>uploads/almabi/users/{user_id}/<br/>runtime · logs"]
-  M["Мониторинг<br/>/health · /ready"]
+  U["Пользователь"]
+  APP["Администратор системы"]
+  MON["Мониторинг"]
+  PADM["Администратор сервера"]
+  PAM["PAM"]
 
-  U --> N
-  N -->|"1 HTTPS :443"| P
-  N -->|"2 HTTP :80"| P
-  P -->|"3 HTTP :8000<br/>(internal)"| W
-  W --- S
-  M -->|"4 HTTPS :443"| P
+  subgraph vm ["ВМ almabi.alabuga.ru"]
+    direction TB
+    NGX["nginx · :443"]
+    WEB["web · :8000"]
+    KC["Keycloak 26.5.7"]
+    DB["Postgres · :5432"]
+    HOST["Хост · SSH :22"]
+  end
 
-  classDef user fill:#E8F4FF,stroke:#2B6CB0,color:#123048
-  classDef proxy fill:#E6FFFA,stroke:#0B6E4F,color:#123048
-  classDef app fill:#FFF7ED,stroke:#C05621,color:#123048
-  classDef store fill:#F0FFF4,stroke:#276749,color:#123048
-  classDef admin fill:#F7FAFC,stroke:#4A5568,color:#123048
+  AD["Active Directory"]
+  MFA["Второй фактор"]
+  SIEM["SIEM<br/>srv-s.alabuga.ru<br/>10.50.53.121<br/>TCP 1514 и 1515"]
 
-  class U,N user
-  class P proxy
-  class W app
-  class S store
-  class M admin
+  U -->|HTTPS :443| NGX
+  APP -->|HTTPS :443| NGX
+  MON -->|HTTPS :443| NGX
+  U -->|пароль на Keycloak| KC
+  APP -->|пароль на Keycloak| KC
+  PADM --> PAM -->|SSH :22| HOST
+  NGX --> WEB
+  WEB -->|код и ключи| KC
+  WEB --> DB
+  KC -->|учётная запись| AD
+  KC -->|второй фактор| MFA
+  HOST -->|журналы| SIEM

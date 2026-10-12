@@ -6,6 +6,8 @@ from typing import Any
 
 from starlette.requests import Request
 
+from almabi_file_crypto import materialize_plaintext, store_upload_bytes
+
 
 _STORED_XLSX_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,199}\.xlsx$", re.IGNORECASE)
 
@@ -18,7 +20,9 @@ def resolve_stored_xlsx(base_dir: Path, stored_name: object) -> Path | None:
     candidate = (base / stored_name).resolve()
     if not candidate.is_relative_to(base):
         return None
-    return candidate if candidate.is_file() else None
+    if not candidate.is_file():
+        return None
+    return materialize_plaintext(candidate)
 
 
 def user_upload_dir(request: Request, uploads_root: Path, namespace: str) -> Path:

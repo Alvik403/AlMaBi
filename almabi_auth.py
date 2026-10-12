@@ -14,7 +14,7 @@ from almabi_auth_store import AuthStore, User
 SESSION_TOKEN_KEY = "auth_session_token"
 SESSION_USER_ID_KEY = "auth_user_id"
 SESSION_CSRF_KEY = "csrf_token"
-PUBLIC_PATHS = {"/login", "/health", "/ready"}
+PUBLIC_PATHS = {"/login", "/login/keycloak", "/login/callback", "/health", "/ready"}
 
 
 async def _response(send, status: int, body: bytes, content_type: bytes, headers=None) -> None:
@@ -37,10 +37,18 @@ def _is_api(path: str) -> bool:
 
 
 class AuthMiddleware:
-    def __init__(self, app, *, store: AuthStore, enabled: bool = True) -> None:
+    def __init__(
+        self,
+        app,
+        *,
+        store: AuthStore,
+        enabled: bool = True,
+        password_max_age_days: int = 60,
+    ) -> None:
         self.app = app
         self.store = store
         self.enabled = enabled
+        self.password_max_age_days = password_max_age_days
         if enabled:
             self.store.init_schema()
 
@@ -73,18 +81,38 @@ class AuthMiddleware:
                 )
             else:
                 target = quote(path if path.startswith("/") else "/", safe="/?=&")
+                location = b"/login" if path == "/logout" else f"/login?next={target}".encode("ascii", "ignore")
                 await _response(
                     send,
                     303,
                     b"",
                     b"text/plain; charset=utf-8",
-                    [(b"location", f"/login?next={target}".encode("ascii", "ignore"))],
+                    [(b"location", location)],
                 )
             return
 
         scope.setdefault("state", {})["current_user"] = user
         session[SESSION_USER_ID_KEY] = user.id
         session.setdefault(SESSION_CSRF_KEY, secrets.token_urlsafe(32))
+
+        if self.store.password_change_required(user, max_age_days=self.password_max_age_days):
+            if path not in {"/account/password", "/logout"}:
+                if _is_api(path):
+                    await _response(
+                        send,
+                        403,
+                        json.dumps({"detail": "Password change required"}).encode("utf-8"),
+                        b"application/json; charset=utf-8",
+                    )
+                else:
+                    await _response(
+                        send,
+                        303,
+                        b"",
+                        b"text/plain; charset=utf-8",
+                        [(b"location", b"/account/password")],
+                    )
+                return
 
         if _is_admin_path(path) and user.role != "admin":
             await self._forbidden(path, send)

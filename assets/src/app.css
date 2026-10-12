@@ -219,9 +219,19 @@ body[data-sidebar="open"] [data-sidebar-backdrop] {
 
 .almabi-select__toolbar {
   display: flex;
+  flex-direction: column;
   gap: 0.35rem;
   padding: 0.2rem 0.2rem 0.45rem;
   border-bottom: 1px solid #e2e8f0;
+}
+
+.almabi-select__bulk {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.almabi-select__bulk .almabi-select__all {
+  flex: 1;
 }
 
 .almabi-select__search {
@@ -250,8 +260,39 @@ body[data-sidebar="open"] [data-sidebar-backdrop] {
   background: #f0f9ff;
 }
 
-.almabi-select__all:hover {
+.almabi-select__all:hover:not(:disabled) {
   background: #e0f2fe;
+}
+
+.almabi-select__all:disabled {
+  color: #94a3b8;
+  background: #f8fafc;
+  cursor: default;
+}
+
+.almabi-select__footer {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 0.45rem;
+  border-top: 1px solid #e2e8f0;
+}
+
+.almabi-select__apply {
+  border-radius: 0.45rem;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #fff;
+  background: #0284c7;
+}
+
+.almabi-select__apply:hover:not(:disabled) {
+  background: #0369a1;
+}
+
+.almabi-select__apply.is-pending,
+[data-filter-apply-all].is-pending {
+  box-shadow: 0 0 0 3px rgb(125 211 252 / 0.55);
 }
 
 .almabi-select__options {
@@ -408,7 +449,8 @@ body[data-sidebar="open"] [data-sidebar-backdrop] {
 
 .almabi-period-actions {
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
+  gap: 0.35rem;
   margin-top: 0.6rem;
 }
 

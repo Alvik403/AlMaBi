@@ -5,8 +5,15 @@ flowchart LR
   P["Парсинг + валидация<br/>openpyxl"]
   Q["PQ pipeline<br/>join · Fact · P&L"]
   D["Dashboard / KPI"]
-  A["runtime/auth.sqlite3"]
+  A["Postgres db<br/>учётки и сессии"]
+  K["Keycloak 26.5<br/>группа → роль"]
+  AD["Active Directory<br/>вне ВМ"]
+  MFA["Второй фактор<br/>вне ВМ"]
 
+  U -->|"вход"| K
+  K -->|"роль"| W
+  K -->|"учётная запись"| AD
+  K -->|"второй фактор"| MFA
   U -->|"1 upload"| W
   W -->|"2 save"| X
   X -->|"3 read"| P
@@ -25,4 +32,4 @@ flowchart LR
   class W,P b
   class Q c
   class D d
-  class X,A e
+  class X,A,K,AD,MFA e

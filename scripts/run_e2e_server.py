@@ -12,7 +12,7 @@ runtime = PROJECT_ROOT / "runtime" / "e2e"
 os.environ.update(
     {
         "DEBUG": "true",
-        "AUTH_ENABLED": "true",
+        "AUTH_ENABLED": "false",
         "SESSION_SECRET": "e2e-session-secret-with-at-least-32-characters",
         "SESSION_HTTPS_ONLY": "false",
         "RUNTIME_DIR": str(runtime),

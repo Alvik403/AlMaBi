@@ -1,0 +1,94 @@
+{
+  "realm": "almabi-test",
+  "displayName": "Al Ma BI",
+  "displayNameHtml": "Al Ma BI",
+  "loginTheme": "almabi",
+  "internationalizationEnabled": true,
+  "supportedLocales": ["ru"],
+  "defaultLocale": "ru",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "groups": [
+    { "name": "AlMaBi-Admins" },
+    { "name": "AlMaBi-Uploaders" },
+    { "name": "AlMaBi-Viewers" }
+  ],
+  "clients": [
+    {
+      "clientId": "almabi",
+      "name": "AlMaBi test",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "almabi-test-client-secret",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": [
+        "http://localhost:18002/login/callback",
+        "http://127.0.0.1:18002/login/callback"
+      ],
+      "webOrigins": [
+        "http://localhost:18002",
+        "http://127.0.0.1:18002"
+      ],
+      "attributes": {
+        "post.logout.redirect.uris": "http://localhost:18002/login##http://127.0.0.1:18002/login"
+      },
+      "protocolMappers": [
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "consentRequired": false,
+          "config": {
+            "full.path": "false",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "claim.name": "groups"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "test-admin",
+      "enabled": true,
+      "email": "test-admin@almabi.test",
+      "firstName": "Тест",
+      "lastName": "Админ",
+      "emailVerified": true,
+      "groups": ["/AlMaBi-Admins"],
+      "credentials": [
+        { "type": "password", "value": "test-admin-pass", "temporary": false }
+      ]
+    },
+    {
+      "username": "test-uploader",
+      "enabled": true,
+      "email": "test-uploader@almabi.test",
+      "firstName": "Тест",
+      "lastName": "Загрузка",
+      "emailVerified": true,
+      "groups": ["/AlMaBi-Uploaders"],
+      "credentials": [
+        { "type": "password", "value": "test-uploader-pass", "temporary": false }
+      ]
+    },
+    {
+      "username": "test-viewer",
+      "enabled": true,
+      "email": "test-viewer@almabi.test",
+      "firstName": "Тест",
+      "lastName": "Просмотр",
+      "emailVerified": true,
+      "groups": ["/AlMaBi-Viewers"],
+      "credentials": [
+        { "type": "password", "value": "test-viewer-pass", "temporary": false }
+      ]
+    }
+  ]
+}
