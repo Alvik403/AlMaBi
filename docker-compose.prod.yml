@@ -37,11 +37,6 @@ services:
       UPLOADS_DIR: /app/uploads
       RUNTIME_DIR: /app/runtime
       LOGS_DIR: /app/logs
-    secrets:
-      - session_secret
-      - data_key
-      - db_password
-      - keycloak_client_secret
     expose:
       - "8000"
     volumes:
@@ -49,6 +44,10 @@ services:
       - runtime:/app/runtime
       - logs:/app/logs
       - ./ops/tls:/tls:ro
+      - ${ALMABI_SESSION_SECRET_FILE:-./ops/secrets/session_secret}:/run/secrets/session_secret:ro
+      - ${ALMABI_DATA_KEY_FILE:-./ops/secrets/data_key}:/run/secrets/data_key:ro
+      - ${ALMABI_DB_PASSWORD_FILE:-./ops/secrets/db_password}:/run/secrets/db_password:ro
+      - ${ALMABI_KEYCLOAK_SECRET_FILE:-./ops/secrets/keycloak_client_secret}:/run/secrets/keycloak_client_secret:ro
     networks:
       - backend
       - edge
