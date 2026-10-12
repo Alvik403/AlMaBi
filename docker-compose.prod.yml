@@ -20,10 +20,11 @@ services:
       AUTH_DATABASE_URL: postgresql://almabi@db:5432/almabi
       AUTH_DATABASE_PASSWORD_FILE: /run/secrets/db_password
       TLS_CERT_FILE: /tls/fullchain.pem
-      KEYCLOAK_ISSUER: ${KEYCLOAK_ISSUER:-}
-      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-}
+      KEYCLOAK_ISSUER: ${KEYCLOAK_ISSUER:-https://${ALMABI_HOST}/realms/almabi}
+      KEYCLOAK_INTERNAL_ISSUER: ${KEYCLOAK_INTERNAL_ISSUER:-http://keycloak:8080/realms/almabi}
+      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-almabi}
       KEYCLOAK_CLIENT_SECRET_FILE: /run/secrets/keycloak_client_secret
-      KEYCLOAK_REDIRECT_URI: ${KEYCLOAK_REDIRECT_URI:-}
+      KEYCLOAK_REDIRECT_URI: ${KEYCLOAK_REDIRECT_URI:-https://${ALMABI_HOST}/login/callback}
       ALLOWED_HOSTS: "${ALMABI_HOST:?Set ALMABI_HOST to the production DNS name}"
       AUDIT_DETAIL_ENABLED: "false"
       REQUEST_TIMEOUT_SECONDS: "900"
@@ -53,6 +54,8 @@ services:
         condition: service_healthy
       secret-init:
         condition: service_completed_successfully
+      keycloak:
+        condition: service_healthy
     read_only: true
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
@@ -154,11 +157,55 @@ services:
       - -c
       - |
         set -eu
-        for name in session_secret data_key db_password keycloak_client_secret; do
+        for name in session_secret data_key db_password; do
           cp "/run/secrets/$$name" "/secrets/$$name"
           chmod 400 "/secrets/$$name"
           chown 10001:10001 "/secrets/$$name"
         done
+        src=/run/secrets/keycloak_client_secret
+        dst=/secrets/keycloak_client_secret
+        if [ -s "$$src" ] && [ "$$(wc -c < "$$src")" -ge 32 ]; then
+          cp "$$src" "$$dst"
+        elif ! [ -s "$$dst" ] || [ "$$(wc -c < "$$dst")" -lt 32 ]; then
+          python -c "import secrets; open('/secrets/keycloak_client_secret','w',encoding='utf-8').write(secrets.token_urlsafe(48))"
+        fi
+        chmod 400 "$$dst"
+        chown 10001:10001 "$$dst"
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.5.7
+    user: "0:0"
+    entrypoint: ["/bin/bash", "/opt/keycloak/prod-entrypoint.sh"]
+    environment:
+      ALMABI_HOST: ${ALMABI_HOST:?Set ALMABI_HOST to the production DNS name}
+      KC_HTTP_ENABLED: "true"
+      KC_PROXY_HEADERS: xforwarded
+      KC_HOSTNAME: https://${ALMABI_HOST}
+      KC_HOSTNAME_STRICT: "false"
+      KC_HEALTH_ENABLED: "true"
+      KC_HTTP_PORT: "8080"
+    volumes:
+      - ./ops/keycloak/prod-entrypoint.sh:/opt/keycloak/prod-entrypoint.sh:ro
+      - ./ops/keycloak/almabi-realm.json.template:/opt/keycloak/import-template/almabi-realm.json:ro
+      - ./ops/keycloak/themes/almabi:/opt/keycloak/themes/almabi:ro
+      - keycloak_data:/opt/keycloak/data
+      - staged_secrets:/secrets:ro
+    networks:
+      - backend
+    depends_on:
+      secret-init:
+        condition: service_completed_successfully
+    init: true
+    pids_limit: 512
+    mem_limit: 1g
+    cpus: 1.0
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/127.0.0.1/8080'"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 90s
+    restart: unless-stopped
 
   db:
     image: postgres:16-alpine
@@ -191,6 +238,7 @@ volumes:
   logs:
   db:
   staged_secrets:
+  keycloak_data:
 
 secrets:
   session_secret:

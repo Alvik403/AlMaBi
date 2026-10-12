@@ -140,6 +140,35 @@ def test_production_settings_reject_weak_session_secret(tmp_path: Path):
         settings.validate_security()
 
 
+def test_production_keycloak_defaults_follow_public_host(tmp_path: Path):
+    secret_file = tmp_path / "session_secret"
+    secret_file.write_text("production-secret-with-at-least-32-characters", encoding="utf-8")
+    data_key = tmp_path / "data_key"
+    data_key.write_text("k" * 32, encoding="utf-8")
+    client_secret = tmp_path / "keycloak_client_secret"
+    client_secret.write_text("c" * 32, encoding="utf-8")
+    settings = Settings(
+        _env_file=None,
+        DEBUG=False,
+        AUTH_ENABLED=True,
+        SESSION_HTTPS_ONLY=True,
+        SESSION_SECRET_FILE=secret_file,
+        DATA_KEY_FILE=data_key,
+        KEYCLOAK_CLIENT_SECRET_FILE=client_secret,
+        ALLOWED_HOSTS="bi.example",
+        UPLOADS_DIR=tmp_path / "uploads",
+        RUNTIME_DIR=tmp_path / "runtime",
+        LOGS_DIR=tmp_path / "logs",
+    )
+
+    settings.validate_security()
+
+    assert settings.keycloak_issuer == "https://bi.example/realms/almabi"
+    assert settings.keycloak_client_id == "almabi"
+    assert settings.keycloak_redirect_uri == "https://bi.example/login/callback"
+    assert settings.keycloak_internal_issuer == "http://keycloak:8080/realms/almabi"
+
+
 def test_dashboard_has_security_headers_and_local_assets(app_client):
     response = app_client.get("/dashboard/almabi")
 

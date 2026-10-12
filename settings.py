@@ -253,7 +253,30 @@ class Settings(BaseSettings):
                 # Bind-mounts on Windows/macOS may exist but be unwritable for the app user.
                 continue
 
+    def apply_keycloak_defaults(self) -> None:
+        """Подставляет Keycloak этого же сервера, если адрес не задан отдельно."""
+        public_host = next(
+            (
+                host
+                for host in self.allowed_host_list
+                if host not in {"localhost", "127.0.0.1", "testserver"}
+            ),
+            "",
+        )
+        if not public_host:
+            return
+        origin = f"https://{public_host}"
+        if not self.keycloak_issuer.strip():
+            object.__setattr__(self, "keycloak_issuer", f"{origin}/realms/almabi")
+        if not self.keycloak_client_id.strip():
+            object.__setattr__(self, "keycloak_client_id", "almabi")
+        if not self.keycloak_redirect_uri.strip():
+            object.__setattr__(self, "keycloak_redirect_uri", f"{origin}/login/callback")
+        if not self.keycloak_internal_issuer.strip():
+            object.__setattr__(self, "keycloak_internal_issuer", "http://keycloak:8080/realms/almabi")
+
     def validate_security(self) -> None:
+        self.apply_keycloak_defaults()
         if self.auth_enabled and not self.debug:
             if self.session_secret_file is None or not self.resolve_path(self.session_secret_file).is_file():
                 raise RuntimeError(

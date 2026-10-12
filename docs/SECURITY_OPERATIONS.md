@@ -88,7 +88,7 @@ capabilities) прочитать его напрямую не может. Кор
 смена пароля admin в интерфейсе. TLS-ключ выпускает корпоративный CA;
 `/ready` показывает возраст `fullchain.pem` и не останавливает сайт.
 
-Вход всех пользователей: своя страница `/login` → Keycloak 26.5. Локальной формы пароля нет. Иные версии Keycloak не используются. Active Directory и мультифактор подключает ИБ позже. Нужны `KEYCLOAK_ISSUER`, `KEYCLOAK_CLIENT_ID` и файл `ops/secrets/keycloak_client_secret`.
+Вход всех пользователей: своя страница `/login` → Keycloak 26.5 в том же compose. Локальной формы пароля нет. Иные версии Keycloak не используются. Если `KEYCLOAK_ISSUER` не задан, адрес берётся из `ALMABI_HOST`: `https://<хост>/realms/almabi`. Active Directory и мультифактор подключает ИБ позже. Первый вход: пользователь `almabi-admin`, пароль создаётся на сервере при первом запуске и лежит в volume Keycloak, файл `bootstrap-admin-password`. Пароль временный, Keycloak попросит сменить его.
 
 Группы, которые Keycloak кладёт в токен:
 

@@ -1,0 +1,61 @@
+{
+  "realm": "almabi",
+  "displayName": "Al Ma BI",
+  "displayNameHtml": "Al Ma BI",
+  "loginTheme": "almabi",
+  "internationalizationEnabled": true,
+  "supportedLocales": ["ru"],
+  "defaultLocale": "ru",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "groups": [
+    { "name": "AlMaBi-Admins" },
+    { "name": "AlMaBi-Uploaders" },
+    { "name": "AlMaBi-Viewers" }
+  ],
+  "clients": [
+    {
+      "clientId": "almabi",
+      "name": "AlMaBi",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "__CLIENT_SECRET__",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": ["__PUBLIC_ORIGIN__/login/callback"],
+      "webOrigins": ["__PUBLIC_ORIGIN__"],
+      "attributes": {
+        "post.logout.redirect.uris": "__PUBLIC_ORIGIN__/login"
+      },
+      "protocolMappers": [
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "consentRequired": false,
+          "config": {
+            "full.path": "false",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "claim.name": "groups"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "almabi-admin",
+      "enabled": true,
+      "emailVerified": true,
+      "groups": ["/AlMaBi-Admins"],
+      "credentials": [
+        { "type": "password", "value": "__ADMIN_PASSWORD__", "temporary": true }
+      ]
+    }
+  ]
+}
