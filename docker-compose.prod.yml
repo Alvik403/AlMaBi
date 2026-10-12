@@ -139,6 +139,8 @@ services:
       - ALL
     cap_add:
       - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
     pids_limit: 32
     mem_limit: 64m
     tmpfs:
@@ -157,6 +159,7 @@ services:
       - -c
       - |
         set -eu
+        find /secrets -mindepth 1 -maxdepth 1 -exec chown 0:0 {} +
         for name in session_secret data_key db_password; do
           cp "/run/secrets/$$name" "/secrets/$$name"
           chmod 400 "/secrets/$$name"
